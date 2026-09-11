@@ -14,7 +14,7 @@ import { inboxUnread } from "@/lib/chat";
 import { clubBySlug, clubs, hueVar, me, needs, week } from "@/lib/data";
 
 const global = [
-  { href: "/", label: "Dashboard", icon: House },
+  { href: "/", label: "Home", icon: House },
   { href: "/discover", label: "Discover", icon: Compass },
   { href: "/chat", label: "Inbox", icon: ChatCircle },
   { href: "/you", label: "Account", icon: User },
@@ -51,7 +51,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         Skip to content
       </a>
       <nav className="global-rail" aria-label="Global Navigation">
-        <Link href="/" className="mark" aria-label="Club OS dashboard">
+        <Link href="/" className="mark" aria-label="Club OS home">
           <span className="mark-box" aria-hidden />
           <span className="mark-name">Club OS</span>
         </Link>
@@ -129,7 +129,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <main id="content" className="main">
           {club && (
             <nav className="crumbs" aria-label="Breadcrumb">
-              <Link href="/">Dashboard</Link>
+              <Link href="/">Home</Link>
               <span aria-hidden>/</span>
               <Link href={`/clubs/${club.slug}`}>{club.name}</Link>
               {pathname !== `/clubs/${club.slug}` && (
@@ -147,9 +147,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </main>
         )}
         {showTodo && (
-          <aside className="up-next" aria-label="To Do">
+          <aside className="up-next" aria-label="You owe">
             <div className="up-next-inner">
-              <div className="todo-head">To Do</div>
+              <div className="todo-head">You owe</div>
               {needs.map((item) => {
                 const c = clubs.find((x) => x.slug === item.club)!;
                 return (

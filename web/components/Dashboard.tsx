@@ -1,14 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import {
-  CalendarBlank,
-  FolderSimple,
-  Users,
-  Wallet,
-} from "@phosphor-icons/react";
-import { clubs, hueVar, needs, tasks, week } from "@/lib/data";
+import { clubs, hueVar, needs, tasks } from "@/lib/data";
 
 const nextByClub: Record<string, string> = {
   baja: "Shop hours · tonight 7:00",
@@ -17,39 +10,85 @@ const nextByClub: Record<string, string> = {
   herald: "Print deadline · Fri 11:00",
 };
 
+const owed = [
+  ...needs.map((item) => ({
+    key: item.title,
+    title: item.title,
+    detail: item.detail,
+    href: item.href,
+    club: item.club,
+    due: null as string | null,
+  })),
+  ...tasks.map((task) => ({
+    key: task.title,
+    title: task.title,
+    detail: task.origin,
+    href: `/clubs/${task.club}/workspace`,
+    club: task.club,
+    due: task.due,
+  })),
+];
+
 export function Dashboard() {
-  const [view, setView] = useState<"cards" | "list" | "activity">("cards");
+  const [first, ...rest] = owed;
 
   return (
     <>
       <div className="page-title" style={{ marginTop: 20 }}>
-        <h1 className="text-title-1">Dashboard</h1>
-        <div className="views" role="tablist" aria-label="Dashboard view">
-          <button
-            type="button"
-            aria-pressed={view === "cards"}
-            onClick={() => setView("cards")}
-          >
-            Cards
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "list"}
-            onClick={() => setView("list")}
-          >
-            List
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "activity"}
-            onClick={() => setView("activity")}
-          >
-            Recent Activity
-          </button>
+        <div>
+          <h1 className="text-title-1">Home</h1>
+          <p className="text-caption" style={{ margin: "6px 0 0" }}>
+            What you owe, then your clubs.
+          </p>
         </div>
       </div>
 
-      {view === "cards" && (
+      {first && (
+        <section className="hero-need" aria-label="What you owe">
+          <p className="text-micro">You owe</p>
+          <h2 className="text-title-2">{first.title}</h2>
+          <p className="text-caption">
+            {clubs.find((c) => c.slug === first.club)?.short}
+            {first.due ? ` · ${first.due}` : ""}
+            {first.detail ? ` · ${first.detail}` : ""}
+          </p>
+          <Link href={first.href} className="btn primary">
+            Do this next
+          </Link>
+        </section>
+      )}
+
+      {rest.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h2 className="text-title-2">Also open</h2>
+            <span className="text-caption">{rest.length} more</span>
+          </div>
+          <div className="need-list stack">
+            {rest.map((item) => {
+              const club = clubs.find((c) => c.slug === item.club)!;
+              return (
+                <Link key={item.key} href={item.href} className="need-item">
+                  <span className="identity" style={{ background: hueVar(club.hue) }} />
+                  <div className="grow">
+                    <div className="row-title">{item.title}</div>
+                    <div className="text-caption">
+                      {club.short}
+                      {item.due ? ` · ${item.due}` : ""}
+                      {item.detail ? ` · ${item.detail}` : ""}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <section className="section">
+        <div className="section-head">
+          <h2 className="text-title-2">Your clubs</h2>
+        </div>
         <div className="card-grid">
           {clubs.map((club) => (
             <article key={club.slug} className="dash-card">
@@ -57,89 +96,14 @@ export function Dashboard() {
                 <strong>{club.name}</strong>
                 <span>Fall 2026 · {club.members} members</span>
               </Link>
-              <div className="dash-body">
+              <Link href={`/clubs/${club.slug}`} className="dash-body">
                 <div className="role">{club.role}</div>
                 <div className="next">{nextByClub[club.slug]}</div>
-              </div>
-              <div className="dash-tabs">
-                <Link href={`/clubs/${club.slug}/events`} aria-label={`${club.short} events`}>
-                  <CalendarBlank size={18} weight="regular" />
-                </Link>
-                <Link href={`/clubs/${club.slug}/people`} aria-label={`${club.short} people`}>
-                  <Users size={18} weight="regular" />
-                </Link>
-                <Link href={`/clubs/${club.slug}/money`} aria-label={`${club.short} money`}>
-                  <Wallet size={18} weight="regular" />
-                </Link>
-                <Link href={`/clubs/${club.slug}/workspace`} aria-label={`${club.short} files`}>
-                  <FolderSimple size={18} weight="regular" />
-                </Link>
-              </div>
+              </Link>
             </article>
           ))}
         </div>
-      )}
-
-      {view === "list" && (
-        <div className="event-list stack">
-          {week.map((item) => {
-            const club = clubs.find((c) => c.slug === item.club)!;
-            return (
-              <Link
-                key={`${item.club}-${item.title}`}
-                href={`/clubs/${club.slug}/events`}
-                className="event-row"
-              >
-                <span className="identity" style={{ background: hueVar(club.hue) }} />
-                <div className="time-col">{item.when}</div>
-                <div className="grow">
-                  <span className="row-title">{item.title}</span>
-                  <span className="muted"> · {club.short}</span>
-                </div>
-                <div className="meta-col">{item.going}</div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-
-      {view === "activity" && (
-        <div className="need-list stack">
-          {needs.map((item) => {
-            const club = clubs.find((c) => c.slug === item.club)!;
-            return (
-              <Link key={item.title} href={item.href} className="need-item">
-                <span className="identity" style={{ background: hueVar(club.hue) }} />
-                <div className="grow">
-                  <div className="row-title">{item.title}</div>
-                  <div className="text-caption">
-                    {club.short} · {item.detail}
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-          {tasks.map((task) => {
-            const club = clubs.find((c) => c.slug === task.club)!;
-            return (
-              <Link
-                key={task.title}
-                href={`/clubs/${club.slug}/workspace`}
-                className="need-item"
-              >
-                <span className="identity" style={{ background: hueVar(club.hue) }} />
-                <div className="grow">
-                  <div className="row-title">{task.title}</div>
-                  <div className="text-caption">
-                    {club.short} · {task.origin}
-                  </div>
-                </div>
-                <div className="meta-col">{task.due}</div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      </section>
     </>
   );
 }

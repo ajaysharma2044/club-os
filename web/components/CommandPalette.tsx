@@ -6,7 +6,7 @@ import { channelLabel, channels } from "@/lib/chat";
 import { clubs } from "@/lib/data";
 
 const staticItems = [
-  { href: "/", label: "Dashboard", hint: "Home" },
+  { href: "/", label: "Home", hint: "What you owe" },
   { href: "/discover", label: "Discover", hint: "Campus" },
   { href: "/chat", label: "Chat", hint: "Inbox" },
   { href: "/you", label: "Your record", hint: "You" },

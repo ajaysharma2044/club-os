@@ -402,9 +402,27 @@ table,
   font-size: 13px;
 }
 
-.hero-need,
 .text-hero {
   display: none;
+}
+
+.hero-need {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 24px;
+  padding: 16px 18px 18px;
+  background: var(--paper);
+  border: 1px solid var(--tiara);
+  border-radius: var(--r);
+}
+
+.hero-need h2 {
+  margin: 0;
+}
+
+.hero-need .btn {
+  justify-self: start;
+  margin-top: 6px;
 }
 
 .section {
@@ -471,7 +489,7 @@ table,
   border: 1px solid var(--tiara);
   border-radius: var(--r);
   overflow: hidden;
-  min-height: 220px;
+  min-height: 0;
   box-shadow: 0 1px 2px rgba(45, 59, 69, 0.08);
 }
 
@@ -500,8 +518,9 @@ table,
 }
 
 .dash-body {
-  padding: 12px 14px 10px;
+  padding: 12px 14px 14px;
   flex: 1;
+  color: inherit;
 }
 
 .dash-body .role {
@@ -778,6 +797,8 @@ table,
 .need-item:focus-visible,
 .event-row:focus-visible,
 .dash-card:focus-visible,
+.dash-body:focus-visible,
+.dash-band:focus-visible,
 .input:focus-visible,
 .pal-item:focus-visible,
 .views button:focus-visible,

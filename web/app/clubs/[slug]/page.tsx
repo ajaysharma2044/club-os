@@ -29,27 +29,40 @@ export default async function ClubHome({
       <div className="page-title">
         <div>
           <p className="text-caption" style={{ margin: "0 0 6px" }}>
-            {club.category} · {club.members} members · your role is {club.role}
+            {club.category} · {club.members} members · {club.role}
           </p>
           <h1 className="text-title-1" style={{ fontSize: 28 }}>{club.name}</h1>
         </div>
         <div className="page-actions">
           <Link href={`/chat?c=${slug}`} className="btn">
-            Open chat
+            Text the group
           </Link>
-          <Link href={`/clubs/${slug}/events`} className="btn primary">
-            New event
-          </Link>
+          {!clubNeeds[0] && (
+            <Link href={`/clubs/${slug}/events`} className="btn primary">
+              New event
+            </Link>
+          )}
         </div>
       </div>
 
-      {clubNeeds.length > 0 && (
+      {clubNeeds[0] && (
+        <section className="hero-need" aria-label="You owe">
+          <p className="text-micro">You owe</p>
+          <h2 className="text-title-2">{clubNeeds[0].title}</h2>
+          <p className="text-caption">{clubNeeds[0].detail}</p>
+          <Link href={clubNeeds[0].href} className="btn primary">
+            Do this next
+          </Link>
+        </section>
+      )}
+
+      {clubNeeds.length > 1 && (
         <section className="section">
           <div className="section-head">
-            <h2 className="text-title-2">Needs you</h2>
+            <h2 className="text-title-2">Also open</h2>
           </div>
           <div className="need-list stack">
-            {clubNeeds.map((item) => (
+            {clubNeeds.slice(1).map((item) => (
               <Link key={item.title} href={item.href} className="need-item">
                 <span className="identity" style={{ background: hueVar(club.hue) }} />
                 <div className="grow">
