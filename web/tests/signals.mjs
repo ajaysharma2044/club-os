@@ -202,4 +202,43 @@ const tight = (await req("interviews/feasibility", { round_id: qs.id }, officer)
 ok(tight.schedulable === 0, `cap 0 means nothing is schedulable, got ${tight.schedulable}`);
 ok(/cap/i.test(tight.explanation), `explanation blames caps: "${tight.explanation}"`);
 
+// --- the screens are reachable and role-gated ------------------------------
+// The panels are client-hydrated, so asserting on server HTML would test the
+// wrong thing. Route reachability is covered in cec-pages.mjs; what matters
+// here is that the data each screen loads is correctly gated by role.
+for (const path of ["/clubs/cec/interviews", "/clubs/cec/signals"]) {
+  const r = await fetch(origin + path);
+  ok(r.status === 200, `${path} renders`);
+}
+const officerSees = await fetch(origin + "/api/cec/interviews/state", { headers: { Cookie: officer } });
+ok(officerSees.status === 200, "officers can load interview rounds");
+const memberBlocked = await fetch(origin + "/api/cec/interviews/state", { headers: { Cookie: finisher.cookie } });
+ok(memberBlocked.status === 403, "members cannot load interview rounds");
+const ownSignals = await fetch(origin + "/api/cec/behavior/self", { headers: { Cookie: finisher.cookie } });
+ok(ownSignals.status === 200, "members can load their own signals");
+
+// --- invite onboarding: one screen, no password, no application -----------
+const inv = (await req("invites/create", { label: "Fall members" }, officer)).data;
+ok(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(inv.code), `code is short and readable: ${inv.code}`);
+const look = (await req("invite?code=" + inv.code)).data;
+ok(look.valid === true, "a fresh invite is valid");
+ok(look.email_domain === "cornell.edu", "defaults to the Cornell domain");
+const joined = await fetch(origin + "/api/cec/invite/claim", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Origin: origin },
+  body: JSON.stringify({ code: inv.code, name: "Henrik Gombos", email: `hg-${suffix}@cornell.edu` }),
+});
+ok(joined.status === 200, "joining needs only a name and an email");
+const newCookie = joined.headers.get("set-cookie")?.split(";")[0] || "";
+ok(newCookie.startsWith("cec_session="), "joining signs you straight in");
+const who = (await req("state", undefined, newCookie)).data.user;
+ok(who.role === "member", `lands as a member, not an applicant: got ${who.role}`);
+const wrongDomain = await fetch(origin + "/api/cec/invite/claim", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Origin: origin },
+  body: JSON.stringify({ code: inv.code, name: "Outsider", email: "x@gmail.com" }),
+});
+ok(wrongDomain.status === 400, "a non-Cornell address is turned away");
+ok((await req("invite?code=ZZZZ-ZZZZ")).data.valid === false, "an unknown code is not valid");
+
 console.log(`${checks} signal-pipeline assertions passed.`);

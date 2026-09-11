@@ -15,6 +15,8 @@ import {
 } from "@phosphor-icons/react";
 import "./cec.css";
 import ProjectSuggestions from "./ProjectSuggestions";
+import InterviewRounds from "./InterviewRounds";
+import MySignals from "./MySignals";
 import ChatScheduler from "./ChatScheduler";
 import EpisodeRecord from "./EpisodeRecord";
 import AdaptiveIntake, { SharedAdaptiveProfiles } from "./AdaptiveIntake";
@@ -53,6 +55,8 @@ const navigation = [
   ["people", "People", Users],
   ["crm", "Relationships", Handshake],
   ["record", "The record", ChartLine],
+  ["interviews", "Interviews", Users],
+  ["signals", "My signals", ChartLine],
 ] as const;
 const empty = (text: string) => <div className="empty">{text}</div>;
 const tag = (v: string) => (
@@ -2515,6 +2519,22 @@ export function CECWorkspace({
                     : Auth()
                   : null}
             </>
+          ) : section === "interviews" ? (
+            isOfficer ? (
+              <InterviewRounds />
+            ) : user ? (
+              empty("Interview scheduling is available to officers.")
+            ) : (
+              Auth()
+            )
+          ) : section === "signals" ? (
+            isMember ? (
+              <MySignals />
+            ) : user ? (
+              empty("Your signals become available after membership approval.")
+            ) : (
+              Auth()
+            )
           ) : section === "directory" ? (
             Directory()
           ) : (

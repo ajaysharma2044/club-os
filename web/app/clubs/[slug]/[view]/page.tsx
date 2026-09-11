@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { CECWorkspace } from "@/components/cec/Workspace";
-const views = ["record", "intake", "schedule", "directory"];
+const views = ["record", "intake", "schedule", "directory", "interviews", "signals"];
 export default async function Page({
   params,
 }: {

@@ -22,6 +22,7 @@ import {
 import { opportunities, opportunityState } from "@/lib/cec/opportunities";
 import { outcomes } from "@/lib/cec/outcomes";
 import { behavior, behaviorState, registryLatest } from "@/lib/cec/signals";
+import { invites, inviteState, inviteInfo, claim } from "@/lib/cec/invites";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,6 +65,8 @@ export async function GET(
           },
         },
       );
+    if (path === "invite")
+      return response(inviteInfo(req.nextUrl.searchParams.get("code") || ""));
     if (path === "state") return response(state(u));
     if (path === "directory")
       return response({
@@ -151,6 +154,7 @@ export async function GET(
       return response(interviewState(u));
     }
     if (path === "behavior/self") return response(behaviorState(u));
+    if (path === "invites/state") return response(inviteState(u));
     if (path === "behavior/registry") return response({ rows: registryLatest(u) });
     if (path === "opportunities/state") return response(opportunityState(u));
     if (path === "evidence") return response(evidenceRead(u));
@@ -214,6 +218,18 @@ export async function POST(
     if (!b || typeof b !== "object" || Array.isArray(b))
       fail("JSON object required.");
     const path = (await params).path.join("/");
+    if (path === "invite/claim") {
+      const result = claim(b);
+      const r = response({ ok: true, name: result.name });
+      r.cookies.set("cec_session", result.token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 604800,
+      });
+      return r;
+    }
     if (path.startsWith("auth/")) {
       throttle("auth:global", 200);
       const action = path.slice(5);
@@ -244,6 +260,8 @@ export async function POST(
       interviewsInit();
       return response(interviews(u, path.slice(11), b));
     }
+    if (path.startsWith("invites/"))
+      return response(invites(u, path.slice(8), b));
     if (path.startsWith("opportunities/"))
       return response(opportunities(u, path.slice(14), b));
     if (path.startsWith("outcomes/"))

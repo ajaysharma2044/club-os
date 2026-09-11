@@ -32,6 +32,10 @@ for (const path of [
   "/clubs/cec/intake",
   "/clubs/cec/schedule",
   "/clubs/cec/directory",
+  "/clubs/cec/interviews",
+  "/clubs/cec/signals",
+  "/join/cec",
+  "/join/cec?i=NOPE-NOPE",
 ])
   await page(path);
 
@@ -46,6 +50,8 @@ for (const [legacy, current] of Object.entries({
   "/cec/intake": "/clubs/cec/intake",
   "/cec/schedule": "/clubs/cec/schedule",
   "/cec/directory": "/clubs/cec/directory",
+  "/cec/interviews": "/clubs/cec/interviews",
+  "/cec/signals": "/clubs/cec/signals",
 })) {
   const response = await page(legacy, 307);
   assert.equal(
