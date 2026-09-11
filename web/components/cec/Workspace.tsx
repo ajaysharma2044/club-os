@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { cecRoutes } from "@/lib/cec/routes";
 import { useEffect, useRef, useState, FormEvent, ReactNode } from "react";
 import {
   House,
@@ -222,12 +223,25 @@ function Editor({
     </form>
   );
 }
-export function CECWorkspace({ section }: { section: string }) {
+export function CECWorkspace({
+  section,
+  embedded = false,
+  initialTab = "",
+  personal = false,
+  initialChannel = "general",
+}: {
+  section: string;
+  embedded?: boolean;
+  initialTab?: string;
+  personal?: boolean;
+  initialChannel?: string;
+}) {
+  const Content = embedded ? "section" : "main";
   const [data, setData] = useState<any>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
-    [tab, setTab] = useState(""),
+    [tab, setTab] = useState(initialTab),
     [query, setQuery] = useState("");
   const [dialog, setDialog] = useState<{
     title: string;
@@ -238,7 +252,11 @@ export function CECWorkspace({ section }: { section: string }) {
   const [insight, setInsight] = useState<any>(null),
     [directory, setDirectory] = useState<any>(null),
     [authMode, setAuthMode] = useState("login");
-  const [channel, setChannel] = useState("general"),
+  const [channel, setChannel] = useState(
+      ["general", "events", "builders"].includes(initialChannel)
+        ? initialChannel
+        : "general",
+    ),
     [message, setMessage] = useState("");
   const user = data?.user,
     isOfficer = user?.role === "officer",
@@ -252,22 +270,70 @@ export function CECWorkspace({ section }: { section: string }) {
           JSON.stringify(r.data).toLowerCase().includes(query.toLowerCase())),
     );
   const people: any[] = data?.people || [];
+  const loadSequence = useRef(0);
   async function load() {
-    const r = await fetch("/api/cec/state", { cache: "no-store" });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error);
-    setData(j);
+    const current = ++loadSequence.current;
+    try {
+      const r = await fetch("/api/cec/state", { cache: "no-store" });
+      if (!r.ok)
+        throw new Error("Unable to load the club workspace. Please try again.");
+      const j = await r.json();
+      if (current !== loadSequence.current) return;
+      setData(j);
+      setError("");
+      if (section === "directory") {
+        const response = await fetch("/api/cec/directory", {
+          cache: "no-store",
+        });
+        if (!response.ok)
+          throw new Error("Unable to load the shared directory.");
+        const shared = await response.json();
+        if (current === loadSequence.current) setDirectory(shared);
+      }
+    } catch (e) {
+      if (current !== loadSequence.current) return;
+      setData(null);
+      setDirectory(null);
+      throw e;
+    }
   }
   useEffect(() => {
-    setTab("");
+    setChannel(
+      ["general", "events", "builders"].includes(initialChannel)
+        ? initialChannel
+        : "general",
+    );
+    setMessage("");
+  }, [initialChannel]);
+  useEffect(() => {
+    setTab(initialTab);
     setQuery("");
     load().catch((e) => setError(e.message));
-    if (section === "directory")
-      fetch("/api/cec/directory")
-        .then((r) => r.json())
-        .then(setDirectory)
-        .catch(() => setError("Unable to load directory."));
+  }, [section, initialTab]);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible")
+        load().catch((e) => setError(e.message));
+    };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("cec:changed", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const timer =
+      section === "work" ? window.setInterval(refresh, 15000) : null;
+    return () => {
+      loadSequence.current++;
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("cec:changed", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      if (timer) clearInterval(timer);
+    };
   }, [section]);
+  useEffect(() => {
+    setDialog(null);
+    setInsight(null);
+    setMessage("");
+    setNotice("");
+  }, [user?.id]);
   async function action(path: string, body: any) {
     setBusy(true);
     setError("");
@@ -280,6 +346,7 @@ export function CECWorkspace({ section }: { section: string }) {
       });
       const result = await r.json();
       if (!r.ok) throw new Error(result.error || "Unable to save.");
+      window.dispatchEvent(new Event("cec:changed"));
       await load();
       return result;
     } catch (e: any) {
@@ -607,7 +674,7 @@ export function CECWorkspace({ section }: { section: string }) {
   }
   function login() {
     setAuthMode("login");
-    window.location.href = "/cec/account";
+    window.location.href = cecRoutes.account;
   }
   const titles: Record<string, string> = {
     home: "Your club, in motion.",
@@ -740,7 +807,7 @@ export function CECWorkspace({ section }: { section: string }) {
       <>
         {user && (
           <div className="notice">
-            <Link href="/cec/intake" className="link">
+            <Link href={cecRoutes.intake} className="link">
               Update what you are building and what help you need →
             </Link>
             <p>
@@ -753,7 +820,7 @@ export function CECWorkspace({ section }: { section: string }) {
           <div className="notice">
             A working CEC workspace. Sign in to RSVP, apply, and book a coffee
             chat.{" "}
-            <Link className="link" href="/cec/account">
+            <Link className="link" href={cecRoutes.account}>
               Sign in →
             </Link>
           </div>
@@ -795,7 +862,7 @@ export function CECWorkspace({ section }: { section: string }) {
             <div className="panel">
               <div className="panel-head">
                 <h2>On the calendar</h2>
-                <Link href="/cec/events">
+                <Link href={cecRoutes.events}>
                   All events <ArrowUpRight />
                 </Link>
               </div>
@@ -808,7 +875,7 @@ export function CECWorkspace({ section }: { section: string }) {
             <div className="panel">
               <div className="panel-head">
                 <h2>Commitments</h2>
-                <Link href="/cec/work">Open workspace →</Link>
+                <Link href={cecRoutes.work}>Open workspace →</Link>
               </div>
               {list("task")
                 .filter(
@@ -851,7 +918,7 @@ export function CECWorkspace({ section }: { section: string }) {
               <div className="resource">
                 <strong>Recruitment tracks</strong>
                 <p className="muted">Events · Media · Generalist</p>
-                <Link className="link" href="/cec/people">
+                <Link className="link" href={cecRoutes.people}>
                   Explore recruitment →
                 </Link>
               </div>
@@ -1072,6 +1139,7 @@ export function CECWorkspace({ section }: { section: string }) {
   }
   function Work() {
     const current = tab || "Tasks";
+    if (!user) return Auth();
     return (
       <>
         <Tabs
@@ -2178,10 +2246,17 @@ export function CECWorkspace({ section }: { section: string }) {
             }}
           />
           <div className="actions" style={{ marginTop: 22 }}>
+            <button
+              className="button secondary"
+              disabled={busy}
+              onClick={() => run("auth/logout", {})}
+            >
+              <SignOut size={18} /> Sign out
+            </button>
             <a href="/api/cec/export" className="button secondary">
               Export accessible record
             </a>
-            <Link className="link" href="/cec/directory">
+            <Link className="link" href={cecRoutes.directory}>
               View directory ↗
             </Link>
           </div>
@@ -2198,7 +2273,7 @@ export function CECWorkspace({ section }: { section: string }) {
               [
                 "Google Docs",
                 "Link documents. Source permissions still apply.",
-                "/cec/work",
+                cecRoutes.work,
               ],
             ].map(([name, detail, href]) => (
               <div className="row" key={name}>
@@ -2295,51 +2370,53 @@ export function CECWorkspace({ section }: { section: string }) {
     );
   }
   return (
-    <div className="cec">
-      <aside className="rail">
-        <Link href="/cec" className="brand">
-          <span className="monogram">C</span> Club OS
-        </Link>
-        <div className="club-label">
-          <div className="eyebrow">Cornell University</div>
-          <strong>
-            Entrepreneurship
-            <br />
-            Club
-          </strong>
-        </div>
-        <nav aria-label="Club workspace">
-          {navigation.map(([key, label, Icon]) => (
-            <Link
-              key={key}
-              href={"/cec/" + (key === "home" ? "" : key)}
-              className={section === key ? "active" : ""}
-            >
-              <Icon size={19} />
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <div className="rail-foot">
-          <strong style={{ fontSize: 14 }}>
-            {user?.name || "Welcome to CEC"}
-          </strong>
-          <small>{user?.role || "Explore the community"}</small>
-          <Link href="/cec/account" className="link">
-            {user ? "Account & connections" : "Sign in"}
+    <div className={embedded ? "cec embedded" : "cec"}>
+      {!embedded && (
+        <aside className="rail">
+          <Link href={cecRoutes.home} className="brand">
+            <span className="monogram">C</span> Club OS
           </Link>
-        </div>
-      </aside>
+          <div className="club-label">
+            <div className="eyebrow">Cornell University</div>
+            <strong>
+              Entrepreneurship
+              <br />
+              Club
+            </strong>
+          </div>
+          <nav aria-label="Club workspace">
+            {navigation.map(([key, label, Icon]) => (
+              <Link
+                key={key}
+                href={cecRoutes[key] || cecRoutes.home}
+                className={section === key ? "active" : ""}
+              >
+                <Icon size={19} />
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <div className="rail-foot">
+            <strong style={{ fontSize: 14 }}>
+              {user?.name || "Welcome to CEC"}
+            </strong>
+            <small>{user?.role || "Explore the community"}</small>
+            <Link href={cecRoutes.account} className="link">
+              {user ? "Account & connections" : "Sign in"}
+            </Link>
+          </div>
+        </aside>
+      )}
       <div className="surface">
         <header className="topbar">
           <div>
             CEC <span>/ {titles[section] || "Workspace"}</span>
           </div>
           <div className="actions">
-            <Link href="/cec/account" className="link">
+            <Link href={cecRoutes.account} className="link">
               {user ? "Account" : "Sign in"}
             </Link>
-            <Link href="/cec/directory" className="link">
+            <Link href={cecRoutes.directory} className="link">
               Builder directory
             </Link>
             {user && (
@@ -2353,7 +2430,10 @@ export function CECWorkspace({ section }: { section: string }) {
             )}
           </div>
         </header>
-        <main className="main-area">
+        <Content
+          className="main-area"
+          key={`${user?.id || "guest"}:${user?.role || "visitor"}`}
+        >
           <div className="page-head">
             <div>
               <div className="eyebrow">Cornell Entrepreneurship Club</div>
@@ -2378,7 +2458,20 @@ export function CECWorkspace({ section }: { section: string }) {
             </div>
           )}
           {!data ? (
-            empty("Loading the workspace…")
+            error ? (
+              <button
+                className="button"
+                onClick={() =>
+                  load()
+                    .then(() => setError(""))
+                    .catch((e) => setError(e.message))
+                }
+              >
+                Try again
+              </button>
+            ) : (
+              empty("Loading the workspace…")
+            )
           ) : section === "intake" ? (
             user ? (
               <AdaptiveIntake key={user.id} />
@@ -2388,6 +2481,8 @@ export function CECWorkspace({ section }: { section: string }) {
           ) : section === "schedule" ? (
             isMember ? (
               <ChatScheduler people={people} userId={user.id} />
+            ) : user ? (
+              empty("Meetings are available after membership approval.")
             ) : (
               Auth()
             )
@@ -2404,12 +2499,20 @@ export function CECWorkspace({ section }: { section: string }) {
           ) : section === "record" ? (
             <>
               {isMember && (
-                <EpisodeRecord userId={user.id} officer={isOfficer} />
+                <EpisodeRecord
+                  userId={user.id}
+                  officer={isOfficer}
+                  personalOnly={personal}
+                />
               )}
-              {isOfficer
+              {isOfficer && !personal
                 ? Record()
                 : !isMember
-                  ? empty("Sign in as a club member to view the record.")
+                  ? user
+                    ? empty(
+                        "Your work record becomes available after membership approval.",
+                      )
+                    : Auth()
                   : null}
             </>
           ) : section === "directory" ? (
@@ -2417,9 +2520,17 @@ export function CECWorkspace({ section }: { section: string }) {
           ) : (
             Account()
           )}
-          {isMember && (
+          {embedded && (
+            <nav className="connected-links" aria-label="CEC shortcuts">
+              <Link href={cecRoutes.record}>The record</Link>
+              <Link href={cecRoutes.schedule}>Meetings & calendar</Link>
+              <Link href={cecRoutes.intake}>Weekly update</Link>
+              <Link href={cecRoutes.directory}>Shared projects</Link>
+            </nav>
+          )}
+          {!embedded && isMember && (
             <p>
-              <Link className="link" href="/cec/schedule">
+              <Link className="link" href={cecRoutes.schedule}>
                 Meetings & calendar subscription →
               </Link>
             </p>
@@ -2428,7 +2539,7 @@ export function CECWorkspace({ section }: { section: string }) {
             Club OS · Cornell Entrepreneurship Club pilot · Event times shown in
             Eastern Time
           </div>
-        </main>
+        </Content>
       </div>
       {dialog && (
         <Modal title={dialog.title} close={() => setDialog(null)}>

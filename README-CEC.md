@@ -1,7 +1,10 @@
 # Club OS — connected Cornell Entrepreneurship Club workspace
 
-This extends the Next.js application with a server-backed CEC workspace at `/cec`.
-Existing dashboard and `/clubs/...` routes remain intact. Open `/cec` for the connected workspace.
+The CEC backend is integrated into the main Next.js frontend at `/clubs/cec`.
+Home, Inbox, Discover, Join, and You use real CEC account and club data. Events,
+Workspace, People, Money, and Settings open inside the shared club layout.
+Old `/cec/*` links redirect to their corresponding screens. Other clubs remain
+explicitly labeled demos. See [frontend routes and runtime](web/README.md).
 See [Cornell research](docs/cornell-research.md) for sources and factual boundaries.
 See [adaptive workflows and evidence](docs/adaptive-workflows-and-evidence.md) for the
 weekly intake policy, chat scheduling, personal calendar subscriptions, episode schema,
@@ -10,9 +13,9 @@ feature math and current limits.
 ## Working workflows
 
 - Weekly adaptive check-ins, confirmed background context, answer history, freshness,
-  separate officer-sharing consent, and personal removal controls at `/cec/intake`.
+  separate officer-sharing consent, and personal removal controls at `/clubs/cec/intake`.
 - Selected chat messages → editable meeting proposal → confirmation → invitations.
-  Accept/cancel meetings and manage a private calendar subscription at `/cec/schedule`.
+  Accept/cancel meetings and manage a private calendar subscription at `/clubs/cec/schedule`.
 - Episode evidence for task/project/event/meeting actions, blocker reporting and
   resolution, reported outcomes, visible correction history and dated feature snapshots.
 - Password accounts, expiring HttpOnly sessions, officer/member/applicant permissions.
@@ -45,7 +48,7 @@ node scripts/cec-init.mjs
 npm run dev
 ```
 
-Open `http://localhost:3000/cec/account`, choose **Officer setup**, and supply the
+Open `http://localhost:3000/clubs/cec/settings`, choose **Officer setup**, and supply the
 random setup key from `web/.env.local`. This creates the initial officer. No hardcoded
 user, password, roster or real event exists. Do not share or commit the setup key.
 Future participants register normally and can apply for membership.
@@ -70,7 +73,8 @@ point `tests/cec-api.mjs` at real club data. It tests access control, private re
 notes, RSVP capacity, real quant delivery, task approval, booking conflicts, form
 validation, sharing revocation, CSRF, calendar output, adaptive question selection,
 weekly rollover, subscription revocation, episode evidence, corrections, snapshots
-and logout. All fixture people and data are synthetic.
+and logout. It also checks connected page rendering, old-link redirects and the
+CEC-only route boundary. All fixture people and data are synthetic.
 
 ## Architecture and storage
 

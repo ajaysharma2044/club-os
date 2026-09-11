@@ -1,5 +1,4 @@
-import { Dashboard } from "@/components/Dashboard";
-
-export default function DashboardPage() {
-  return <Dashboard />;
+import { ConnectedDashboard } from "@/components/cec/ConnectedDashboard";
+export default function Page() {
+  return <ConnectedDashboard />;
 }

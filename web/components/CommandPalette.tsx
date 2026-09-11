@@ -6,20 +6,38 @@ import { channelLabel, channels } from "@/lib/chat";
 import { clubs } from "@/lib/data";
 
 const staticItems = [
-  { href: "/", label: "Home", hint: "What you owe" },
-  { href: "/discover", label: "Discover", hint: "Campus" },
-  { href: "/join", label: "Join a club", hint: "Start" },
-  { href: "/join", label: "Onboarding", hint: "Start" },
-  { href: "/join", label: "Show up", hint: "Join" },
-  { href: "/chat", label: "Chat", hint: "Inbox" },
-  { href: "/you", label: "Your record", hint: "You" },
-  { href: "/you#calendar", label: "Calendar", hint: "Subscribe" },
-  { href: "/you#calendar", label: "Subscribe", hint: "Your calendar" },
-  { href: "/you#calendar", label: "Add to Google", hint: "Your calendar" },
-  { href: "/clubs/baja/settings#integrations", label: "Integrations", hint: "Baja" },
-  { href: "/clubs/baja/settings?integration=stripe", label: "Stripe", hint: "Baja" },
-  { href: "/clubs/baja/settings?integration=drive", label: "Drive import", hint: "Baja" },
-  { href: "/clubs/baja/settings?integration=calendar", label: "Club calendar", hint: "Baja" },
+  { href: "/", label: "Home", hint: "Your work" },
+  {
+    href: "/clubs/cec",
+    label: "Cornell Entrepreneurship Club",
+    hint: "Workspace",
+  },
+  { href: "/clubs/cec/events", label: "CEC events and RSVPs", hint: "Events" },
+  {
+    href: "/clubs/cec/workspace",
+    label: "CEC tasks, projects and forms",
+    hint: "Workspace",
+  },
+  {
+    href: "/clubs/cec/people",
+    label: "CEC applications and coffee chats",
+    hint: "People",
+  },
+  { href: "/chat", label: "CEC chat", hint: "Inbox" },
+  { href: "/you?view=record", label: "Your record", hint: "Evidence" },
+  { href: "/you?view=intake", label: "Weekly update", hint: "Your context" },
+  {
+    href: "/you?view=schedule",
+    label: "Calendar and meeting invitations",
+    hint: "Subscribe",
+  },
+  { href: "/you", label: "Account and sign in", hint: "Account" },
+  {
+    href: "/clubs/cec/money",
+    label: "CEC sponsorships and money",
+    hint: "Officers",
+  },
+  { href: "/discover", label: "Discover clubs", hint: "Campus" },
 ];
 
 export function CommandPalette() {
@@ -31,27 +49,66 @@ export function CommandPalette() {
   const items = useMemo(() => {
     const clubItems = clubs.flatMap((c) => [
       { href: `/clubs/${c.slug}`, label: c.name, hint: "Home" },
-      { href: `/clubs/${c.slug}/events`, label: `${c.short} · Events`, hint: "Events" },
-      { href: `/clubs/${c.slug}/people`, label: `${c.short} · People`, hint: "Roster" },
-      { href: `/clubs/${c.slug}/money`, label: `${c.short} · Money`, hint: "Ledger" },
-      { href: `/clubs/${c.slug}/settings`, label: `${c.short} · Settings`, hint: "Settings" },
-      { href: `/clubs/${c.slug}/settings#integrations`, label: `${c.short} · Integrations`, hint: "Settings" },
-      { href: `/clubs/${c.slug}/settings?integration=stripe`, label: `${c.short} · Stripe`, hint: "Money" },
-      { href: `/clubs/${c.slug}/settings?integration=calendar`, label: `${c.short} · Club calendar`, hint: "Settings" },
-      { href: `/clubs/${c.slug}/events`, label: `${c.short} · Add to calendar`, hint: "Events" },
+      {
+        href: `/clubs/${c.slug}/events`,
+        label: `${c.short} · Events`,
+        hint: "Events",
+      },
+      {
+        href: `/clubs/${c.slug}/people`,
+        label: `${c.short} · People`,
+        hint: "Roster",
+      },
+      {
+        href: `/clubs/${c.slug}/money`,
+        label: `${c.short} · Money`,
+        hint: "Ledger",
+      },
+      {
+        href: `/clubs/${c.slug}/settings`,
+        label: `${c.short} · Settings`,
+        hint: "Settings",
+      },
+      {
+        href: `/clubs/${c.slug}/settings#integrations`,
+        label: `${c.short} · Integrations`,
+        hint: "Settings",
+      },
+      {
+        href: `/clubs/${c.slug}/settings?integration=stripe`,
+        label: `${c.short} · Stripe`,
+        hint: "Money",
+      },
+      {
+        href: `/clubs/${c.slug}/settings?integration=calendar`,
+        label: `${c.short} · Club calendar`,
+        hint: "Settings",
+      },
+      {
+        href: `/clubs/${c.slug}/events`,
+        label: `${c.short} · Add to calendar`,
+        hint: "Events",
+      },
       { href: `/chat?c=${c.slug}`, label: `${c.short} · Chat`, hint: "Inbox" },
     ]);
     const chatItems = channels.map((ch) => {
       const club = clubs.find((c) => c.slug === ch.club);
       return {
         href: `/chat?c=${ch.id}`,
-        label: ch.kind === "dm" ? ch.name : `${club?.short ?? ch.club} ${channelLabel(ch)}`,
+        label:
+          ch.kind === "dm"
+            ? ch.name
+            : `${club?.short ?? ch.club} ${channelLabel(ch)}`,
         hint: "Inbox",
       };
     });
-    const all = [...staticItems, ...clubItems, ...chatItems];
+    const all = [
+      ...staticItems,
+      ...clubItems.map((i) => ({ ...i, hint: "Example club" })),
+      ...chatItems.map((i) => ({ ...i, hint: "Example inbox" })),
+    ];
     const needle = q.trim().toLowerCase();
-            if (!needle) return all.slice(0, 8);
+    if (!needle) return all.slice(0, 8);
     return all
       .filter((i) => `${i.label} ${i.hint}`.toLowerCase().includes(needle))
       .slice(0, 8);
