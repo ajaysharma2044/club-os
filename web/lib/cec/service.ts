@@ -1,5 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import {
+  captureItem,
+  captureTask,
+  capturePresence,
+  evidenceInit,
+} from "./evidence";
+import {
   db,
   tx,
   User,
@@ -207,6 +213,7 @@ export function state(u: User | null) {
   };
 }
 export function mutate(u: User, action: string, b: any) {
+  evidenceInit();
   return tx(() => {
     if (action === "create" || action === "update") {
       const previous = action === "update" ? item(text(b.id)) : undefined;
@@ -218,6 +225,20 @@ export function mutate(u: User, action: string, b: any) {
       }
       if (!b.data || typeof b.data !== "object") fail("Missing fields.");
       const data = entity(u, kind, b.data, previous);
+      if (kind === "task") {
+        if (!previous && data.status !== "assigned")
+          fail("New tasks start as assigned.");
+        if (previous && data.status !== previous.data.status)
+          fail("Use the task transition controls to change status.");
+        if (previous && data.project_id !== previous.data.project_id)
+          fail("A task retains its original project and evidence episode.");
+        if (
+          previous &&
+          data.assignee !== previous.data.assignee &&
+          previous.data.status !== "assigned"
+        )
+          fail("Cancel accepted work before assigning a replacement task.");
+      }
       if (
         previous &&
         kind === "project" &&
@@ -262,10 +283,11 @@ export function mutate(u: User, action: string, b: any) {
           .run(JSON.stringify(data), timestamp(), previous.id);
       }
       const r = previous ? item(previous.id) : createItem(u, kind, data);
-      audit(u, kind + "." + action, r.id, {
+      const sourceKey = audit(u, kind + "." + action, r.id, {
         version: r.version,
         state: r.data,
       });
+      captureItem(u, r, sourceKey, previous);
       publishRecord(u, r);
       return { id: r.id };
     }
@@ -274,6 +296,14 @@ export function mutate(u: User, action: string, b: any) {
       const r = item(text(b.id), "task");
       if (r.data.assignee !== u.id) officer(u);
       const target = text(b.status);
+      if (target === "submitted" && r.data.assignee !== u.id)
+        fail("Only the assignee can submit their work.", 403);
+      if (
+        r.data.status === "assigned" &&
+        target === "accepted" &&
+        r.data.assignee !== u.id
+      )
+        fail("Only the assignee can accept a commitment.", 403);
       const flow: Record<string, string[]> = {
         assigned: ["accepted", "cancelled"],
         accepted: ["submitted", "cancelled"],
@@ -290,7 +320,8 @@ export function mutate(u: User, action: string, b: any) {
           "UPDATE items SET data=?,updated_at=?,version=version+1 WHERE id=?",
         )
         .run(JSON.stringify(data), timestamp(), r.id);
-      audit(u, "task." + target, r.id);
+      const sourceKey = audit(u, "task." + target, r.id);
+      captureTask(u, item(r.id), r.data.status, sourceKey);
       publishRecord(u, item(r.id));
       return {};
     }
@@ -320,7 +351,9 @@ export function mutate(u: User, action: string, b: any) {
           "INSERT INTO rsvps(event_id,user_id,status,created_at) VALUES (?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET status=excluded.status",
         )
         .run(e.id, u.id, status, timestamp());
-      audit(u, "event.rsvp", e.id, { status });
+      const sourceKey = audit(u, "event.rsvp", e.id, { status });
+      if (existing?.status !== status)
+        capturePresence(u, e.id, u.id, status, false, sourceKey);
       emit(u, "rsvp", u.id, e.id, { status });
       return { status };
     }
@@ -341,7 +374,11 @@ export function mutate(u: User, action: string, b: any) {
       db()
         .prepare("UPDATE rsvps SET attendance=? WHERE event_id=? AND user_id=?")
         .run(b.status, e.id, uid);
-      audit(u, "event.attendance", e.id, { subject: uid, status: b.status });
+      const sourceKey = audit(u, "event.attendance", e.id, {
+        subject: uid,
+        status: b.status,
+      });
+      capturePresence(u, e.id, uid, b.status, true, sourceKey);
       emit(u, "attendance", uid, e.id, { status: b.status, method: "officer" });
       return {};
     }

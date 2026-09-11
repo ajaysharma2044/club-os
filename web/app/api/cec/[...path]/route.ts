@@ -10,6 +10,9 @@ import {
   hash,
 } from "@/lib/cec/db";
 import { auth, state, mutate } from "@/lib/cec/service";
+import { schedule, scheduleState, calendarFeed } from "@/lib/cec/scheduling";
+import { adaptive, adaptiveRead } from "@/lib/cec/adaptive";
+import { evidenceRead, evidenceAction } from "@/lib/cec/evidence";
 import { recommendations } from "@/lib/cec/recommendations";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
@@ -42,6 +45,17 @@ export async function GET(
   try {
     const path = (await params).path.join("/");
     const u = principal(req);
+    if (path === "calendar/feed")
+      return new NextResponse(
+        calendarFeed(req.nextUrl.searchParams.get("token") || ""),
+        {
+          headers: {
+            "Content-Type": "text/calendar; charset=utf-8",
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+          },
+        },
+      );
     if (path === "state") return response(state(u));
     if (path === "directory")
       return response({
@@ -123,8 +137,18 @@ export async function GET(
       });
     }
     if (!u) fail("Sign in to continue.", 401);
+    if (path === "schedule/state") return response(scheduleState(u));
+    if (path === "evidence") return response(evidenceRead(u));
+    if (path.startsWith("adaptive/"))
+      return response(adaptiveRead(u, path.slice(9)));
     if (path === "export") {
-      const data = state(u);
+      const data = {
+        ...state(u),
+        adaptive: adaptiveRead(u, "me"),
+        ...(u.role !== "applicant"
+          ? { schedule: scheduleState(u), evidence: evidenceRead(u) }
+          : {}),
+      };
       return new NextResponse(JSON.stringify(data, null, 2), {
         headers: {
           "Content-Type": "application/json",
@@ -201,6 +225,12 @@ export async function POST(
     const u = principal(req);
     if (!u) fail("Sign in to continue.", 401);
     throttle("mutate:" + u.id, 500);
+    if (path.startsWith("schedule/"))
+      return response(schedule(u, path.slice(9), b));
+    if (path.startsWith("evidence/"))
+      return response(evidenceAction(u, path.slice(9), b));
+    if (path.startsWith("adaptive/"))
+      return response(adaptive(u, path.slice(9), b));
     if (path.startsWith("recommendations/"))
       return response(recommendations(u, path.slice(16), b));
     if (path === "quant/retry") {

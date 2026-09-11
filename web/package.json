@@ -9,6 +9,7 @@
   "dependencies": {
     "@fontsource/commit-mono": "^5.2.5",
     "@phosphor-icons/react": "^2.1.10",
+    "chrono-node": "^2.10.1",
     "next": "^15.5.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
