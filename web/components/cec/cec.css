@@ -627,3 +627,56 @@
     flex-wrap: wrap;
   }
 }
+
+.cec .adaptive {
+  max-width: 980px;
+}
+.cec .adaptive label {
+  display: block;
+  margin: 12px 0;
+  font-size: 14px;
+}
+.cec .adaptive textarea,
+.cec .adaptive select,
+.cec .adaptive input[type="url"] {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin-top: 6px;
+  border: 1px solid #d8d8d8;
+  border-radius: 6px;
+  background: white;
+  font: inherit;
+  color: #222;
+}
+.cec .adaptive textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.cec .adaptive fieldset {
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.cec .adaptive .adaptive-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.cec .adaptive details {
+  margin-top: 20px;
+  font-size: 13px;
+}
+.cec .adaptive summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.cec .adaptive .actions {
+  flex-wrap: wrap;
+}
+.cec .adaptive input[type="checkbox"],
+.cec .adaptive input[type="radio"] {
+  accent-color: #b31b1b;
+  flex-shrink: 0;
+}

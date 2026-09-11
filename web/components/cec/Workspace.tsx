@@ -14,6 +14,9 @@ import {
 } from "@phosphor-icons/react";
 import "./cec.css";
 import ProjectSuggestions from "./ProjectSuggestions";
+import ChatScheduler from "./ChatScheduler";
+import EpisodeRecord from "./EpisodeRecord";
+import AdaptiveIntake, { SharedAdaptiveProfiles } from "./AdaptiveIntake";
 
 type Row = {
   id: string;
@@ -615,6 +618,8 @@ export function CECWorkspace({ section }: { section: string }) {
     record: "The club record",
     account: "Your account",
     directory: "Builder directory",
+    intake: "Your weekly update",
+    schedule: "Your meetings",
   };
   const subtitles: Record<string, string> = {
     home: "The work, people, and decisions that move CEC forward.",
@@ -625,6 +630,8 @@ export function CECWorkspace({ section }: { section: string }) {
     record: "Understand what happened—and the evidence behind it.",
     account: "Your identity, interests, and sharing preferences.",
     directory: "Projects and profiles that members have chosen to share.",
+    intake: "Confirm your context. Answer what is useful next.",
+    schedule: "Confirmed plans, invitations, and your personal calendar feed.",
   };
   function Auth() {
     return (
@@ -731,6 +738,16 @@ export function CECWorkspace({ section }: { section: string }) {
   function Home() {
     return (
       <>
+        {user && (
+          <div className="notice">
+            <Link href="/cec/intake" className="link">
+              Update what you are building and what help you need →
+            </Link>
+            <p>
+              Up to three optional questions. Review and control what you share.
+            </p>
+          </div>
+        )}
         {isMember && <ProjectSuggestions key={user.id} />}
         {!user && (
           <div className="notice">
@@ -1094,7 +1111,7 @@ export function CECWorkspace({ section }: { section: string }) {
                     </div>
                     {tag(r.data.status)}
                     <div className="actions">
-                      {(isOfficer || r.data.assignee === user.id) &&
+                      {r.data.assignee === user.id &&
                         r.data.status === "assigned" &&
                         button(
                           "Accept",
@@ -1105,7 +1122,7 @@ export function CECWorkspace({ section }: { section: string }) {
                             }),
                           true,
                         )}
-                      {(isOfficer || r.data.assignee === user.id) &&
+                      {r.data.assignee === user.id &&
                         r.data.status === "accepted" &&
                         button("Submit", () =>
                           run("task.status", { id: r.id, status: "submitted" }),
@@ -1114,6 +1131,66 @@ export function CECWorkspace({ section }: { section: string }) {
                         r.data.status === "submitted" &&
                         button("Approve", () =>
                           run("task.status", { id: r.id, status: "completed" }),
+                        )}
+                      {(isOfficer || r.data.assignee === user.id) &&
+                        ["accepted", "submitted"].includes(r.data.status) &&
+                        button(
+                          "Blocked",
+                          () =>
+                            show(
+                              "What is blocking this task?",
+                              [
+                                {
+                                  key: "category",
+                                  label: "Blocker",
+                                  options: fieldsFrom([
+                                    "waiting_on_person",
+                                    "waiting_on_external_partner",
+                                    "need_information",
+                                    "need_approval",
+                                    "need_resources",
+                                    "scope_unclear",
+                                    "technical_issue",
+                                    "time_constraint",
+                                    "other",
+                                  ]),
+                                },
+                                {
+                                  key: "note",
+                                  label: "What help is needed?",
+                                  type: "textarea",
+                                },
+                              ],
+                              async (d) => {
+                                await action("evidence/block", {
+                                  task_id: r.id,
+                                  ...d,
+                                });
+                              },
+                            ),
+                          true,
+                        )}
+                      {isOfficer &&
+                        r.data.status === "submitted" &&
+                        button(
+                          "Request revision",
+                          () =>
+                            run("task.status", {
+                              id: r.id,
+                              status: "accepted",
+                            }),
+                          true,
+                        )}
+                      {isOfficer &&
+                        !["completed", "cancelled"].includes(r.data.status) &&
+                        button(
+                          "Cancel",
+                          () =>
+                            run("task.status", {
+                              id: r.id,
+                              status: "cancelled",
+                            }),
+                          true,
                         )}
                     </div>
                   </div>
@@ -1445,6 +1522,14 @@ export function CECWorkspace({ section }: { section: string }) {
                     ))}
                   </select>
                 </div>
+                <ChatScheduler
+                  key={channel}
+                  messages={(data.messages || []).filter(
+                    (m: any) => m.channel === channel,
+                  )}
+                  people={people}
+                  userId={user.id}
+                />
                 <div className="thread">
                   {(data.messages || [])
                     .filter((m: any) => m.channel === channel)
@@ -1501,6 +1586,7 @@ export function CECWorkspace({ section }: { section: string }) {
           values={[
             "Recruitment",
             "Coffee chats",
+            ...(isOfficer ? ["Weekly context"] : []),
             ...(isMember ? ["Roster"] : []),
             "Forms",
           ]}
@@ -1636,6 +1722,9 @@ export function CECWorkspace({ section }: { section: string }) {
               </p>
             </div>
           ))}
+        {current === "Weekly context" && isOfficer && (
+          <SharedAdaptiveProfiles />
+        )}
         {current === "Coffee chats" && (
           <div className="panel">
             <div className="panel-head">
@@ -2247,7 +2336,9 @@ export function CECWorkspace({ section }: { section: string }) {
             CEC <span>/ {titles[section] || "Workspace"}</span>
           </div>
           <div className="actions">
-            <Link href="/cec/account" className="link">{user ? "Account" : "Sign in"}</Link>
+            <Link href="/cec/account" className="link">
+              {user ? "Account" : "Sign in"}
+            </Link>
             <Link href="/cec/directory" className="link">
               Builder directory
             </Link>
@@ -2286,23 +2377,53 @@ export function CECWorkspace({ section }: { section: string }) {
               {notice}
             </div>
           )}
-          {!data
-            ? empty("Loading the workspace…")
-            : section === "home"
-              ? Home()
-              : section === "events"
-                ? Events()
-                : section === "work"
-                  ? Work()
-                  : section === "people"
-                    ? People()
-                    : section === "crm"
-                      ? CRM()
-                      : section === "record"
-                        ? Record()
-                        : section === "directory"
-                          ? Directory()
-                          : Account()}
+          {!data ? (
+            empty("Loading the workspace…")
+          ) : section === "intake" ? (
+            user ? (
+              <AdaptiveIntake key={user.id} />
+            ) : (
+              Auth()
+            )
+          ) : section === "schedule" ? (
+            isMember ? (
+              <ChatScheduler people={people} userId={user.id} />
+            ) : (
+              Auth()
+            )
+          ) : section === "home" ? (
+            Home()
+          ) : section === "events" ? (
+            Events()
+          ) : section === "work" ? (
+            Work()
+          ) : section === "people" ? (
+            People()
+          ) : section === "crm" ? (
+            CRM()
+          ) : section === "record" ? (
+            <>
+              {isMember && (
+                <EpisodeRecord userId={user.id} officer={isOfficer} />
+              )}
+              {isOfficer
+                ? Record()
+                : !isMember
+                  ? empty("Sign in as a club member to view the record.")
+                  : null}
+            </>
+          ) : section === "directory" ? (
+            Directory()
+          ) : (
+            Account()
+          )}
+          {isMember && (
+            <p>
+              <Link className="link" href="/cec/schedule">
+                Meetings & calendar subscription →
+              </Link>
+            </p>
+          )}
           <div className="footer-note">
             Club OS · Cornell Entrepreneurship Club pilot · Event times shown in
             Eastern Time
