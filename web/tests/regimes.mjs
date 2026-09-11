@@ -436,11 +436,20 @@ const statedIB = [
   const ibSoph = computeExposure(person("p_soph", 2028, statedIB), ibRegime, at);
   const ibJunior = computeExposure(person("p_junior", 2027, statedIB), ibRegime, at);
   const ibFresh = computeExposure(person("p_fresh", 2029, statedIB), ibRegime, at);
+  const ibSenior = computeExposure(person("p_senior", 2026, statedIB), ibRegime, at);
   ok(
-    ibSoph.exposure > ibJunior.exposure && ibJunior.exposure > ibFresh.exposure,
-    `lifecycle relevance orders them sophomore > junior > freshman: ${ibSoph.exposure}, ${ibJunior.exposure}, ${ibFresh.exposure}`,
+    ibSoph.exposure > ibJunior.exposure && ibSoph.exposure > ibFresh.exposure,
+    `the sophomore window lands hardest on sophomores: ${ibSoph.exposure} vs ${ibJunior.exposure}, ${ibFresh.exposure}`,
   );
-  ok(ibFresh.exposure < 0.15, `a freshman two years out is barely in it, got ${ibFresh.exposure}`);
+  ok(
+    Math.abs(ibJunior.exposure - ibFresh.exposure) < 1e-9,
+    "a year early and a year late are treated identically, because we have no basis for saying which is worse and will not invent one",
+  );
+  ok(
+    ibSenior.exposure < ibJunior.exposure,
+    `two years off is weaker than one: ${ibSenior.exposure} vs ${ibJunior.exposure}`,
+  );
+  ok(ibFresh.exposure < 0.4, `a freshman a year out is only partly in it, got ${ibFresh.exposure}`);
   ok(
     computeExposure(person("p_alum", 2024, statedIB), ibRegime, at).exposure === 0,
     "an alum is out of an undergraduate recruiting window entirely",

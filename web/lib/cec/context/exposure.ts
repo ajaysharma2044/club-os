@@ -317,6 +317,13 @@ function yearDistance(a: ClassYear, b: ClassYear): number | null {
  * prior, and a steep one: a sophomore is genuinely in the junior-fall consulting
  * regime to some degree (they are watching it happen and starting to prepare),
  * a freshman essentially is not.
+ *
+ * Deliberately SYMMETRIC in distance. A year early and a year late get the same
+ * number, and there is a real argument that they should not — being past an
+ * accelerated window is a different situation from being before it. We have no
+ * data on which is worse, an asymmetry invented here would be indistinguishable
+ * from a measured one downstream, and it would show up as a confident
+ * difference between two people it was never entitled to distinguish.
  */
 const LIFECYCLE_DECAY = [1, 0.35, 0.1, 0.03];
 
