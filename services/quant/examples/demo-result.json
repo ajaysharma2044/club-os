@@ -1,0 +1,126 @@
+{
+  "synthetic": true,
+  "forecast": {
+    "model": {
+      "name": "rsvp_attendance_beta_binomial",
+      "version": "1.0.0",
+      "feature_version": "closed_event_rsvp_cohort_v1",
+      "target": "attendees among current affirmative RSVPs; excludes walk-ins",
+      "purpose": "club_operations",
+      "prior_alpha": 1.0,
+      "prior_beta": 1.0,
+      "assumptions": [
+        "Exchangeable RSVP outcomes within this club",
+        "Stable conversion probability over the selected history",
+        "Explicit attendance adjudication; missing labels excluded"
+      ],
+      "limitations": [
+        "Not hierarchical across clubs",
+        "Not a causal model",
+        "Interval is model-based, not a validated coverage guarantee"
+      ]
+    },
+    "event_id": "startup-2",
+    "decision_at": "2026-09-03T12:00:00.000000+00:00",
+    "features": {
+      "current_rsvps": 12,
+      "labeled_history": 10,
+      "present_history": 7,
+      "missing_labels": 0
+    },
+    "posterior": {
+      "alpha": 8.0,
+      "beta": 4.0,
+      "mean_conversion": 0.6666666666666666
+    },
+    "forecast": {
+      "expected": 8.0,
+      "interval_90": [
+        4,
+        11
+      ]
+    },
+    "status": "baseline_unvalidated",
+    "lineage": [
+      "003a8f90-b08a-4c79-a40d-0c86e9e29e3a",
+      "15c9c69c-16d2-4b9b-abc1-99b662c71ea8",
+      "20cbf334-c1d5-4a0d-8b30-e607439c5767",
+      "21e14371-a3c0-4d26-abc2-204412e539a8",
+      "381f1c8a-f8b5-4f24-8f60-4a58333874cf",
+      "406b8eb6-bbd7-4b0f-bffb-bba37bd2f1b9",
+      "41c7a7a3-2da6-46e1-a2d3-6e5a76b3bf44",
+      "499d20af-f9d8-43b5-a9bc-051e87d15097",
+      "594210ad-d63a-4cd4-a3c8-5435c1fb8969",
+      "6083775b-9216-44f3-9293-63c1457ed7f7",
+      "6207db76-6cb6-4ff8-9ebf-886df315c243",
+      "66ee968b-393a-4953-a1e8-0d6d09da89c6",
+      "700e39c3-5829-41d8-973f-7c156a911fe5",
+      "7722becc-4686-48ba-a1c5-2f5049369aa3",
+      "7c90e3cd-eec3-4865-92a8-e7ad557444e4",
+      "7f2b4828-39df-4fcc-8c93-277216ebea23",
+      "80452cd6-24e3-4e54-9a7a-74eda52ac3b3",
+      "8093cbba-822c-40c5-9e16-772a2d63ad01",
+      "8c566d23-1aaa-4aa3-9f26-1e6c7c9902eb",
+      "8f866b7a-31f5-4a7f-98bc-0f52179904ba",
+      "90fb17c2-d4d2-41f3-84de-f0a0cc1f0660",
+      "9f78dd23-b38f-4877-8197-41807b8c099b",
+      "aafad257-bd78-4965-bcc0-b0cd9fffe55a",
+      "b4ea1402-c6f9-42c0-9c96-65399bf82fb0",
+      "c108e5ce-5ad2-4563-bd02-a2e74f136275",
+      "c59c6da3-2527-4862-8267-b03364250b8d",
+      "c91ea7f5-f2cc-4a39-897b-f8b2a639eed8",
+      "cb5d8ad7-a74d-4731-b620-c0540eda489c",
+      "cd13cc8c-2e65-459e-a926-4dd57a983301",
+      "d73770a0-e09e-4080-9155-1f674e69bc4c",
+      "e034f607-ac9e-49ee-9d2c-35828a42c1cb",
+      "e2970bfe-37d8-41a5-aed4-ba782418d178",
+      "e400bf51-1651-4f68-9d76-9d4193a387b1",
+      "ed9b511a-b5f4-4aad-a373-3ccb674bd260"
+    ],
+    "id": "d77d842c-31ce-4dcc-be37-e64e5191bfbe"
+  },
+  "evaluation": {
+    "status": "evaluated",
+    "prediction_id": "d77d842c-31ce-4dcc-be37-e64e5191bfbe",
+    "outcome_at": "2026-09-06T12:00:00.000000+00:00",
+    "actual": 8,
+    "n": 12,
+    "absolute_error": 0.0,
+    "brier": 0.22222222222222224,
+    "log_loss": 0.6365141682948129,
+    "interval_covered": true,
+    "outcome_lineage": [
+      "0e649c9b-f7c6-4cc3-8da7-a1bb875eade4",
+      "71b50f2b-fc89-499f-8f16-aef97545845c",
+      "6c3079ed-11e3-4ee5-9540-3709e2444278",
+      "68346086-97dc-4f79-a2cd-31bd3fff7286",
+      "97785712-7b38-41d5-9ae4-51beea9c8d96",
+      "a5199bfb-3104-4d96-9162-6ed35ad59c01",
+      "b0ed9ce6-eb92-44c6-84c1-57eda0cb13c7",
+      "2b688dc7-6f46-476b-a9de-c3f0f7d19483",
+      "b5f165c5-18a7-413b-8f4c-bb3334d2b0b6",
+      "dce3cec9-a020-4236-b5a8-fa47e6cfd9e7",
+      "725a7e2e-3051-4b0d-bffa-68ae78a172dd",
+      "47f62c52-2245-4e8b-b2ab-688cf8754df5"
+    ]
+  },
+  "project_scenario": {
+    "model": "declared_duration_dag_v1",
+    "seed": 42,
+    "draws": 1000,
+    "mean_days": 4.019268347399802,
+    "interval_90_days": [
+      2.8385293532749754,
+      5.396814806654221
+    ],
+    "probability_by_deadline": 0.891,
+    "assumptions": [
+      "User-declared triangular duration estimates",
+      "Independent task durations",
+      "Unlimited parallel capacity",
+      "Elapsed days; no working-hours calendar"
+    ],
+    "status": "scenario_not_empirically_calibrated"
+  },
+  "graph_edges": 49
+}
