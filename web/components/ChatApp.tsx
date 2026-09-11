@@ -205,7 +205,16 @@ export function ChatApp() {
             <div className="chat-empty">Nothing here yet. Add the first note.</div>
           )}
           {messages.map((msg) => (
-            <article key={msg.id} className={msg.mine ? "msg mine" : "msg"}>
+            <article
+              key={msg.id}
+              className={
+                msg.mine
+                  ? msg.id.startsWith("local-")
+                    ? "msg mine msg-in"
+                    : "msg mine"
+                  : "msg"
+              }
+            >
               {!msg.mine && (
                 <span className="chat-face sm" style={{ background: color }} aria-hidden>
                   {msg.initials}
@@ -265,7 +274,7 @@ export function ChatApp() {
           }}
         >
           <input
-            className="input"
+            className="input compose-input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             aria-label={

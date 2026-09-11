@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LiveStamp, WriteIn } from "@/components/Presence";
 import { clubs, hueVar, needs, tasks } from "@/lib/data";
 
 const nextByClub: Record<string, string> = {
@@ -39,6 +40,7 @@ export function Dashboard() {
           <h1 className="text-title-1">Home</h1>
           <p className="text-caption" style={{ margin: "6px 0 0" }}>
             What you owe, then your clubs.
+            <LiveStamp />
           </p>
         </div>
       </div>
@@ -46,7 +48,7 @@ export function Dashboard() {
       {first && (
         <section className="hero-need" aria-label="What you owe">
           <p className="text-micro">You owe</p>
-          <h2 className="text-title-2">{first.title}</h2>
+          <WriteIn text={first.title} />
           <p className="text-caption">
             {clubs.find((c) => c.slug === first.club)?.short}
             {first.due ? ` · ${first.due}` : ""}
