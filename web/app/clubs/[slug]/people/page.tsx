@@ -25,7 +25,7 @@ export default async function PeoplePage({
           Invite
         </button>
       </div>
-      <RosterTable people={people} />
+      <RosterTable slug={slug} people={people} />
     </>
   );
 }

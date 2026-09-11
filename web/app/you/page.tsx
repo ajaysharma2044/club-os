@@ -1,3 +1,4 @@
+import { JoinRecord } from "@/components/JoinRecord";
 import { PersonalCalendar } from "@/components/PersonalCalendar";
 import { PersonalConnections } from "@/components/PersonalConnections";
 
@@ -15,6 +16,8 @@ export default function YouPage() {
           Export
         </button>
       </div>
+
+      <JoinRecord />
 
       <section className="section">
         <h2 className="text-title-2">Positions</h2>

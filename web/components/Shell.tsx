@@ -12,6 +12,7 @@ import {
 import { CommandPalette } from "@/components/CommandPalette";
 import { inboxUnread } from "@/lib/chat";
 import { clubBySlug, clubs, hueVar, me, needs, week } from "@/lib/data";
+import { useJoinState } from "@/lib/useJoin";
 
 const global = [
   { href: "/", label: "Home", icon: House },
@@ -42,8 +43,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const clubMatch = pathname.match(/^\/clubs\/([^/]+)/);
   const club = clubMatch ? clubBySlug(clubMatch[1]) : undefined;
   const inChat = pathname.startsWith("/chat");
-  const showTodo = pathname === "/" || pathname === "/discover";
+  const joining = pathname.startsWith("/join");
+  const showTodo = (pathname === "/" || pathname === "/discover") && !joining;
   const unread = inboxUnread();
+  const { state: join } = useJoinState();
+  const who = join?.completed && join.name ? join : me;
 
   return (
     <div className={club ? "app in-club" : inChat ? "app in-chat" : "app"}>
@@ -83,8 +87,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
         <div className="rail-foot">
-          <span className="avatar" title={me.name}>
-            {me.initials}
+          <span className="avatar" title={who.name}>
+            {who.initials || me.initials}
           </span>
         </div>
       </nav>

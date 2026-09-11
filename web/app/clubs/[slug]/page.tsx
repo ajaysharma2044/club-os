@@ -1,5 +1,9 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ClubOfficerWork } from "@/components/ClubOfficerWork";
+import { ClubRosterPreview } from "@/components/ClubRosterPreview";
+import { JoinedNote } from "@/components/JoinedNote";
 import {
   clubBySlug,
   events,
@@ -45,6 +49,11 @@ export default async function ClubHome({
         </div>
       </div>
 
+      <Suspense fallback={null}>
+        <JoinedNote slug={slug} />
+      </Suspense>
+
+      <ClubOfficerWork slug={slug}>
       {clubNeeds[0] && (
         <section className="hero-need" aria-label="You owe">
           <p className="text-micro">You owe</p>
@@ -74,6 +83,7 @@ export default async function ClubHome({
           </div>
         </section>
       )}
+      </ClubOfficerWork>
 
       <section className="section">
         <div className="section-head">
@@ -131,31 +141,7 @@ export default async function ClubHome({
         </section>
       )}
 
-      <section className="section">
-        <div className="section-head">
-          <h2 className="text-title-2">On the roster</h2>
-          <Link href={`/clubs/${slug}/people`} className="text-caption">
-            {people.length} people
-          </Link>
-        </div>
-        <div className="event-list">
-          {people.slice(0, 4).map((p) => (
-            <div key={p.name} className="person-row">
-              <span
-                className="avatar"
-                style={{ background: `var(--${club.hue}-tint)` }}
-              >
-                {p.initials}
-              </span>
-              <div className="grow">
-                <span className="row-title">{p.name}</span>
-                <span className="muted"> · {p.role}</span>
-              </div>
-              <div className="meta-col">{p.last}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <ClubRosterPreview slug={slug} hue={club.hue} people={people} />
     </>
   );
 }

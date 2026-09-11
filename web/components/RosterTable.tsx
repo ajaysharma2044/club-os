@@ -2,16 +2,20 @@
 
 import { useMemo, useState } from "react";
 import type { Person } from "@/lib/data";
+import { mergeRoster } from "@/lib/join";
+import { useJoinState } from "@/lib/useJoin";
 
-export function RosterTable({ people }: { people: Person[] }) {
+export function RosterTable({ slug, people }: { slug: string; people: Person[] }) {
+  const { state } = useJoinState();
+  const roster = useMemo(() => mergeRoster(slug, people, state), [slug, people, state]);
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return people;
-    return people.filter((p) =>
+    if (!needle) return roster;
+    return roster.filter((p) =>
       `${p.name} ${p.role} ${p.year}`.toLowerCase().includes(needle)
     );
-  }, [people, q]);
+  }, [roster, q]);
 
   const active = filtered.filter((p) => p.status === "active");
   const alumni = filtered.filter((p) => p.status === "alumni");

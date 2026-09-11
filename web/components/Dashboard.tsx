@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FirstRunHint } from "@/components/FirstRunHint";
 import { LiveStamp, WriteIn } from "@/components/Presence";
 import { clubs, hueVar, needs, tasks } from "@/lib/data";
 
@@ -44,6 +45,8 @@ export function Dashboard() {
           </p>
         </div>
       </div>
+
+      <FirstRunHint />
 
       {first && (
         <section className="hero-need" aria-label="What you owe">

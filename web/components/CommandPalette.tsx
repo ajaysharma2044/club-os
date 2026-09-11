@@ -8,6 +8,9 @@ import { clubs } from "@/lib/data";
 const staticItems = [
   { href: "/", label: "Home", hint: "What you owe" },
   { href: "/discover", label: "Discover", hint: "Campus" },
+  { href: "/join", label: "Join a club", hint: "Start" },
+  { href: "/join", label: "Onboarding", hint: "Start" },
+  { href: "/join", label: "Show up", hint: "Join" },
   { href: "/chat", label: "Chat", hint: "Inbox" },
   { href: "/you", label: "Your record", hint: "You" },
   { href: "/you#calendar", label: "Calendar", hint: "Subscribe" },
@@ -48,8 +51,10 @@ export function CommandPalette() {
     });
     const all = [...staticItems, ...clubItems, ...chatItems];
     const needle = q.trim().toLowerCase();
-    if (!needle) return all.slice(0, 8);
-    return all.filter((i) => i.label.toLowerCase().includes(needle)).slice(0, 8);
+            if (!needle) return all.slice(0, 8);
+    return all
+      .filter((i) => `${i.label} ${i.hint}`.toLowerCase().includes(needle))
+      .slice(0, 8);
   }, [q]);
 
   useEffect(() => {
