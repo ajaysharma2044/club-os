@@ -1,3 +1,4 @@
+import { offer, respond } from "./opportunities";
 import { timingSafeEqual } from "node:crypto";
 import {
   captureItem,
@@ -288,6 +289,16 @@ export function mutate(u: User, action: string, b: any) {
         state: r.data,
       });
       captureItem(u, r, sourceKey, previous);
+      // Assignment is an offer. Recording it is what makes take rates fair:
+      // an assignment nobody accepted was previously invisible.
+      if (kind === "task") {
+        if (!previous)
+          offer(u, { kind: "task", objectType: "task", objectId: r.id, to: data.assignee });
+        else if (previous.data.assignee !== data.assignee) {
+          respond(u, { objectType: "task", objectId: r.id, to: previous.data.assignee, response: "reassigned" });
+          offer(u, { kind: "task", objectType: "task", objectId: r.id, to: data.assignee });
+        }
+      }
       publishRecord(u, r);
       return { id: r.id };
     }
@@ -313,7 +324,16 @@ export function mutate(u: User, action: string, b: any) {
       };
       if (!flow[r.data.status]?.includes(target))
         fail("Invalid task transition.");
-      if (target === "completed" || target === "cancelled") officer(u);
+      if (target === "completed") officer(u);
+      // An assignee may cancel work they have not yet accepted: that is
+      // declining an offer, and it is a different behavioural fact from an
+      // officer withdrawing it. Without this, "declined" is unreachable and
+      // every take rate silently treats a refusal as someone else's decision.
+      if (
+        target === "cancelled" &&
+        !(r.data.status === "assigned" && r.data.assignee === u.id)
+      )
+        officer(u);
       const data = { ...r.data, status: target };
       db()
         .prepare(
@@ -322,6 +342,18 @@ export function mutate(u: User, action: string, b: any) {
         .run(JSON.stringify(data), timestamp(), r.id);
       const sourceKey = audit(u, "task." + target, r.id);
       captureTask(u, item(r.id), r.data.status, sourceKey);
+      // r.data.status is the pre-transition state here.
+      if (r.data.status === "assigned") {
+        if (target === "accepted")
+          respond(u, { objectType: "task", objectId: r.id, to: r.data.assignee, response: "accepted" });
+        else if (target === "cancelled")
+          respond(u, {
+            objectType: "task",
+            objectId: r.id,
+            to: r.data.assignee,
+            response: u.id === r.data.assignee ? "declined" : "withdrawn",
+          });
+      }
       publishRecord(u, item(r.id));
       return {};
     }

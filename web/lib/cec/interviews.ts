@@ -26,6 +26,7 @@ import {
   type SchedulerInput,
   type Feasibility,
 } from "./scheduler";
+import { offer, respond } from "./opportunities";
 
 export function interviewsInit() {
   db().exec(`
@@ -216,7 +217,7 @@ export function interviews(u: User, action: string, b: any) {
         now,
       );
     audit(u, "interview.round.create", key, { panel_size: panel });
-    emit(u, "interview_round", "round", key, { panel_size: panel });
+    emit(u, "interview", "round", key, { status: "planned", stage: text(b.stage, 40) || "first" });
     return { id: key };
   }
 
@@ -229,6 +230,15 @@ export function interviews(u: User, action: string, b: any) {
       )
       .run(roundId, text(b.user_id, 64), Math.max(0, Number(b.weekly_cap) || 0));
     audit(u, "interview.panelist.set", roundId, { user: b.user_id });
+    // Being put on a panel is an offer; setting your own availability accepts it.
+    const who = text(b.user_id, 64);
+    offer(u, {
+      kind: "panel",
+      objectType: "interview_round",
+      objectId: roundId,
+      to: who,
+      response: who === u.id ? "accepted" : "pending",
+    });
     return { ok: true };
   }
 
@@ -254,6 +264,8 @@ export function interviews(u: User, action: string, b: any) {
       side,
       slots: slots.length,
     });
+    if (side === "panelist" && slots.length)
+      respond(u, { objectType: "interview_round", objectId: roundId, to: person, response: "accepted", kind: "panel" });
     return { ok: true, slots: slots.length };
   }
 
@@ -320,11 +332,7 @@ export function interviews(u: User, action: string, b: any) {
         placed: assignments.length,
         unplaced: unplaced.length,
       });
-      emit(u, "interview_schedule", "round", roundId, {
-        placed: assignments.length,
-        unplaced: unplaced.length,
-        panel_size: r.panel_size,
-      });
+      emit(u, "interview", "round", roundId, { status: "offered", stage: r.stage });
     }
     return {
       assignments,
@@ -354,10 +362,7 @@ export function interviews(u: User, action: string, b: any) {
     audit(u, "interview.assignment.drop", key, {
       reason: text(b.reason, 200),
     });
-    emit(u, "interview_drop", "assignment", key, {
-      round_id: row.round_id,
-      reason: text(b.reason, 200),
-    });
+    emit(u, "interview", "assignment", key, { status: "cancelled", stage: "drop" });
     return { ok: true, refill: solve(row.round_id) };
   }
 
@@ -371,7 +376,10 @@ export function interviews(u: User, action: string, b: any) {
       .run(status, key);
     audit(u, "interview.assignment.status", key, { status });
     // No-shows and completions are the labels every downstream model needs.
-    emit(u, "interview_outcome", "assignment", key, { status });
+    emit(u, "interview", "assignment", key, {
+      status: status === "offered" ? "offered" : status,
+      stage: "outcome",
+    });
     return { ok: true };
   }
 

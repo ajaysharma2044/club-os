@@ -9,3 +9,7 @@ out
 .env*
 
 .next-test/
+
+# Test-server build output (CEC_DIST_DIR)
+.next-sig/
+.next-test/

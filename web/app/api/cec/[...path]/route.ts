@@ -19,6 +19,9 @@ import {
   interviewState,
   interviewsInit,
 } from "@/lib/cec/interviews";
+import { opportunities, opportunityState } from "@/lib/cec/opportunities";
+import { outcomes } from "@/lib/cec/outcomes";
+import { behavior, behaviorState, registryLatest } from "@/lib/cec/signals";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -147,6 +150,9 @@ export async function GET(
       interviewsInit();
       return response(interviewState(u));
     }
+    if (path === "behavior/self") return response(behaviorState(u));
+    if (path === "behavior/registry") return response({ rows: registryLatest(u) });
+    if (path === "opportunities/state") return response(opportunityState(u));
     if (path === "evidence") return response(evidenceRead(u));
     if (path.startsWith("adaptive/"))
       return response(adaptiveRead(u, path.slice(9)));
@@ -238,6 +244,12 @@ export async function POST(
       interviewsInit();
       return response(interviews(u, path.slice(11), b));
     }
+    if (path.startsWith("opportunities/"))
+      return response(opportunities(u, path.slice(14), b));
+    if (path.startsWith("outcomes/"))
+      return response(outcomes(u, path.slice(9), b));
+    if (path.startsWith("behavior/"))
+      return response(behavior(u, path.slice(9), b));
     if (path.startsWith("schedule/"))
       return response(schedule(u, path.slice(9), b));
     if (path.startsWith("evidence/"))

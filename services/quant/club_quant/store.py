@@ -65,6 +65,20 @@ SCHEMAS = {
     'artifact': {'status': ('submitted', 'reviewed'), 'url': str},
     'decision': {'status': ('proposed', 'confirmed'), 'title': str},
     'opportunity': {'status': ('lead', 'contacted', 'proposed', 'signed', 'fulfilled', 'lost'), 'title': str},
+    # Behavioural layer. 'commitment_offer' records what a person was OFFERED and
+    # how they answered, which is the denominator every take rate needs; without
+    # it a model concludes presidents are excellent because presidents were
+    # handed every opportunity. 'outcome' carries a coarse label only -- never a
+    # score -- so the registry can test whether a signal predicts anything.
+    'commitment_offer': {
+        'status': ('offered', 'accepted', 'declined', 'expired', 'withdrawn', 'reassigned'),
+        'offer_kind': ('task', 'ownership', 'panel', 'coffee_chat', 'speaker_outreach', 'committee', 'handoff'),
+    },
+    'outcome': {'status': ('positive', 'negative'), 'measure': str},
+    'interview': {
+        'status': ('planned', 'offered', 'accepted', 'completed', 'no_show', 'cancelled'),
+        'stage': str,
+    },
 }
 
 
