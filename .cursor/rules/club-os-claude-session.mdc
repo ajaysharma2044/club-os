@@ -1,0 +1,42 @@
+---
+description: Locked Club OS decisions from the Claude research session. Continue from this, do not reopen settled questions.
+alwaysApply: true
+---
+
+# Club OS — continue the Claude session
+
+This repo is the full handoff from Claude Desktop session `53559bd8` (2026-09-10). Research and spec are done. Nothing has been built.
+
+## Product
+
+Free Canvas-like OS for college clubs. Front is simple; backend is a verified institutional record. Spine doc: `docs/09-the-record.md`. Read that first.
+
+Thesis: clubs lose their memory every year. The product keeps who did what, when, under what decision, at what cost. Free forever on the front. Money is downstream of the record being real.
+
+## Locked decisions (do not reopen)
+
+- Universities are **not** a customer. No dashboards, no procurement, no institutional funding.
+- Clubs and members use everything free. Nationals buy a per-chapter license to see/run their network.
+- First national targets: SHPE, NSBE, Alpha Phi Omega. Not IEEE/ACM first. Not College Democrats first.
+- Political/identity orgs get a separate tier: structural facts only, no content, minimal retention. Precedent: EEOC subpoenaed Penn Jewish-org rosters (2025), court ordered compliance (March 2026).
+- Religious orgs are a harder sale than first assumed (most campus staff raise their own salary).
+- VC scout line is opportunistic named-account pilots ($5–25k/yr), not a second business.
+- Never sell student data. Sell verified attention and consented signal.
+- Person is continuous across graduation. Positions/memberships are bitemporal. Storage is club-owned from byte one.
+- Six nav items, non-configurable. Eleven objects; club-type differences are templates.
+- Chat: channels + lightweight topics; membership from roster. Permanent free history.
+- Feed: reverse-chronological with light boosts. No ML ranker first. No free-text posts in v1.
+- Forecasting behind one control, off by default.
+- Each club gets its own EIN. Stripe Connect Express + agent-of-payee. Do not build a fiscal sponsor.
+- Stack if building: TypeScript, Expo, Next.js, Convex.
+- North-star metric: officer handoff completion rate.
+
+## What exists / what does not
+
+Exists: `docs/` (12 synthesis docs), `research/` (24 reports), private GitHub `ajaysharma2044/club-os`.
+
+Does not exist: code, wireframes, financial model, pitch deck.
+
+## If asked to build
+
+Thin first slice: roster + events + check-in + ledger. Do not start a new research track unless a locked decision is contradicted by a primary source.

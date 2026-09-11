@@ -1,0 +1,29 @@
+---
+description: After finishing work that changes files, commit and push to GitHub. Standing user request.
+alwaysApply: true
+---
+
+# Always commit and push to GitHub
+
+The user explicitly requested this standing behavior: after completing user-requested work that changes files, get the changes onto GitHub.
+
+## After finishing work
+
+1. Run `git status`, `git diff`, and `git log` in parallel (see the user's committing-changes rule).
+2. Stage relevant files. Never stage secrets (`.env`, `.env.local`, `credentials.json`, keys, tokens).
+3. Create a commit if there is something to commit. Do not create empty commits.
+4. Push the current branch: `git push -u origin HEAD`.
+
+Commit message style: why, not what; 1–2 sentences; pass the message via HEREDOC.
+
+## Never
+
+- Update git config
+- `--force` push to `main` or `master`
+- Skip hooks (`--no-verify`, `--no-gpg-sign`) unless the user asks
+- `git commit --amend` except under the user's existing amend safety rules
+- Interactive git (`-i`)
+
+## If push fails
+
+Report the error (auth, missing remote, divergent history). Do not force-push. Do not rewrite history to make the push succeed.

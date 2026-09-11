@@ -13,4 +13,4 @@ This repository holds the research and specification work for the product. No co
 
 ## Status
 
-Research and specification phase. No wireframes, no financial model, no code, no deck yet.
+Frontend design is underway in `web/`. Research and specification remain the source of truth in `docs/`. No financial model or deck yet.
