@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { IBM_Plex_Mono, Manrope } from "next/font/google";
 import { Shell } from "@/components/Shell";
 import "./globals.css";
 
-const sans = IBM_Plex_Sans({
+const sans = Manrope({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   variable: "--font-plex",
   display: "swap",
 });

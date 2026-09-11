@@ -2,22 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ChatCircle,
-  Compass,
-  House,
-  MagnifyingGlass,
-  User,
-} from "@phosphor-icons/react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { inboxUnread } from "@/lib/chat";
-import { clubBySlug, clubs, hueVar, me, needs, week } from "@/lib/data";
+import { clubBySlug, me } from "@/lib/data";
 
 const global = [
-  { href: "/", label: "Home", icon: House },
-  { href: "/discover", label: "Discover", icon: Compass },
-  { href: "/chat", label: "Inbox", icon: ChatCircle },
-  { href: "/you", label: "Account", icon: User },
+  { href: "/", label: "Home" },
+  { href: "/discover", label: "Discover" },
+  { href: "/chat", label: "Inbox" },
+  { href: "/you", label: "Account" },
 ];
 
 const clubTabs = [
@@ -42,78 +35,64 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const clubMatch = pathname.match(/^\/clubs\/([^/]+)/);
   const club = clubMatch ? clubBySlug(clubMatch[1]) : undefined;
   const inChat = pathname.startsWith("/chat");
-  const showTodo = pathname === "/" || pathname === "/discover";
   const unread = inboxUnread();
 
   return (
     <div className={club ? "app in-club" : inChat ? "app in-chat" : "app"}>
+      <div className="atmosphere" aria-hidden />
       <a className="skip" href="#content">
         Skip to content
       </a>
-      <nav className="global-rail" aria-label="Global Navigation">
-        <Link href="/" className="mark" aria-label="Club OS home">
-          <span className="mark-box" aria-hidden />
-          <span className="mark-name">Club OS</span>
+      <nav className="topbar" aria-label="Global Navigation">
+        <Link href="/" className="wordmark">
+          Club OS
         </Link>
-        <div className="nav-list">
-          {global.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="nav-item"
-                aria-current={isCurrent(pathname, item.href) ? "page" : undefined}
-              >
-                <Icon size={20} weight="regular" aria-hidden />
-                {item.label}
-                {item.href === "/chat" && unread > 0 && (
-                  <span className="rail-unread">{unread}</span>
-                )}
-              </Link>
-            );
-          })}
+        <div className="top-links">
+          {global.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={isCurrent(pathname, item.href) ? "page" : undefined}
+            >
+              {item.label}
+              {item.href === "/chat" && unread > 0 && (
+                <span className="top-unread">{unread}</span>
+              )}
+            </Link>
+          ))}
+        </div>
+        <div className="top-end">
           <button
             type="button"
-            className="nav-item"
+            className="pill"
             onClick={() => window.dispatchEvent(new Event("clubos:command"))}
           >
-            <MagnifyingGlass size={20} weight="regular" aria-hidden />
             Search
           </button>
-        </div>
-        <div className="rail-foot">
-          <span className="avatar" title={me.name}>
+          <Link href="/you" className="pill solid" title={me.name}>
             {me.initials}
-          </span>
+          </Link>
         </div>
       </nav>
 
       {club && (
-        <nav className="club-rail" aria-label={`${club.name} navigation`}>
-          <div className="club-rail-head">
-            <span className="club-chip" style={{ background: hueVar(club.hue) }} />
-            <strong>{club.name}</strong>
-          </div>
-          <div className="nav-list">
-            {clubTabs.map((tab) => {
-              const href = tab.seg
-                ? `/clubs/${club.slug}/${tab.seg}`
-                : `/clubs/${club.slug}`;
-              const current =
-                tab.seg === "" ? pathname === href : pathname.startsWith(href);
-              return (
-                <Link
-                  key={tab.label}
-                  href={href}
-                  className="nav-item"
-                  aria-current={current ? "page" : undefined}
-                >
-                  {tab.label}
-                </Link>
-              );
-            })}
-          </div>
+        <nav className="club-bar" aria-label={`${club.name} navigation`}>
+          {clubTabs.map((tab) => {
+            const href = tab.seg
+              ? `/clubs/${club.slug}/${tab.seg}`
+              : `/clubs/${club.slug}`;
+            const current =
+              tab.seg === "" ? pathname === href : pathname.startsWith(href);
+            return (
+              <Link
+                key={tab.label}
+                href={href}
+                aria-current={current ? "page" : undefined}
+              >
+                {tab.label}
+              </Link>
+            );
+          })}
         </nav>
       )}
 
@@ -122,71 +101,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <span>Menu</span>
       </div>
 
-      <div className={inChat ? "work wide chat-work" : showTodo ? "work" : "work wide"}>
+      <div className={inChat ? "work wide chat-work" : "work wide"}>
         {inChat ? (
           <div id="content">{children}</div>
         ) : (
-        <main id="content" className="main">
-          {club && (
-            <nav className="crumbs" aria-label="Breadcrumb">
-              <Link href="/">Home</Link>
-              <span aria-hidden>/</span>
-              <Link href={`/clubs/${club.slug}`}>{club.name}</Link>
-              {pathname !== `/clubs/${club.slug}` && (
-                <>
-                  <span aria-hidden>/</span>
-                  <strong>
-                    {clubTabs.find((t) => t.seg && pathname.endsWith(t.seg))?.label ??
-                      "Page"}
-                  </strong>
-                </>
-              )}
-            </nav>
-          )}
-          {children}
-        </main>
-        )}
-        {showTodo && (
-          <aside className="up-next" aria-label="You owe">
-            <div className="up-next-inner">
-              <div className="todo-head">You owe</div>
-              {needs.map((item) => {
-                const c = clubs.find((x) => x.slug === item.club)!;
-                return (
-                  <Link key={item.title} href={item.href} className="todo-item">
-                    <span className="todo-dot" style={{ background: hueVar(c.hue) }} />
-                    <div>
-                      <div className="todo-title">{item.title}</div>
-                      <div className="text-caption">
-                        {c.short} · {item.detail}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-              <div className="todo-head" style={{ marginTop: 20 }}>
-                Coming Up
-              </div>
-              {week.slice(0, 4).map((item) => {
-                const c = clubs.find((x) => x.slug === item.club)!;
-                return (
-                  <Link
-                    key={item.title}
-                    href={`/clubs/${c.slug}/events`}
-                    className="todo-item"
-                  >
-                    <span className="todo-dot" style={{ background: hueVar(c.hue) }} />
-                    <div>
-                      <div className="todo-title">{item.title}</div>
-                      <div className="text-caption">
-                        {item.when} · {item.where}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          </aside>
+          <main id="content" className="main">
+            {children}
+          </main>
         )}
       </div>
       <CommandPalette />
