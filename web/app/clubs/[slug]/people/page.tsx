@@ -1,3 +1,4 @@
+import { CECWorkspace } from "@/components/cec/Workspace";
 import { notFound } from "next/navigation";
 import { RosterTable } from "@/components/RosterTable";
 import { clubBySlug, roster } from "@/lib/data";
@@ -8,6 +9,7 @@ export default async function PeoplePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  if (slug === "cec") return <CECWorkspace embedded section="people" initialTab="" />;
   const club = clubBySlug(slug);
   if (!club) notFound();
   const people = roster[slug] ?? [];
@@ -29,3 +31,4 @@ export default async function PeoplePage({
     </>
   );
 }
+

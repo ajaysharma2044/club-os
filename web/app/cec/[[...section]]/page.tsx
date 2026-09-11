@@ -1,14 +1,10 @@
-import { CECWorkspace } from "@/components/cec/Workspace";
-export const metadata = {
-  title: "CEC · Club OS",
-  description:
-    "Cornell Entrepreneurship Club workspace: events, work, people and the club record.",
-};
+import { redirect } from "next/navigation";
+import { cecRoutes } from "@/lib/cec/routes";
 export default async function Page({
   params,
 }: {
   params: Promise<{ section?: string[] }>;
 }) {
   const { section } = await params;
-  return <CECWorkspace section={section?.[0] || "home"} />;
+  redirect(cecRoutes[section?.[0] || "home"] || cecRoutes.home);
 }

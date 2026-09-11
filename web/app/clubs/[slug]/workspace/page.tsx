@@ -1,3 +1,4 @@
+import { CECWorkspace } from "@/components/cec/Workspace";
 import { notFound } from "next/navigation";
 import { AddToCalendar } from "@/components/AddToCalendar";
 import { workByTitle } from "@/lib/calendar";
@@ -16,6 +17,7 @@ export default async function WorkspacePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  if (slug === "cec") return <CECWorkspace embedded section="work" initialTab="" />;
   const club = clubBySlug(slug);
   if (!club) notFound();
   const clubTasks = tasks.filter((t) => t.club === slug);
@@ -84,3 +86,4 @@ export default async function WorkspacePage({
     </>
   );
 }
+

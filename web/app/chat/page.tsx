@@ -1,10 +1,29 @@
 import { Suspense } from "react";
 import { ChatApp } from "@/components/ChatApp";
-
-export default function ChatPage() {
+import { CECWorkspace } from "@/components/cec/Workspace";
+export default async function ChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ c?: string }>;
+}) {
+  const { c } = await searchParams;
+  if (c && !["general", "events", "builders", "cec"].includes(c))
+    return (
+      <>
+        <p className="demo-notice">Example inbox · demonstration messages</p>
+        <Suspense fallback={<p>Loading example inbox…</p>}>
+          <ChatApp />
+        </Suspense>
+      </>
+    );
   return (
-    <Suspense fallback={<p className="text-caption">Loading inbox…</p>}>
-      <ChatApp />
-    </Suspense>
+    <div className="connected-inbox">
+      <CECWorkspace
+        embedded
+        section="work"
+        initialTab="Inbox"
+        initialChannel={c}
+      />
+    </div>
   );
 }

@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useEffect } from "react";
+import { useCEC } from "@/components/cec/Connection";
+import { ConnectedAside } from "@/components/cec/ConnectedAside";
+import { cecClub } from "@/lib/cec/routes";
 import { usePathname } from "next/navigation";
 import {
   ChatCircle,
@@ -10,12 +14,11 @@ import {
   User,
 } from "@phosphor-icons/react";
 import { CommandPalette } from "@/components/CommandPalette";
-import { inboxUnread } from "@/lib/chat";
-import { clubBySlug, clubs, hueVar, me, needs, week } from "@/lib/data";
+import { clubBySlug, hueVar, me } from "@/lib/data";
 import { useJoinState } from "@/lib/useJoin";
 
 const global = [
-  { href: "/cec", label: "CEC workspace", icon: House },
+  { href: "/clubs/cec", label: "CEC", icon: House },
   { href: "/", label: "Home", icon: House },
   { href: "/discover", label: "Discover", icon: Compass },
   { href: "/chat", label: "Inbox", icon: ChatCircle },
@@ -38,20 +41,39 @@ function isCurrent(pathname: string, href: string) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if ((pathname.startsWith("/embed") || pathname.startsWith("/cec"))) {
-    return <>{children}</>;
-  }
   const clubMatch = pathname.match(/^\/clubs\/([^/]+)/);
-  const club = clubMatch ? clubBySlug(clubMatch[1]) : undefined;
+  const club = clubMatch
+    ? clubMatch[1] === "cec"
+      ? cecClub
+      : clubBySlug(clubMatch[1])
+    : undefined;
   const inChat = pathname.startsWith("/chat");
   const joining = pathname.startsWith("/join");
   const showTodo = (pathname === "/" || pathname === "/discover") && !joining;
-  const unread = inboxUnread();
+  const { data } = useCEC();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [pathname]);
+  const unread = 0;
   const { state: join } = useJoinState();
-  const who = join?.completed && join.name ? join : me;
+  const isDemo = !!clubMatch && clubMatch[1] !== "cec";
+  const who = isDemo ? (join?.completed && join.name ? join : me) : data?.user;
+  const initials =
+    who?.initials ||
+    who?.name
+      ?.split(" ")
+      .map((n: string) => n[0])
+      .slice(0, 2)
+      .join("") ||
+    "?";
+  if (pathname.startsWith("/embed")) return <>{children}</>;
 
   return (
-    <div className={club ? "app in-club" : inChat ? "app in-chat" : "app"}>
+    <div
+      className={
+        (club ? "app in-club" : inChat ? "app in-chat" : "app") +
+        (menuOpen ? " mobile-menu-open" : "")
+      }
+    >
       <a className="skip" href="#content">
         Skip to content
       </a>
@@ -68,7 +90,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className="nav-item"
-                aria-current={isCurrent(pathname, item.href) ? "page" : undefined}
+                aria-current={
+                  isCurrent(pathname, item.href) ? "page" : undefined
+                }
               >
                 <Icon size={20} weight="regular" aria-hidden />
                 {item.label}
@@ -88,16 +112,24 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
         <div className="rail-foot">
-          <span className="avatar" title={who.name}>
-            {who.initials || me.initials}
-          </span>
+          <Link
+            href="/you"
+            className="avatar"
+            title={who?.name || "Sign in"}
+            aria-label={who?.name ? "Your account" : "Sign in"}
+          >
+            {initials}
+          </Link>
         </div>
       </nav>
 
       {club && (
         <nav className="club-rail" aria-label={`${club.name} navigation`}>
           <div className="club-rail-head">
-            <span className="club-chip" style={{ background: hueVar(club.hue) }} />
+            <span
+              className="club-chip"
+              style={{ background: hueVar(club.hue) }}
+            />
             <strong>{club.name}</strong>
           </div>
           <div className="nav-list">
@@ -109,12 +141,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 tab.seg === "" ? pathname === href : pathname.startsWith(href);
               return (
                 <Link
-                  key={tab.label}
+                  key={
+                    club.slug === "cec" && tab.seg === "workspace"
+                      ? "Workspace"
+                      : tab.label
+                  }
                   href={href}
                   className="nav-item"
                   aria-current={current ? "page" : undefined}
                 >
-                  {tab.label}
+                  {club.slug === "cec" && tab.seg === "workspace"
+                    ? "Workspace"
+                    : tab.label}
                 </Link>
               );
             })}
@@ -124,73 +162,66 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="mobile-bar">
         <Link href="/">Club OS</Link>
-        <span>Menu</span>
+        <button
+          className="btn ghost"
+          type="button"
+          aria-expanded={menuOpen}
+          aria-label="Toggle navigation"
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          {menuOpen ? "Close" : "Menu"}
+        </button>
       </div>
 
-      <div className={inChat ? "work wide chat-work" : showTodo ? "work" : "work wide"}>
+      <div
+        className={
+          inChat ? "work wide chat-work" : showTodo ? "work" : "work wide"
+        }
+      >
         {inChat ? (
           <div id="content">{children}</div>
         ) : (
-        <main id="content" className="main">
-          {club && (
-            <nav className="crumbs" aria-label="Breadcrumb">
-              <Link href="/">Home</Link>
-              <span aria-hidden>/</span>
-              <Link href={`/clubs/${club.slug}`}>{club.name}</Link>
-              {pathname !== `/clubs/${club.slug}` && (
-                <>
-                  <span aria-hidden>/</span>
-                  <strong>
-                    {clubTabs.find((t) => t.seg && pathname.endsWith(t.seg))?.label ??
-                      "Page"}
-                  </strong>
-                </>
-              )}
-            </nav>
-          )}
-          {children}
-        </main>
+          <main id="content" className="main">
+            {club && (
+              <nav className="crumbs" aria-label="Breadcrumb">
+                <Link href="/">Home</Link>
+                <span aria-hidden>/</span>
+                <Link href={`/clubs/${club.slug}`}>{club.name}</Link>
+                {pathname !== `/clubs/${club.slug}` && (
+                  <>
+                    <span aria-hidden>/</span>
+                    <strong>
+                      {club?.slug === "cec" && pathname.endsWith("workspace")
+                        ? "Workspace"
+                        : (clubTabs.find(
+                            (t) => t.seg && pathname.endsWith(t.seg),
+                          )?.label ??
+                          (
+                            {
+                              record: "Club record",
+                              intake: "Weekly update",
+                              schedule: "Calendar",
+                              directory: "Shared projects",
+                            } as Record<string, string>
+                          )[pathname.split("/").pop() || ""] ??
+                          "Page")}
+                    </strong>
+                  </>
+                )}
+              </nav>
+            )}
+            {isDemo && (
+              <p className="demo-notice">
+                Example club · interactions here use demonstration data.{" "}
+                <Link href="/clubs/cec">Open the connected CEC workspace</Link>
+              </p>
+            )}
+            {children}
+          </main>
         )}
         {showTodo && (
           <aside className="up-next" aria-label="You owe">
-            <div className="up-next-inner">
-              <div className="todo-head">You owe</div>
-              {needs.map((item) => {
-                const c = clubs.find((x) => x.slug === item.club)!;
-                return (
-                  <Link key={item.title} href={item.href} className="todo-item">
-                    <span className="todo-dot" style={{ background: hueVar(c.hue) }} />
-                    <div>
-                      <div className="todo-title">{item.title}</div>
-                      <div className="text-caption">
-                        {c.short} · {item.detail}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-              <div className="todo-head" style={{ marginTop: 20 }}>
-                Coming Up
-              </div>
-              {week.slice(0, 4).map((item) => {
-                const c = clubs.find((x) => x.slug === item.club)!;
-                return (
-                  <Link
-                    key={item.title}
-                    href={`/clubs/${c.slug}/events`}
-                    className="todo-item"
-                  >
-                    <span className="todo-dot" style={{ background: hueVar(c.hue) }} />
-                    <div>
-                      <div className="todo-title">{item.title}</div>
-                      <div className="text-caption">
-                        {item.when} · {item.where}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+            <ConnectedAside />
           </aside>
         )}
       </div>

@@ -436,7 +436,7 @@ export default function AdaptiveIntake() {
               </button>
             </div>
           )}
-          <Link href="/cec/people" className="link">
+          <Link href="/clubs/cec/people" className="link">
             Back to people →
           </Link>
         </section>
