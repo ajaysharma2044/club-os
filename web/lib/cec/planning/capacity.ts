@@ -565,7 +565,7 @@ export function expectedAvailableCapacity(input: CapacityInput): ExpectedAvailab
     ? `Over-committed by about ${hoursWord(value)} over the next ${horizonDays} days (range ${lo} to ${hi}). ` +
       `The work already on them does not fit in the time the week plausibly leaves. This is a statement about their calendar, not about them.`
     : `Roughly ${hoursWord(value)} of club time plausibly free over the next ${horizonDays} days, and the honest range is ${lo} to ${hi}. ` +
-      `Read the range, not the number${unestimated ? `; ${unestimated} open item${unestimated === 1 ? " has" : "s have"} no estimate behind them` : ""}.`;
+      `Read the range, not the number${unestimated ? `; ${unestimated} open item${unestimated === 1 ? " has no estimate behind it" : "s have no estimate behind them"}` : ""}.`;
 
   return {
     value: r1(value),

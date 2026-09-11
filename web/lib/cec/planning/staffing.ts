@@ -168,6 +168,20 @@ export const PREREQUISITE_FLOOR: Record<TaskSpec["stakes"], number> = {
 };
 
 /**
+ * Margin above the floor at which readiness saturates.
+ *
+ * Readiness deliberately reaches 1 well short of mastery, because readiness and
+ * stretch pull against each other: normalising readiness across the whole range
+ * up to 1.0 would mean nobody could ever be both ready and still have something
+ * to learn, and LearningValue would be crushed toward zero for everyone. A
+ * quarter of a point of margin over the bar is enough to say "they can do this".
+ */
+export const READINESS_RAMP = 0.25;
+
+/** LearningValue above which a stretch is worth calling an opportunity. */
+export const MEANINGFUL_LEARNING = 0.2;
+
+/**
  * How far behind the safest candidate a development pick may fall before the
  * trade stops being worth making. Beyond this the task itself is at risk, and
  * a failed stretch assignment teaches the wrong lesson to everyone.
@@ -217,6 +231,8 @@ export type AssignmentFit = {
   learningValue: number;
   /** Prerequisite readiness against this task's stakes, 0..1. */
   prerequisiteReadiness: number;
+  /** The raw prerequisite evidence behind that readiness, 0..1. */
+  prerequisiteEvidence: number;
   /** P(their capacity falls short of what this task needs). */
   capacityRisk: number | null;
   /** Named contributions, positive. */
@@ -294,32 +310,35 @@ function termSd(t: EvidenceTerm): number {
 function learningValueFor(
   c: CandidateProfile,
   stakes: TaskSpec["stakes"],
-): { value: number; readiness: number; note: string } {
+): { value: number; readiness: number; prerequisite: number; note: string } {
   const skills = term(c.skills);
   const experience = term(c.experience);
   const interest = term(c.interest);
 
   const floor = PREREQUISITE_FLOOR[stakes];
-  const prereq = Math.min(skills.value, experience.value);
-  const readiness = clamp((prereq - floor) / Math.max(1e-9, 1 - floor), 0, 1);
+  const prereq = r3(Math.min(skills.value, experience.value));
+  const readiness = clamp((prereq - floor) / READINESS_RAMP, 0, 1);
 
   if (skills.n === 0 && experience.n === 0)
     return {
       value: 0,
       readiness: 0,
+      prerequisite: prereq,
       note: "no prerequisite evidence at all, so this would be a gamble rather than a development opportunity",
     };
   if (c.alreadyMastered)
     return {
       value: 0,
       readiness,
+      prerequisite: prereq,
       note: "has already done this to mastery, so there is nothing here for them to learn",
     };
   if (readiness <= 0)
     return {
       value: 0,
       readiness: 0,
-      note: `does not yet hold the prerequisite evidence a ${stakes}-stakes task needs — pair them on one of these before handing them one`,
+      prerequisite: prereq,
+      note: `holds prerequisite evidence of ${prereq} against the ${floor} a ${stakes}-stakes task needs — pair them on one of these before handing them one`,
     };
 
   const stretch = clamp(1 - skills.value, 0, 1);
@@ -330,9 +349,10 @@ function learningValueFor(
   return {
     value: r3(value),
     readiness: r3(readiness),
+    prerequisite: prereq,
     note:
-      value > 0.3
-        ? `holds the prerequisites and has real room to grow into this${c.mentorAvailable ? ", with someone alongside them" : ", though nobody experienced is alongside them"}`
+      value >= MEANINGFUL_LEARNING
+        ? `holds prerequisite evidence of ${prereq} against a ${stakes}-stakes bar of ${floor}, with real room to grow into this${c.mentorAvailable ? " and someone alongside them" : ", though nobody experienced is alongside them"}`
         : "some room to grow into this, but not much",
   };
 }
@@ -451,6 +471,7 @@ export function assignmentFit(
       developmentFit: cannotPredict(MODEL, asOf, why),
       learningValue: 0,
       prerequisiteReadiness: 0,
+      prerequisiteEvidence: 0,
       capacityRisk,
       drivers: [],
       penalties: [],
@@ -552,7 +573,10 @@ export function assignmentFit(
     "Fit is scored from what has been recorded. Somebody whose good work happens outside Club OS scores low here for a reason that has nothing to do with them.",
     "These weights have never been checked against realised assignment outcomes, so treat the interval as the answer and the ordering as a suggestion.",
   ];
-  if (avail.note) limitations.push(`Availability: ${avail.note}.`);
+  // Only a caveat when availability had to be guessed. A real shortfall
+  // probability is information, and it already shows up as a named penalty.
+  if (availability.n === 0 || task.estimatedHours === null)
+    limitations.push(`Availability: ${avail.note}.`);
 
   return {
     personId: candidate.personId,
@@ -579,6 +603,7 @@ export function assignmentFit(
     ),
     learningValue: learning.value,
     prerequisiteReadiness: learning.readiness,
+    prerequisiteEvidence: learning.prerequisite,
     capacityRisk,
     drivers,
     penalties,
@@ -666,7 +691,10 @@ export function recommendAssignment(input: StaffingInput): StaffingRecommendatio
     `${names(safest)} has the strongest evidence and is the safest assignment for "${input.task.label}" — ${topDrivers(safest)}. `;
   if (development && !sameCandidate) {
     explanation +=
-      `${names(development)} has enough prerequisite evidence (readiness ${development.prerequisiteReadiness} against the ${input.task.stakes}-stakes bar of ${PREREQUISITE_FLOOR[input.task.stakes]}) and this would be a valuable development opportunity — learning value ${development.learningValue}. ` +
+      `${names(development)} has enough prerequisite evidence (${development.prerequisiteEvidence} against the ${input.task.stakes}-stakes bar of ${PREREQUISITE_FLOOR[input.task.stakes]}) and ` +
+      (development.learningValue >= MEANINGFUL_LEARNING
+        ? `this would be a valuable development opportunity — learning value ${development.learningValue}. `
+        : `this would be a modest stretch for them — learning value ${development.learningValue}, so the gain is real but small. `) +
       `Choosing them costs about ${fitSacrifice} of execution fit${decisive ? "" : ", and the two are close enough that the ranking is not decisive anyway"}. `;
   } else if (development && sameCandidate) {
     explanation +=

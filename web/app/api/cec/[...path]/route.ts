@@ -25,6 +25,7 @@ import { behavior, behaviorState, registryLatest } from "@/lib/cec/signals";
 import { invites, inviteState, inviteInfo, claim } from "@/lib/cec/invites";
 import { assets, assetState } from "@/lib/cec/assets";
 import { checkin, attendanceState } from "@/lib/cec/checkin";
+import { factorState } from "@/lib/cec/factor-store";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -156,6 +157,7 @@ export async function GET(
       return response(interviewState(u));
     }
     if (path === "behavior/self") return response(behaviorState(u));
+    if (path === "factors/state") return response(factorState(u));
     if (path === "invites/state") return response(inviteState(u));
     if (path === "assets/state") return response(assetState(u));
     if (path.startsWith("attendance/")) {
