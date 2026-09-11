@@ -14,11 +14,12 @@
     "test:clubhealth": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/clubhealth.mjs",
     "test:assets": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/assets.mjs",
     "test:checkin": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/checkin.mjs",
-    "test:pure": "npm run test:behavioral && npm run test:scheduler && npm run test:forecast && npm run test:clubhealth && npm run test:assets && npm run test:checkin && npm run test:campus && npm run test:context && npm run test:academic && npm run test:weather",
+    "test:pure": "npm run test:behavioral && npm run test:scheduler && npm run test:forecast && npm run test:clubhealth && npm run test:assets && npm run test:checkin && npm run test:campus && npm run test:context && npm run test:academic && npm run test:weather && npm run test:factors",
     "test:campus": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/campus.mjs",
     "test:context": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/context.mjs",
     "test:academic": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/academic.mjs",
-    "test:weather": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/weather.mjs"
+    "test:weather": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/weather.mjs",
+    "test:factors": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/factors.mjs"
   },
   "dependencies": {
     "@fontsource/commit-mono": "^5.2.5",
