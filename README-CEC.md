@@ -3,9 +3,18 @@
 This extends the Next.js application with a server-backed CEC workspace at `/cec`.
 Existing dashboard and `/clubs/...` routes remain intact. Open `/cec` for the connected workspace.
 See [Cornell research](docs/cornell-research.md) for sources and factual boundaries.
+See [adaptive workflows and evidence](docs/adaptive-workflows-and-evidence.md) for the
+weekly intake policy, chat scheduling, personal calendar subscriptions, episode schema,
+feature math and current limits.
 
 ## Working workflows
 
+- Weekly adaptive check-ins, confirmed background context, answer history, freshness,
+  separate officer-sharing consent, and personal removal controls at `/cec/intake`.
+- Selected chat messages → editable meeting proposal → confirmation → invitations.
+  Accept/cancel meetings and manage a private calendar subscription at `/cec/schedule`.
+- Episode evidence for task/project/event/meeting actions, blocker reporting and
+  resolution, reported outcomes, visible correction history and dated feature snapshots.
 - Password accounts, expiring HttpOnly sessions, officer/member/applicant permissions.
 - One-time protected officer setup; subsequent signups start as applicants.
 - Event drafts/publication, capacity-aware RSVP and waitlist, officer attendance,
@@ -59,7 +68,9 @@ python3 -m unittest discover -s tests -v
 The HTTP test runner uses a fresh temporary database and random credentials. Do not
 point `tests/cec-api.mjs` at real club data. It tests access control, private recruitment
 notes, RSVP capacity, real quant delivery, task approval, booking conflicts, form
-validation, sharing revocation, CSRF, calendar output and logout.
+validation, sharing revocation, CSRF, calendar output, adaptive question selection,
+weekly rollover, subscription revocation, episode evidence, corrections, snapshots
+and logout. All fixture people and data are synthetic.
 
 ## Architecture and storage
 
@@ -67,6 +78,9 @@ validation, sharing revocation, CSRF, calendar output and logout.
 `web/lib/cec/service.ts`: authenticated domain actions.
 `web/app/api/cec/[...path]/route.ts`: HTTP boundary and origin protection.
 `web/lib/cec/quant.ts`: trusted subprocess interface and outbox replay.
+`web/lib/cec/adaptive.ts`: weekly question policy and confirmed context history.
+`web/lib/cec/scheduling.ts`: chat proposals, invitations and private ICS feeds.
+`web/lib/cec/evidence.ts`: transactional episode events, blockers and feature snapshots.
 `services/quant/bridge.py`: existing quant service integration.
 
 Application data is in `web/.data/cec.sqlite`; the derived quant record is in
@@ -92,7 +106,8 @@ validated in the deployment environment.
 
 ## Integration status and remaining production work
 
-**Working:** native workflows, document links, public calendar export, quant outbox.
+**Working:** native workflows, document links, public calendar export, private meeting
+subscriptions, weekly intake, episode evidence and quant outbox.
 **Not connected:** Google OAuth, Slack, Canvas, Cornell SSO, email delivery, payments.
 The interface says "not configured" for these; it never fabricates connected status.
 Credentials, approved scopes and university agreements cannot be supplied by code.
