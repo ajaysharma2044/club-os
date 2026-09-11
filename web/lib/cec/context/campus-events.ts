@@ -325,8 +325,10 @@ const RULES: Rule[] = [
   {
     type: "campus_policy_change",
     strong: [
-      /\bpolicy (change|update|revision)\b/,
-      /\bnew policy\b/,
+      /\bpolicy (change|update|revision|announcement)\b/,
+      // A policy announcement names the change before the noun far more often
+      // than after it: "revised space reservation policy", "new guest policy".
+      /\b(revised|updated|new|interim)\b[a-z ]{0,40}\bpolic(y|ies)\b/,
       /\bcode of conduct\b/,
       /\bguidelines? (update|change)\b/,
     ],
