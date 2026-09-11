@@ -11,6 +11,9 @@ import {
   quietestSlots,
   feedUrl,
   sourceFor,
+  mayFetch,
+  fetchableSources,
+  fetchCampusEvents,
 } from "../lib/cec/campus.ts";
 
 let checks = 0;
@@ -166,5 +169,64 @@ ok(
   "Localist feed URL matches the verified live endpoint",
 );
 ok(sourceFor("nowhere") === null, "an unknown campus is null, not a guess");
+ok(
+  feedUrl({ ...cornell, platform: "livewhale", base: "https://events.example.edu" }) ===
+    "https://events.example.edu/live/json/events",
+  "LiveWhale uses /live/json/events, NOT ?format=json which returns HTML",
+);
+
+// --- RSVP intent, where the platform publishes it -------------------------
+{
+  const wrapped = parseLiveWhale({
+    meta: {}, data: [{ id: 5, title: "Wrapped shape", date_iso: "2026-09-15T23:00:00Z" }],
+  });
+  ok(wrapped.length === 1, "the wrapped LiveWhale shape parses");
+  const bare = parseLiveWhale([
+    {
+      id: 7, title: "Success and Sundaes", date_iso: "2026-09-15T23:00:00Z",
+      location_title: "Memorial Student Center", rsvp_total: 358, registration_limit: 400,
+      is_canceled: false, event_types: ["Professional"],
+    },
+    { id: 8, title: "No registration", date_iso: "2026-09-15T23:00:00Z" },
+    { id: 9, title: "Called off", date_iso: "2026-09-15T23:00:00Z", is_canceled: true },
+  ]);
+  ok(bare.length === 3, "the bare-array LiveWhale shape parses");
+  ok(bare[0].rsvpTotal === 358, `rsvp_total is captured, got ${bare[0].rsvpTotal}`);
+  ok(bare[0].registrationLimit === 400, "registration_limit is captured");
+  ok(bare[0].locationName === "Memorial Student Center", "location_title is preferred");
+  ok(
+    bare[1].rsvpTotal === null,
+    "an event without published RSVPs is null, never assumed zero",
+  );
+  ok(bare[2].cancelled === true, "is_canceled (one l) is honoured");
+  ok(parseLocalist(payload)[0].rsvpTotal === null, "Localist publishes no RSVP counts");
+}
+
+// --- permission is separate from detection --------------------------------
+// Yale's Localist API returns good JSON and Yale's robots.txt says Disallow: /.
+// The endpoint responding is not consent.
+{
+  const yale = { key: "yale", label: "Yale", platform: "localist", base: "https://events.yale.edu", permission: "robots_disallowed" };
+  ok(mayFetch(yale).allowed === false, "a disallowed host is not fetchable");
+  ok(/not permission/i.test(mayFetch(yale).reason), `the reason says why: "${mayFetch(yale).reason}"`);
+  ok(
+    feedUrl(yale).includes("events.yale.edu"),
+    "we can still construct and record its URL — detection is allowed, fetching is not",
+  );
+  const unreviewed = { ...yale, permission: "unreviewed" };
+  ok(mayFetch(unreviewed).allowed === false, "unreviewed defaults to not fetchable");
+  ok(mayFetch(cornell).allowed === true, "Cornell is reviewed and allowed");
+  ok(
+    fetchableSources().every((s) => mayFetch(s).allowed),
+    "fetchableSources only returns hosts we may actually call",
+  );
+  let threw = false;
+  try {
+    await fetchCampusEvents(yale);
+  } catch {
+    threw = true;
+  }
+  ok(threw, "fetching a disallowed source throws rather than quietly proceeding");
+}
 
 console.log(`${checks} campus-ingest assertions passed.`);

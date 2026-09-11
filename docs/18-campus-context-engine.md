@@ -94,12 +94,19 @@ Ranked by durability, not by what is easiest to grab today.
 | Priority | Kind | Notes |
 |---|---|---|
 | 1 | Official APIs, ICS, RSS | Cornell publishes its whole calendar through Localist with **no API key** — verified live |
+| — | **Two adapters cover most of it** | In a 45-school sample: Localist 36%, LiveWhale 19%. Build those two plus a generic ICS/RSS parser, and **reject per-campus scrapers** — forty schools would mean forty things that break |
 | 2 | Public university pages | Stable, but parse defensively |
 | 3 | Public organisation pages | Brittle; expect churn |
 | 4 | Licensed sources | Only where the lift justifies the cost |
 | 5 | Scraping | Only where permitted and stable |
 
 **Every source carries provenance**: id, institution, type, URL, permission basis, crawl frequency, last success, reliability, parser version, terms status. Every extracted fact keeps a pointer back to it.
+
+**Permission is a separate question from detection, and the distinction is enforced in code.** Yale's Localist API returns perfectly good JSON, and Yale's robots.txt is `Disallow: /`. **The endpoint responding is not consent.** Every source carries a permission basis, and `fetchCampusEvents` throws on anything not reviewed and allowed rather than quietly proceeding. Anthology Engage is the same lesson at scale: it holds the richest data of any platform surveyed, and it disallows the only path that returns anything — so that is a partnership conversation, not a scrape.
+
+**Two corrections to earlier research.** The `?format=json` pattern recorded in `research/20` is wrong; it returns HTML. The real LiveWhale endpoint is `/live/json/events`, and it ships two different response shapes that both need handling.
+
+**And one genuinely new signal.** LiveWhale publicly exposes `rsvp_total` and `registration_limit`. A rival event showing 358 of 400 committed is an attendance-*intent* measure for someone else's event, free — a far better weight for competition than a raw count of listings. It is rare (most events do not use LiveWhale registration) and it is intent rather than attendance, so it is captured as nullable and never assumed zero.
 
 **The operational legal rule**, from `research/20`: *hiQ v. LinkedIn* won on the computer-fraud statute and **lost** on breach of contract. Terms of service bind us where the criminal statute does not. So: prefer published feeds, identify the client honestly, rate-limit conservatively, and never route around an access control.
 
@@ -176,9 +183,11 @@ Continuously scanning announcements, grants, competitions, speakers and deadline
 | Campus state vector | **Built and tested** |
 | Behavioural alpha | **Built and tested**, both directions |
 | Topic intensity | **Built and tested** |
+| Permission gating per host | **Built and tested** — a disallowed source throws |
+| RSVP-intent capture from LiveWhale | **Built and tested** |
 | Cross-source deduplication | Specified, not built |
 | Source registry with provenance | Specified, not built |
 | News and grant ingestion | Specified, not built |
 | Campus knowledge graph | Specified, not built |
 
-65 assertions across `tests/campus.mjs` and `tests/context.mjs`.
+81 assertions across `tests/campus.mjs` and `tests/context.mjs`; 514 across the whole pure suite.
