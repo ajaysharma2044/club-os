@@ -15,6 +15,7 @@ import { clubBySlug, clubs, hueVar, me, needs, week } from "@/lib/data";
 import { useJoinState } from "@/lib/useJoin";
 
 const global = [
+  { href: "/cec", label: "CEC workspace", icon: House },
   { href: "/", label: "Home", icon: House },
   { href: "/discover", label: "Discover", icon: Compass },
   { href: "/chat", label: "Inbox", icon: ChatCircle },
@@ -37,7 +38,7 @@ function isCurrent(pathname: string, href: string) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname.startsWith("/embed")) {
+  if ((pathname.startsWith("/embed") || pathname.startsWith("/cec"))) {
     return <>{children}</>;
   }
   const clubMatch = pathname.match(/^\/clubs\/([^/]+)/);
