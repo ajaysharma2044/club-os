@@ -760,8 +760,36 @@ export function vcProfile(input: {
   }
 
   const origin = input.venture?.originEpisodeId || "";
+
+  // "The hackathon ended" is an event, not a vibe: prefer the recorded outcome
+  // on the origin episode, and say plainly when falling back to its start date.
+  let originEnd = "";
+  let originBasis = "";
+  if (origin) {
+    const out = db()
+      .prepare(
+        "SELECT occurred_at FROM activity_events WHERE episode_id=? AND event_type='episode.outcome_recorded' AND occurred_at<=? ORDER BY occurred_at DESC LIMIT 1",
+      )
+      .get(origin, asOf) as { occurred_at: string } | undefined;
+    if (out) {
+      originEnd = out.occurred_at;
+      originBasis = "the recorded outcome on the origin episode";
+    } else {
+      const ep = episodeRow(origin);
+      originEnd = ep?.created_at || "";
+      originBasis =
+        "the origin episode's start date; no outcome was ever recorded on it, so any gap measured from here is the longer reading";
+    }
+  }
+
   const shared = [...byEpisode.entries()].filter(([, v]) => v.people.size >= 2);
-  const priorShared = shared.filter(([eid]) => eid !== origin);
+  // "Previous" means before, not merely other. With an origin episode named,
+  // a prior project is one these people were already working on together when
+  // the venture started; the continuation work that came afterwards is
+  // evidence of persistence and is counted there instead, not twice.
+  const priorShared = origin
+    ? shared.filter(([eid, v]) => eid !== origin && (!originEnd || v.first < originEnd))
+    : shared;
 
   // Team formation: the earliest episode in which two of them appear together.
   const firstSharedEntry = shared
@@ -811,26 +839,7 @@ export function vcProfile(input: {
     .filter(([, t]) => t.status === "completed")
     .map(([eid, t]) => ({ id: eid, title: t.title, status: t.status }));
 
-  // Persistence. "The hackathon ended" is an event, not a vibe: prefer the
-  // recorded outcome on the origin episode and say so when falling back.
-  let originEnd = "";
-  let originBasis = "";
-  if (origin) {
-    const out = db()
-      .prepare(
-        "SELECT occurred_at FROM activity_events WHERE episode_id=? AND event_type='episode.outcome_recorded' AND occurred_at<=? ORDER BY occurred_at DESC LIMIT 1",
-      )
-      .get(origin, asOf) as { occurred_at: string } | undefined;
-    if (out) {
-      originEnd = out.occurred_at;
-      originBasis = "the recorded outcome on the origin episode";
-    } else {
-      const ep = episodeRow(origin);
-      originEnd = ep?.created_at || "";
-      originBasis =
-        "the origin episode's start date; no outcome was ever recorded on it, so this understates nothing and may overstate the gap";
-    }
-  }
+  // Persistence: did they keep going after the thing that brought them together?
   const firstActivity = events.length ? events[0].occurred_at : null;
   const lastActivity = events.length ? events[events.length - 1].occurred_at : null;
   const wholeDays = (from: string, to: string) =>

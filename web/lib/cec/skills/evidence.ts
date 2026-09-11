@@ -382,6 +382,27 @@ export function recordArtifact(
 
 // ================================================================== the linking
 
+/**
+ * Was this person actually in this episode?
+ *
+ * An episode and an episode-scoped outcome are both CONTAINERS: nothing in the
+ * row itself names a participant, so without this check anyone could be attached
+ * to the club's best project. Owning it or appearing in one of its recorded acts
+ * is the weakest defensible test, and it is the one the schema can answer.
+ */
+function participatedIn(episodeId: string, personId: string): boolean {
+  if (!episodeId) return false;
+  const owned = db()
+    .prepare("SELECT 1 FROM episodes WHERE id=? AND owner=?")
+    .get(episodeId, personId);
+  if (owned) return true;
+  return !!db()
+    .prepare(
+      "SELECT 1 FROM activity_events WHERE episode_id=? AND (actor_id=? OR subject_id=?) LIMIT 1",
+    )
+    .get(episodeId, personId, personId);
+}
+
 type ResolvedEvidence = {
   occurredAt: string;
   observedAt: string;
@@ -408,6 +429,8 @@ function resolveEvidence(
       | { id: string; title: string; created_at: string; owner: string; source_type: string }
       | undefined;
     if (!e) fail("That episode does not exist; a skill link needs a real record.", 404);
+    if (!participatedIn(e.id, personId))
+      fail("That episode has no record of this person working in it.", 422);
     return {
       occurredAt: e.created_at,
       observedAt: e.created_at,
@@ -504,11 +527,15 @@ function resolveEvidence(
   } catch {
     ctx = {};
   }
+  const outcomeEpisode =
+    o.subject_type === "episode" ? o.subject_id : String(ctx.episode_id || "");
+  // A result achieved by work this person is nowhere in is not their evidence.
+  if (o.subject_type !== "person" && !participatedIn(outcomeEpisode, personId))
+    fail("That outcome belongs to work this person has no record in.", 422);
   return {
     occurredAt: o.occurred_at,
     observedAt: o.observed_at,
-    episodeId:
-      o.subject_type === "episode" ? o.subject_id : String(ctx.episode_id || ""),
+    episodeId: outcomeEpisode,
     evidenceLevel: o.evidence_level,
     label: o.kind,
     outcomeValue: Number.isFinite(o.value) ? o.value : null,
