@@ -26,11 +26,57 @@ export type Item = {
   updated_at: string;
   version: number;
 };
+/**
+ * Refuse to run the record on a filesystem that will throw it away.
+ *
+ * This whole backend is one SQLite file. On a serverless host — Netlify,
+ * Vercel, Lambda — each invocation gets its own ephemeral filesystem, so the
+ * database is created empty on every cold start, writes vanish when the
+ * instance is recycled, and two concurrent requests can be looking at two
+ * different databases.
+ *
+ * The failure is silent and that is what makes it dangerous. Nothing errors. A
+ * member signs up, sees a confirmation, and is simply gone. An officer records
+ * attendance for forty people and the record is empty next morning. A product
+ * whose entire claim is that it keeps an honest record must not do that, and
+ * README-CEC.md already says in as many words: do not deploy it onto ephemeral
+ * serverless storage.
+ *
+ * So it fails loudly instead, at the first database touch, with the fix in the
+ * message. Set CEC_ALLOW_EPHEMERAL=1 to override for a throwaway demo where
+ * losing everything is the expected behaviour.
+ */
+function refuseEphemeralStorage(file: string) {
+  if (process.env.CEC_ALLOW_EPHEMERAL === "1") return;
+  const host = process.env.NETLIFY
+    ? "Netlify"
+    : process.env.VERCEL
+      ? "Vercel"
+      : process.env.AWS_LAMBDA_FUNCTION_NAME
+        ? "AWS Lambda"
+        : process.env.FUNCTIONS_WORKER_RUNTIME
+          ? "Azure Functions"
+          : null;
+  // A path under /tmp or the Lambda task root is ephemeral wherever it runs.
+  const ephemeralPath = /^\/tmp\//.test(file) || /^\/var\/task\//.test(file);
+  if (!host && !ephemeralPath) return;
+  throw new Error(
+    `Club OS refuses to open its database here. ${
+      host ? `This is running on ${host}, which gives each invocation a fresh, empty filesystem.` : ""
+    }${ephemeralPath ? ` The database path (${file}) is ephemeral storage.` : ""} ` +
+      "Every signup, RSVP, task and attendance record would be silently lost on the next cold start. " +
+      "Run it on a host with a persistent volume instead — the Dockerfile at the repository root does this, " +
+      "with CEC_DATABASE pointing at a mounted /data. " +
+      "Set CEC_ALLOW_EPHEMERAL=1 only for a throwaway demo where losing all data is expected.",
+  );
+}
+
 let connection: DatabaseSync;
 export function db() {
   if (connection) return connection;
   const file =
     process.env.CEC_DATABASE || resolve(process.cwd(), ".data/cec.sqlite");
+  refuseEphemeralStorage(file);
   mkdirSync(dirname(file), { recursive: true });
   connection = new DatabaseSync(file);
   connection.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
