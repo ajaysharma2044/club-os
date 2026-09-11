@@ -1,3 +1,4 @@
+import { CECWorkspace } from "@/components/cec/Workspace";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
@@ -24,6 +25,7 @@ export default async function SettingsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
+  if (slug === "cec") return <CECWorkspace embedded section="account" initialTab="" />;
   const club = clubBySlug(slug);
   if (!club) notFound();
 
@@ -92,3 +94,4 @@ export default async function SettingsPage({
     </>
   );
 }
+

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ConnectedDiscovery } from "@/components/cec/ConnectedDiscovery";
 import { clubs, hueVar } from "@/lib/data";
 import { joinPolicies, policyFor } from "@/lib/join";
 
@@ -25,7 +26,7 @@ const open = [
   },
 ];
 
-export default function DiscoverPage() {
+function ExampleDiscovery() {
   return (
     <>
       <div className="page-title">
@@ -48,8 +49,15 @@ export default function DiscoverPage() {
           {joinPolicies.map((item) => {
             const club = clubs.find((c) => c.slug === item.slug)!;
             return (
-              <Link key={item.slug} href={`/join?club=${item.slug}`} className="join-club">
-                <span className="identity" style={{ background: hueVar(club.hue) }} />
+              <Link
+                key={item.slug}
+                href={`/join?club=${item.slug}`}
+                className="join-club"
+              >
+                <span
+                  className="identity"
+                  style={{ background: hueVar(club.hue) }}
+                />
                 <div className="grow">
                   <div className="row-title">{club.name}</div>
                   <div className="text-caption">{item.openLine}</div>
@@ -67,7 +75,10 @@ export default function DiscoverPage() {
           const policy = policyFor(item.club);
           return (
             <article key={item.title} className="feed-row">
-              <span className="identity" style={{ background: hueVar(club.hue) }} />
+              <span
+                className="identity"
+                style={{ background: hueVar(club.hue) }}
+              />
               <div className="grow">
                 <div className="row-title">{item.title}</div>
                 <div className="text-caption">
@@ -81,6 +92,21 @@ export default function DiscoverPage() {
           );
         })}
       </section>
+    </>
+  );
+}
+
+export default function DiscoverPage() {
+  return (
+    <>
+      <ConnectedDiscovery />
+      <details className="section">
+        <summary>Explore example club designs</summary>
+        <p className="demo-notice">
+          The clubs below contain demonstration data.
+        </p>
+        <ExampleDiscovery />
+      </details>
     </>
   );
 }

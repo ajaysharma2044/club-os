@@ -44,12 +44,11 @@ try {
     await new Promise((r) => setTimeout(r, 1000));
   }
   if (!ready) throw Error("Server did not start");
-  const test = spawn(process.execPath, ["tests/cec-api.mjs"], {
-    env,
-    stdio: "inherit",
-  });
-  const code = await new Promise((r) => test.on("exit", r));
-  if (code !== 0) throw Error("API tests failed");
+  for (const suite of ["tests/cec-api.mjs", "tests/cec-pages.mjs"]) {
+    const test = spawn(process.execPath, [suite], { env, stdio: "inherit" });
+    const code = await new Promise((r) => test.on("exit", r));
+    if (code !== 0) throw Error(suite + " failed");
+  }
 } catch (e) {
   console.error(e.message);
   console.error(logs.slice(-12000));

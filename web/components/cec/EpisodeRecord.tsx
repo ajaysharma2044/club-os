@@ -3,9 +3,11 @@ import { useEffect, useState, FormEvent } from "react";
 export default function EpisodeRecord({
   userId,
   officer,
+  personalOnly = false,
 }: {
   userId: string;
   officer: boolean;
+  personalOnly?: boolean;
 }) {
   const [data, setData] = useState<any>(null),
     [error, setError] = useState(""),
@@ -53,9 +55,14 @@ export default function EpisodeRecord({
       setBusy(false);
     }
   }
-  const selected = data?.episodes.find((e: any) => e.id === episode);
+  const visibleEpisodes = personalOnly
+    ? data?.episodes.filter((e: any) =>
+        data.personal_timeline.some((a: any) => a.episode_id === e.id),
+      )
+    : data?.episodes;
+  const selected = visibleEpisodes?.find((e: any) => e.id === episode);
   const events =
-    (scope === "mine" ? data?.personal_timeline : data?.events)
+    (personalOnly || scope === "mine" ? data?.personal_timeline : data?.events)
       ?.filter((e: any) => !episode || e.episode_id === episode)
       .slice()
       .reverse() || [];
@@ -118,7 +125,9 @@ export default function EpisodeRecord({
               Timeline
               <select value={scope} onChange={(e) => setScope(e.target.value)}>
                 <option value="mine">My activity</option>
-                <option value="club">Club episode activity</option>
+                {!personalOnly && (
+                  <option value="club">Club episode activity</option>
+                )}
               </select>
             </label>
             <label>
@@ -131,7 +140,7 @@ export default function EpisodeRecord({
                 }}
               >
                 <option value="">All episodes</option>
-                {data.episodes.map((e: any) => (
+                {visibleEpisodes?.map((e: any) => (
                   <option key={e.id} value={e.id}>
                     {e.title} · {e.status}
                   </option>
@@ -198,57 +207,60 @@ export default function EpisodeRecord({
               </button>
             </form>
           )}
-          <details>
-            <summary>
-              Club blockers: {data.operations.open_blockers} open ·{" "}
-              {data.operations.resolved_blockers} resolved
-            </summary>
-            <p>
-              Median resolution time among resolved blockers:{" "}
-              {data.operations.median_resolution_hours === null
-                ? "No completed observations"
-                : data.operations.median_resolution_hours.toFixed(1) + " hours"}
-              . Open blockers remain unresolved.
-            </p>
-            {data.blockers
-              .filter((b: any) => !episode || b.episode_id === episode)
-              .map((b: any) => (
-                <div className="row" key={b.id}>
-                  <div>
-                    <strong>{b.category.replaceAll("_", " ")}</strong>
-                    <p>{b.note}</p>
-                    <small>
-                      {b.resolved_at
-                        ? "Resolved: " + b.resolution
-                        : "Open since " +
-                          new Date(b.created_at).toLocaleString()}
-                    </small>
-                    {!b.resolved_at && (
-                      <form
-                        onSubmit={(e) =>
-                          submit(e, "resolve", { blocker_id: b.id })
-                        }
-                      >
-                        <label>
-                          Resolution
-                          <textarea
-                            name="resolution"
-                            required
-                            maxLength={1000}
-                          />
-                        </label>
-                        <button className="button secondary" disabled={busy}>
-                          Record resolution
-                        </button>
-                        <small>
-                          The task owner or an officer can resolve this.
-                        </small>
-                      </form>
-                    )}
+          {!personalOnly && (
+            <details>
+              <summary>
+                Club blockers: {data.operations.open_blockers} open ·{" "}
+                {data.operations.resolved_blockers} resolved
+              </summary>
+              <p>
+                Median resolution time among resolved blockers:{" "}
+                {data.operations.median_resolution_hours === null
+                  ? "No completed observations"
+                  : data.operations.median_resolution_hours.toFixed(1) +
+                    " hours"}
+                . Open blockers remain unresolved.
+              </p>
+              {data.blockers
+                .filter((b: any) => !episode || b.episode_id === episode)
+                .map((b: any) => (
+                  <div className="row" key={b.id}>
+                    <div>
+                      <strong>{b.category.replaceAll("_", " ")}</strong>
+                      <p>{b.note}</p>
+                      <small>
+                        {b.resolved_at
+                          ? "Resolved: " + b.resolution
+                          : "Open since " +
+                            new Date(b.created_at).toLocaleString()}
+                      </small>
+                      {!b.resolved_at && (
+                        <form
+                          onSubmit={(e) =>
+                            submit(e, "resolve", { blocker_id: b.id })
+                          }
+                        >
+                          <label>
+                            Resolution
+                            <textarea
+                              name="resolution"
+                              required
+                              maxLength={1000}
+                            />
+                          </label>
+                          <button className="button secondary" disabled={busy}>
+                            Record resolution
+                          </button>
+                          <small>
+                            The task owner or an officer can resolve this.
+                          </small>
+                        </form>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-          </details>
+                ))}
+            </details>
+          )}
           {!events.length && (
             <p>
               No activity in this view yet. New task and meeting actions will

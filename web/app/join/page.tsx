@@ -1,15 +1,24 @@
 import { Suspense } from "react";
 import { JoinFlow } from "@/components/JoinFlow";
-
-export const metadata = {
-  title: "Show up · Club OS",
-  description: "Join a club in two minutes.",
-};
-
-export default function JoinPage() {
+import { CECWorkspace } from "@/components/cec/Workspace";
+export const metadata = { title: "Join CEC · Club OS" };
+export default async function JoinPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ club?: string }>;
+}) {
+  const { club } = await searchParams;
+  if (!club || club === "cec")
+    return <CECWorkspace embedded section="people" />;
   return (
-    <Suspense fallback={<p className="text-caption">Loading…</p>}>
-      <JoinFlow />
-    </Suspense>
+    <>
+      <p className="demo-notice">
+        Example onboarding · information entered here stays in this browser and
+        does not create a CEC account.
+      </p>
+      <Suspense fallback={<p>Loading…</p>}>
+        <JoinFlow />
+      </Suspense>
+    </>
   );
 }
