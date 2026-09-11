@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { AddToCalendar } from "@/components/AddToCalendar";
+import { workByTitle } from "@/lib/calendar";
 import { clubBySlug, hueVar, minutes, tasks } from "@/lib/data";
 
 const docs = [
@@ -43,6 +45,10 @@ export default async function WorkspacePage({
               <div className="grow">{task.title}</div>
               <div className="text-caption">{task.due}</div>
               <div className="meta-col">{task.origin}</div>
+              {(() => {
+                const work = workByTitle(slug, task.title);
+                return work ? <AddToCalendar compact work={work} /> : null;
+              })()}
             </div>
           ))}
         </div>

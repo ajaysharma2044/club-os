@@ -1,3 +1,4 @@
+import { PersonalCalendar } from "@/components/PersonalCalendar";
 import { PersonalConnections } from "@/components/PersonalConnections";
 
 export default function YouPage() {
@@ -52,6 +53,8 @@ export default function YouPage() {
           </div>
         </dl>
       </section>
+
+      <PersonalCalendar />
 
       <PersonalConnections />
     </>

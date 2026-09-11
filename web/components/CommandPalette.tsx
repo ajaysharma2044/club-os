@@ -10,9 +10,13 @@ const staticItems = [
   { href: "/discover", label: "Discover", hint: "Campus" },
   { href: "/chat", label: "Chat", hint: "Inbox" },
   { href: "/you", label: "Your record", hint: "You" },
+  { href: "/you#calendar", label: "Calendar", hint: "Subscribe" },
+  { href: "/you#calendar", label: "Subscribe", hint: "Your calendar" },
+  { href: "/you#calendar", label: "Add to Google", hint: "Your calendar" },
   { href: "/clubs/baja/settings#integrations", label: "Integrations", hint: "Baja" },
   { href: "/clubs/baja/settings?integration=stripe", label: "Stripe", hint: "Baja" },
   { href: "/clubs/baja/settings?integration=drive", label: "Drive import", hint: "Baja" },
+  { href: "/clubs/baja/settings?integration=calendar", label: "Club calendar", hint: "Baja" },
 ];
 
 export function CommandPalette() {
@@ -30,6 +34,8 @@ export function CommandPalette() {
       { href: `/clubs/${c.slug}/settings`, label: `${c.short} · Settings`, hint: "Settings" },
       { href: `/clubs/${c.slug}/settings#integrations`, label: `${c.short} · Integrations`, hint: "Settings" },
       { href: `/clubs/${c.slug}/settings?integration=stripe`, label: `${c.short} · Stripe`, hint: "Money" },
+      { href: `/clubs/${c.slug}/settings?integration=calendar`, label: `${c.short} · Club calendar`, hint: "Settings" },
+      { href: `/clubs/${c.slug}/events`, label: `${c.short} · Add to calendar`, hint: "Events" },
       { href: `/chat?c=${c.slug}`, label: `${c.short} · Chat`, hint: "Inbox" },
     ]);
     const chatItems = channels.map((ch) => {

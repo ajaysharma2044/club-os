@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ClubCalendarPanel } from "@/components/ClubCalendarPanel";
 import {
   authorizingOffice,
   integrationsFor,
@@ -119,7 +120,7 @@ export function IntegrationsPanel({ slug }: { slug: string }) {
       }
       if (row.id === "calendar") {
         settled.detail =
-          "Club calendar connected. We write only to the calendar we created. Free/busy in, titles stay here.";
+          "Club calendar is on. Members subscribe from Account. Public ICS and embed are title, time, and place only. Free/busy can come in; titles do not leave. Campus IT is not in this loop.";
       }
       patch(row.id, settled);
       return;
@@ -207,10 +208,12 @@ export function IntegrationsPanel({ slug }: { slug: string }) {
                 </div>
               </div>
               {open && (
-                <div className="integ-body">
-                  <p style={{ margin: 0 }}>
-                    {row.detail}
-                  </p>
+                <div className={row.id === "calendar" ? "integ-body wide" : "integ-body"}>
+                  {row.id === "calendar" ? (
+                    <ClubCalendarPanel slug={slug} row={row} />
+                  ) : (
+                    <p style={{ margin: 0 }}>{row.detail}</p>
+                  )}
                 </div>
               )}
             </article>

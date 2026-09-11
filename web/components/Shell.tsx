@@ -36,6 +36,9 @@ function isCurrent(pathname: string, href: string) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (pathname.startsWith("/embed")) {
+    return <>{children}</>;
+  }
   const clubMatch = pathname.match(/^\/clubs\/([^/]+)/);
   const club = clubMatch ? clubBySlug(clubMatch[1]) : undefined;
   const inChat = pathname.startsWith("/chat");

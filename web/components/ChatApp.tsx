@@ -16,6 +16,8 @@ import {
   type ChatMessage,
   type Channel,
 } from "@/lib/chat";
+import { AddToCalendar } from "@/components/AddToCalendar";
+import { workByTitle } from "@/lib/calendar";
 import { me } from "@/lib/data";
 
 function cloneChannels(): Channel[] {
@@ -222,24 +224,31 @@ export function ChatApp() {
                     </span>
                     <strong>{msg.card.title}</strong>
                     <p>{msg.card.detail}</p>
-                    {msg.card.kind === "rsvp" ? (
-                      <button
-                        type="button"
-                        className="btn primary"
-                        onClick={() =>
-                          setRsvp((s) => ({
-                            ...s,
-                            [msg.id]: s[msg.id] === "Going" ? "" : "Going",
-                          }))
-                        }
-                      >
-                        {rsvp[msg.id] === "Going" ? "You’re going" : "I’m in"}
-                      </button>
-                    ) : (
-                      <Link href={msg.card.href ?? "/"} className="btn primary">
-                        {msg.card.action ?? "Open"}
-                      </Link>
-                    )}
+                    <div className="cal-event-actions">
+                      {msg.card.kind === "rsvp" ? (
+                        <button
+                          type="button"
+                          className="btn primary"
+                          onClick={() =>
+                            setRsvp((s) => ({
+                              ...s,
+                              [msg.id]: s[msg.id] === "Going" ? "" : "Going",
+                            }))
+                          }
+                        >
+                          {rsvp[msg.id] === "Going" ? "You’re going" : "I’m in"}
+                        </button>
+                      ) : (
+                        <Link href={msg.card.href ?? "/"} className="btn primary">
+                          {msg.card.action ?? "Open"}
+                        </Link>
+                      )}
+                      {(msg.card.kind === "rsvp" || msg.card.kind === "task") &&
+                        (() => {
+                          const work = workByTitle(active.club, msg.card.title);
+                          return work ? <AddToCalendar compact work={work} /> : null;
+                        })()}
+                    </div>
                   </div>
                 )}
               </div>

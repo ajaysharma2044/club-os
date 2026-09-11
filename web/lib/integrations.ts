@@ -82,6 +82,8 @@ export function integrationsFor(slug: string): ClubIntegration[] {
         status: "connected",
         lastSync: "40m ago",
         office: office.comms,
+        detail:
+          "Public ICS and embed are live. Members subscribe from Account for shop hours, assigned tasks, the catering signature, and e-board. We write only to a calendar we created.",
       },
       mirrors: {
         status: "mirror",
@@ -102,7 +104,13 @@ export function integrationsFor(slug: string): ClubIntegration[] {
           "62 numbers imported from the recruiting thread. Inbox holds the conversation now. GroupMe is archive only.",
       },
       bank: { status: "off", lastSync: null, office: null },
-      calendar: { status: "connected", lastSync: "3h ago", office: office.comms },
+      calendar: {
+        status: "connected",
+        lastSync: "3h ago",
+        office: office.comms,
+        detail:
+          "Events-only. Public ICS is on; embed is off. Interviews land on a member’s personal feed if they RSVP’d. Work and money stay off the public calendar.",
+      },
       mirrors: { status: "off", lastSync: null, office: null, actionLabel: "Enable fan-out" },
     },
     hacknight: {
@@ -134,7 +142,8 @@ export function integrationsFor(slug: string): ClubIntegration[] {
         lastSync: null,
         office: null,
         actionLabel: "Connect",
-        detail: "Fall Hack is on the club calendar. Campus free/busy is not linked yet.",
+        detail:
+          "Fall Hack is ready to publish. Public ICS and embed can go live without a campus Workspace admin. Free/busy is optional and titles never leave.",
       },
       mirrors: {
         status: "mirror",
@@ -156,7 +165,13 @@ export function integrationsFor(slug: string): ClubIntegration[] {
       email: { status: "connected", lastSync: "1h ago", office: office.comms },
       groupme: { status: "off", lastSync: null, office: null },
       bank: { status: "off", lastSync: null, office: null },
-      calendar: { status: "off", lastSync: null, office: null },
+      calendar: {
+        status: "off",
+        lastSync: null,
+        office: null,
+        detail:
+          "Off. Contributors can still add a single deadline to their phone from Events, or subscribe to their own work from Account. A public Herald calendar would be title, time, and place only.",
+      },
       mirrors: { status: "off", lastSync: null, office: null, actionLabel: "Enable fan-out" },
     },
   };
@@ -222,9 +237,10 @@ export function integrationsFor(slug: string): ClubIntegration[] {
     {
       id: "calendar",
       name: "Club calendar",
-      writes: "Events Club OS created. Free/busy in from campus calendars. Titles do not leave.",
+      writes:
+        "A projection of the record: public ICS, embed widget, and a path for members to subscribe. The event stays club-owned.",
       detail:
-        "We write only to a calendar we created. Push is a convenience. The event on the record is the source of truth.",
+        "Calendars are copies. Club OS keeps who RSVP’d, who came, and what it cost. Public embed is title, time, and place — never roster or money. Members subscribe from Account.",
       status: "off",
       lastSync: null,
       office: null,
