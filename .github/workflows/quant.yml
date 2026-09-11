@@ -1,0 +1,22 @@
+name: Quant backend
+on:
+  pull_request:
+    paths: ['services/quant/**', '.github/workflows/quant.yml']
+  push:
+    paths: ['services/quant/**', '.github/workflows/quant.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test record, permissions and quantitative invariants
+        working-directory: services/quant
+        run: python -m unittest discover -s tests -v
+      - name: Run synthetic Cornell workflow
+        working-directory: services/quant
+        run: PYTHONPATH=. python examples/demo.py
