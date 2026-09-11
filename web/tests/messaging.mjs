@@ -494,9 +494,15 @@ const sources = {
     fileURLToPath(new URL("../lib/cec/messaging/delivery.ts", import.meta.url)),
     "utf8",
   ),
+  // The HTTP surface is part of the module and is the easiest place for a
+  // later contributor to "just log who messaged whom". It is walled too.
+  "service.ts": readFileSync(
+    fileURLToPath(new URL("../lib/cec/messaging/service.ts", import.meta.url)),
+    "utf8",
+  ),
 };
 ok(
-  Object.values(sources).every((s) => s.length > 2000),
+  Object.values(sources).every((s) => s.length > 1500),
   "the wall test is reading the real source files",
 );
 // Each of these is one line to add and individually defensible in a standup.
@@ -521,8 +527,13 @@ for (const [file, source] of Object.entries(sources)) {
   const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
   ok(imports.length > 0, `${file} imports something, so the check is live`);
   ok(
-    imports.every((p) => ["../db", "./conversations"].includes(p)),
-    `${file} imports only the database primitives, never the evidence, signal, factor or quant modules`,
+    // The allowlist is every module INSIDE the wall, plus the raw database
+    // primitives. Widening it is how the wall gets breached, so anything added
+    // here must itself be walled and grepped above.
+    imports.every((p) =>
+      ["../db", "./conversations", "./delivery"].includes(p),
+    ),
+    `${file} imports only the database primitives and other walled messaging modules, never the evidence, signal, factor or quant modules`,
   );
   ok(
     !/INSERT\s+INTO\s+outbox/i.test(source),

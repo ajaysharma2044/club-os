@@ -27,6 +27,7 @@ import { assets, assetState } from "@/lib/cec/assets";
 import { checkin, attendanceState } from "@/lib/cec/checkin";
 import { factorState } from "@/lib/cec/factor-store";
 import { planning, planningReadiness } from "@/lib/cec/planning/service";
+import { messaging, messagingState } from "@/lib/cec/messaging/service";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -160,6 +161,7 @@ export async function GET(
     if (path === "behavior/self") return response(behaviorState(u));
     if (path === "factors/state") return response(factorState(u));
     if (path === "planning/readiness") return response(planningReadiness(u));
+    if (path === "messaging/state") return response(messagingState(u));
     if (path === "invites/state") return response(inviteState(u));
     if (path === "assets/state") return response(assetState(u));
     if (path.startsWith("attendance/")) {
@@ -287,6 +289,8 @@ export async function POST(
       return response(evidenceAction(u, path.slice(9), b));
     if (path.startsWith("adaptive/"))
       return response(adaptive(u, path.slice(9), b));
+    if (path.startsWith("messaging/"))
+      return response(messaging(u, path.slice(10), b));
     if (path.startsWith("planning/"))
       return response(await planning(u, path.slice(9), b));
     if (path.startsWith("recommendations/"))
