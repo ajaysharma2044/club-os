@@ -19,6 +19,8 @@ Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw report
 | **09** | **[The Record](09-the-record.md)** | **The spine. What gets recorded, provenance, ownership, what "free" means in writing, why every revenue line depends on it.** |
 | 10 | [Talent verification market](10-talent-verification-market.md) | Quant firms, prestige fellowships, VC scouts as premium buyers of the same record |
 | 11 | [The cross-club graph](11-cross-club-graph.md) | The math of seeing a person across every club they're in, and why it's not a dossier |
+| **12** | **[CEC field evidence](12-cec-field-evidence.md)** | **What a real club's chats actually show. The only primary operator evidence in the repo.** |
+| **13** | **[Problem to solution map](13-problem-solution-map.md)** | **Every observed failure, the specific fix, and the build order. Start here to build.** |
 
 **Read 09 first.** The other eight documents are interfaces to it.
 
