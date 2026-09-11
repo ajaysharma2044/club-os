@@ -91,6 +91,11 @@ function round(roundId: string): Round {
   return r;
 }
 
+/** text() rejects empty input by design; quickstart fields are optional. */
+function opt(v: unknown, fallback: string, max = 120): string {
+  return typeof v === "string" && v.trim() && v.length <= max ? v.trim() : fallback;
+}
+
 function avail(roundId: string, side: "panelist" | "candidate") {
   const rows = db()
     .prepare(
@@ -219,6 +224,154 @@ export function interviews(u: User, action: string, b: any) {
     audit(u, "interview.round.create", key, { panel_size: panel });
     emit(u, "interview", "round", key, { status: "planned", stage: text(b.stage, 40) || "first" });
     return { id: key };
+  }
+
+  // One call that derives a whole round from work already in the system.
+  //
+  // Setup was the real barrier: creating a round, naming panelists, setting
+  // caps, listing candidates and recording conflicts is a dozen steps before
+  // the thing answers a single question. Almost all of it is already known.
+  // Candidates are whoever is at a given application stage. Panelists are the
+  // officers. Conflicts are anyone who already took a coffee-chat slot with an
+  // officer. Availability is the officers' own open slots.
+  //
+  // The only genuinely irreducible input is when candidates can meet, and even
+  // that defaults to "any time the club offered", which is how interview
+  // scheduling actually works: the club proposes, the candidate picks.
+  if (action === "round/quickstart") {
+    const key = id();
+    const panel = Math.max(1, Math.min(8, Number(b.panel_size) || 1));
+    const stage = opt(b.stage, "first", 40);
+    const fromStage = opt(b.from_application_stage, "submitted", 24);
+    const cap = Math.max(0, Number(b.default_cap) || 3);
+    db()
+      .prepare(
+        "INSERT INTO interview_rounds(id,name,stage,panel_size,slot_minutes,status,created_at) VALUES (?,?,?,?,?,?,?)",
+      )
+      .run(
+        key,
+        opt(b.name, `${stage} round`),
+        stage,
+        panel,
+        Math.max(10, Math.min(180, Number(b.slot_minutes) || 30)),
+        "open",
+        now,
+      );
+
+    // Candidates: everyone sitting at the requested application stage.
+    const applicants = db()
+      .prepare("SELECT user_id FROM applications WHERE stage=?")
+      .all(fromStage) as { user_id: string }[];
+    const insCand = db().prepare(
+      "INSERT OR IGNORE INTO interview_candidates(round_id,candidate_id) VALUES (?,?)",
+    );
+    for (const a of applicants) insCand.run(key, a.user_id);
+
+    // Panelists: the officers, each at one shared default cap.
+    const officers = db()
+      .prepare("SELECT id FROM users WHERE role='officer'")
+      .all() as { id: string }[];
+    const insPan = db().prepare(
+      "INSERT INTO interview_panelists(round_id,user_id,weekly_cap) VALUES (?,?,?) ON CONFLICT(round_id,user_id) DO UPDATE SET weekly_cap=excluded.weekly_cap",
+    );
+    for (const o of officers) {
+      insPan.run(key, o.id, cap);
+      offer(u, {
+        kind: "panel",
+        objectType: "interview_round",
+        objectId: key,
+        to: o.id,
+        response: o.id === u.id ? "accepted" : "pending",
+      });
+    }
+
+    // Availability: an officer's own open future slots are already a statement
+    // of when they are free. Reuse them rather than asking twice.
+    const officerIds = new Set(officers.map((o) => o.id));
+    const slots = db()
+      .prepare(
+        "SELECT i.id,i.owner,i.data FROM items i WHERE i.kind='slot' AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.slot_id=i.id)",
+      )
+      .all() as { id: string; owner: string; data: string }[];
+    const insAvail = db().prepare(
+      "INSERT OR IGNORE INTO interview_availability(round_id,person_id,side,slot) VALUES (?,?,?,?)",
+    );
+    const offered = new Set<string>();
+    let seeded = 0;
+    for (const sl of slots) {
+      if (!officerIds.has(sl.owner)) continue;
+      let d: any = {};
+      try {
+        d = JSON.parse(sl.data);
+      } catch {}
+      if (!d.starts_at || d.starts_at <= now) continue;
+      insAvail.run(key, sl.owner, "panelist", d.starts_at);
+      offered.add(d.starts_at);
+      seeded++;
+    }
+
+    // Candidates default to "available at anything the club offered". This is
+    // how it works in practice, and it makes the feasibility number an upper
+    // bound until candidates narrow it — which the response says plainly.
+    const assumed = b.candidate_availability !== "declared";
+    if (assumed)
+      for (const a of applicants)
+        for (const slot of offered) insAvail.run(key, a.user_id, "candidate", slot);
+
+    // Conflicts: anyone who already sat a coffee chat with an officer.
+    const chats = db()
+      .prepare(
+        "SELECT b.user_id AS candidate, i.owner AS officer FROM bookings b JOIN items i ON i.id=b.slot_id WHERE i.kind='slot'",
+      )
+      .all() as { candidate: string; officer: string }[];
+    const insCoi = db().prepare(
+      "INSERT OR IGNORE INTO interview_conflicts(round_id,candidate_id,user_id,reason) VALUES (?,?,?,?)",
+    );
+    let coi = 0;
+    const candidateIds = new Set(applicants.map((a) => a.user_id));
+    for (const c of chats) {
+      if (!candidateIds.has(c.candidate) || !officerIds.has(c.officer)) continue;
+      insCoi.run(key, c.candidate, c.officer, "coffee chat");
+      coi++;
+    }
+
+    audit(u, "interview.round.quickstart", key, {
+      candidates: applicants.length,
+      panelists: officers.length,
+      conflicts: coi,
+    });
+    emit(u, "interview", "round", key, { status: "planned", stage });
+
+    const f = feasibility(key);
+    const missing = officers.filter(
+      (o) =>
+        !slots.some((sl) => {
+          if (sl.owner !== o.id) return false;
+          try {
+            return JSON.parse(sl.data).starts_at > now;
+          } catch {
+            return false;
+          }
+        }),
+    ).length;
+    return {
+      id: key,
+      seeded: {
+        candidates: applicants.length,
+        panelists: officers.length,
+        default_cap: cap,
+        availability_slots: seeded,
+        conflicts: coi,
+        candidate_availability: assumed ? "assumed_all_offered" : "declared",
+      },
+      feasibility: f,
+      needs:
+        missing > 0
+          ? `${missing} officer${missing === 1 ? " has" : "s have"} no open slots, so they contribute no capacity yet. Ask them to post availability.`
+          : assumed
+            ? "Candidates are assumed free at every offered time, so this is an upper bound until they pick."
+            : "Ready.",
+    };
   }
 
   if (action === "panelist/set") {

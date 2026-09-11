@@ -41,6 +41,7 @@ const setup = await req("auth/setup", {
   bootstrap: process.env.CEC_BOOTSTRAP_TOKEN,
 });
 const officer = setup.cookie;
+const setupUserId = (await req("state", undefined, officer)).data.user.id;
 
 // Registration creates an applicant; an accepted application makes them a
 // member, which is what the task workflow requires.
@@ -166,5 +167,39 @@ ok(row2.hypothesis.length > 10, "every signal ships with a stated hypothesis");
 // --- derived outcomes need no human ----------------------------------------
 const derived = (await req("outcomes/derive", {}, officer)).data;
 ok(typeof derived.derived === "number", "derive returns a count");
+
+// --- quickstart: one call derives a whole round from existing work ---------
+// Officers post open slots (the same ones used for coffee chats).
+const slotTimes = [];
+for (let i = 0; i < 6; i++) {
+  const starts = new Date(Date.now() + (i + 2) * 86400e3).toISOString();
+  const ends = new Date(Date.parse(starts) + 30 * 60e3).toISOString();
+  await req("create", { kind: "slot", data: { title: `Office hour ${i}`, starts_at: starts, ends_at: ends, location: "eHub" } }, officer);
+  slotTimes.push(starts);
+}
+// Two more applicants sitting at "submitted" — the natural candidate pool.
+const applicants = [];
+for (const tag of ["q1", "q2"]) {
+  const r = await req("auth/register", { name: `Applicant ${tag}`, email: `a${tag}-${suffix}@example.test`, password: pass });
+  const who = (await req("state", undefined, r.cookie)).data.user;
+  await req("apply", { track: "Events", statement: `Applicant ${tag} ships things.`, url: "https://example.com/a" }, r.cookie);
+  applicants.push(who.id);
+}
+
+const qs = (await req("interviews/round/quickstart", { name: "Fall first rounds", stage: "first", panel_size: 1, default_cap: 3 }, officer)).data;
+ok(!!qs.id, "quickstart created a round in one call");
+ok(qs.seeded.candidates === 2, `candidates pulled from the application stage, got ${qs.seeded.candidates}`);
+ok(qs.seeded.panelists >= 1, `officers seeded as panelists, got ${qs.seeded.panelists}`);
+ok(qs.seeded.availability_slots === 6, `officer open slots became availability, got ${qs.seeded.availability_slots}`);
+ok(qs.seeded.candidate_availability === "assumed_all_offered", "candidates default to any offered time");
+ok(qs.feasibility.demand === 2, "feasibility computed immediately, with no further setup");
+ok(qs.feasibility.schedulable === 2, `both fit within cap 3, got ${qs.feasibility.schedulable}`);
+ok(typeof qs.needs === "string" && qs.needs.length > 0, "tells the officer what is still missing in plain language");
+
+// Capacity is honest: drop every cap to zero and it says so.
+await req("interviews/panelist/set", { round_id: qs.id, user_id: setupUserId, weekly_cap: 0 }, officer);
+const tight = (await req("interviews/feasibility", { round_id: qs.id }, officer)).data;
+ok(tight.schedulable === 0, `cap 0 means nothing is schedulable, got ${tight.schedulable}`);
+ok(/cap/i.test(tight.explanation), `explanation blames caps: "${tight.explanation}"`);
 
 console.log(`${checks} signal-pipeline assertions passed.`);
