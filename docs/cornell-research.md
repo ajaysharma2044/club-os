@@ -68,13 +68,13 @@ Cornell's startup guide organizes university resources by venture stage. These a
 
 Implication: the new member educator needs reusable assignments, artifact submissions, feedback, and project milestones. Keep external opportunities source-linked and time-bounded. Do not advertise an unconfirmed fellowship as open or infer access to Cornell Canvas courses.
 
-## Integration finding: Luma deserves first consideration
+## Integration finding: Luma is an optional migration source
 
 Luma documents host-side CSV guest exports and distinguishes registration approval from ticket-level check-in. An approved registration is not proof of attendance. [Luma guest-list documentation](https://help.luma.com/p/managing-your-guest-list)
 
 Its API requires Luma Plus and calendar-scoped credentials; the developer guide warns that a calendar key grants full calendar access. We did not establish CEC's subscription or access rights. [Luma API guide](https://docs.luma.com/reference/getting-started-with-your-api)
 
-Recommended transition: officer-provided export and reconciliation first; authenticated synchronization after access is established. Pick one authoritative registration system per event. Preserve external IDs, timestamps, and source status; never scrape public attendee tiles to construct the club roster.
+Product direction: operate new event registration natively in Club OS. Luma is optional for officer-provided historical exports or later synchronization, and is not required to use the product. Existing externally registered events need an explicit migration decision. Preserve external IDs, timestamps, and source status during any import; never scrape public attendee tiles to construct the club roster. This updates the earlier integration-first recommendation without changing the underlying research findings.
 
 ## What remains unknown
 

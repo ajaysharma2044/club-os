@@ -70,11 +70,21 @@ For external builder discovery, a member chooses the profile fields and artifact
 
 Current gap: officer contacts, deals, money entries, and a double-opt-in public project directory exist. There are no firm accounts, recipient-specific grants, paid discovery subscriptions, introduction workflow, or verified hiring/funding outcomes. Public profile sharing alone is not consent to sell data.
 
-## 6. Integration sequence
+## 6. Native event system and optional integrations
+
+Product direction: build and operate event registration inside Club OS. Luma is an optional historical import or distribution connection, not a required dependency or the first product milestone. The native pilot already provides event publication, account-based RSVPs, capacity/waitlisting, officer-recorded attendance, and calendar export.
+
+Complete the in-house flow with individual shareable event pages, community registration independent of recruitment, configurable event questions and food ticket types, cancellation and automatic waitlist promotion, verified email confirmations/reminders, QR check-in, recurring occurrences, and linked tasks/budgets/outcomes. Store registration and actual attendance as separate facts under stable event/person IDs. This is planned work; the current pilot does not implement all these capabilities.
+
+An email delivery provider can transport messages while Club OS owns their templates, timing, preferences, and delivery records. If paid tickets become necessary, use a payment processor while keeping orders and reconciliation in the club record. The product does not need to recreate email transport or card-processing infrastructure.
+
+For any event already accepting registrations externally, preserve that registration authority until an officer explicitly switches it; optional imports must reconcile rather than create duplicate registrations. New native events require no Luma account or subscription.
+
+Optional connection sequence:
 
 | Priority | Connection | First useful exchange | Boundary |
 |---|---|---|---|
-| 1 | Luma | Officer export of events/registrations/check-ins, with reconciliation preview | No public guest scraping; one registration authority per event. API access depends on subscription and credentials. |
+| Optional migration | Luma | Officer export of past events/registrations/check-ins, with reconciliation preview | Native events work independently. API access is only needed if external synchronization is later chosen. |
 | 2 | Existing application form/sheet | Officer-controlled import into a named cycle; duplicate review before commit | Preserve original question version and source IDs; import does not send decisions. |
 | 3 | Google Drive/Docs | Select club-owned folders and link authoritative event plans, minutes, and artifacts | A linked document retains source access controls. Do not turn edit count into contribution quality. |
 | 4 | Google Calendar | Publish confirmed event times and interview availability | A calendar entry does not confirm the venue or prove attendance. ICS export already works; live sync does not. |
@@ -110,7 +120,7 @@ Use declared needs, interests, shared artifacts, availability, and explicit elig
 ## 8. Next implementation order and acceptance criteria
 
 1. **Identity and permissions:** a guest can attend without applying; event staff cannot access recruitment notes; term changes remove only the relevant grants.
-2. **One real Startup Hours workflow:** one registration authority, reconciled imports without duplicates, owner checklist, venue confirmation, food cutoff, and expense links. An officer can explain every forecast input.
+2. **One native Startup Hours workflow:** shareable event page, community registration, configurable questions and food cutoff, confirmation/reminder delivery, waitlist promotion, QR check-in, owner checklist, venue confirmation, and expense links. An officer can explain every forecast input. Historical imports are optional migration work.
 3. **Cycle-aware recruitment:** the same person can apply in two cycles; questions and tracks preserve their submitted version; scheduling and decisions have explicit owners and correction behavior.
 4. **Education and handoff:** a cohort receives assignments; reviewed work links to artifacts; a successor accepts each transferred responsibility.
 5. **Introduction pilot:** a small opt-in set of projects, named recipients, specific needs, revocable sharing, and recorded outcomes. Test whether partners value the service before treating the proposed annual price as validated demand.
