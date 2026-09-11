@@ -14,6 +14,11 @@ import { schedule, scheduleState, calendarFeed } from "@/lib/cec/scheduling";
 import { adaptive, adaptiveRead } from "@/lib/cec/adaptive";
 import { evidenceRead, evidenceAction } from "@/lib/cec/evidence";
 import { recommendations } from "@/lib/cec/recommendations";
+import {
+  interviews,
+  interviewState,
+  interviewsInit,
+} from "@/lib/cec/interviews";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,6 +143,10 @@ export async function GET(
     }
     if (!u) fail("Sign in to continue.", 401);
     if (path === "schedule/state") return response(scheduleState(u));
+    if (path === "interviews/state") {
+      interviewsInit();
+      return response(interviewState(u));
+    }
     if (path === "evidence") return response(evidenceRead(u));
     if (path.startsWith("adaptive/"))
       return response(adaptiveRead(u, path.slice(9)));
@@ -225,6 +234,10 @@ export async function POST(
     const u = principal(req);
     if (!u) fail("Sign in to continue.", 401);
     throttle("mutate:" + u.id, 500);
+    if (path.startsWith("interviews/")) {
+      interviewsInit();
+      return response(interviews(u, path.slice(11), b));
+    }
     if (path.startsWith("schedule/"))
       return response(schedule(u, path.slice(9), b));
     if (path.startsWith("evidence/"))

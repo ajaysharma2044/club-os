@@ -4,7 +4,10 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:scheduler": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/scheduler.mjs",
+    "test:api": "node scripts/cec-test-server.mjs",
+    "test": "npm run test:scheduler && npm run test:api"
   },
   "dependencies": {
     "@fontsource/commit-mono": "^5.2.5",
