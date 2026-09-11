@@ -49,7 +49,7 @@ export function ChatApp() {
   useEffect(() => {
     const next = resolveChannelId(params.get("c"));
     if (next === activeId) return;
-    const channel = data.find((c) => c.id === next);
+    const channel = channels.find((c) => c.id === next);
     if (!channel) return;
     setActiveId(next);
     setTopicId(channel.topics[0]?.id ?? "");
