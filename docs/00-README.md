@@ -26,6 +26,7 @@ Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw report
 | 16 | [Quant review](16-quant-review.md) | Adversarial review of the math (pending) |
 | **17** | **[Two-layer intelligence](17-two-layer-intelligence.md)** | **Why club-level and person-level are one model, what differs, and where the real value sits (the interaction).** |
 | **18** | **[Campus context engine](18-campus-context-engine.md)** | **The fourth layer. Regimes, the campus state vector, and the attribution fix: alpha is actual minus expected-given-context.** |
+| **19** | **[Academic layer, weather, historical timeline](19-academic-weather-history.md)** | **Every class and how hard it is, assessment pressure, the weather, and point-in-time reconstruction back to 2014 — plus the double-count that nearly happened twice.** |
 
 **Read 09 first.** The other eight documents are interfaces to it.
 

@@ -22,6 +22,10 @@
 // means in September.
 
 import type { CampusEvent } from "./campus";
+import type { AcademicFactor, Heatmap } from "./academic";
+import { academicPressure, classConflict, academicFactor } from "./academic";
+import type { HourlyWeather, WeatherFactor } from "./weather";
+import { weatherAt, weatherFactor } from "./weather";
 
 // ------------------------------------------------------------------ regimes
 
@@ -134,13 +138,32 @@ export type CampusState = {
   eventDensity: number;
   /** density relative to this campus's own typical day, 1.0 = typical */
   relativeDensity: number | null;
+  /**
+   * Campus-wide assessment pressure, 0..1. Null when no academic calendar
+   * detail was supplied — a calendar with no prelim or finals dates cannot
+   * support a pressure curve, and guessing one would be worse than saying so.
+   */
+  academicPressure: number | null;
+  /**
+   * How much teaching is scheduled at that hour, 0..1 against the busiest
+   * teaching hour of the week. Null when no course heatmap was supplied.
+   */
+  classIntensity: number | null;
+  /** the combined academic multiplier, or null when there is nothing to say */
+  academic: AcademicFactor | null;
+  /** the weather multiplier, or null when no forecast covers that hour */
+  weather: WeatherFactor | null;
   note: string;
 };
 
 /**
  * C_t — the campus state at a moment. Everything here is derivable from an
- * academic calendar plus a public events feed, so it costs nothing per club
- * and is shared by every club on that campus.
+ * academic calendar, a public events feed and a published course roster, so it
+ * costs nothing per club and is shared by every club on that campus.
+ *
+ * The academic fields are optional and report null rather than a default when
+ * their inputs are missing, so a club on a campus whose roster we have not
+ * ingested gets an honest gap instead of a fabricated one.
  */
 export function campusState(input: {
   at: string;
@@ -149,6 +172,14 @@ export function campusState(input: {
   /** median events per comparable window, if known, for relative density */
   typicalDensity?: number;
   windowHours?: number;
+  /** credit-weighted teaching heatmap for this campus, if ingested */
+  heatmap?: Heatmap | null;
+  /** hours from UTC at the campus, for reading the heatmap's local grid */
+  timeZoneOffsetHours?: number;
+  /** hourly forecast or reconstructed history covering this moment */
+  weather?: HourlyWeather[] | null;
+  /** an outdoor event is genuinely weather-dependent in a way indoors is not */
+  outdoors?: boolean;
 }): CampusState {
   const r = detectRegime(input.at, input.calendar);
   const w = (input.windowHours ?? 3) * 3600e3;
@@ -158,6 +189,33 @@ export function campusState(input: {
     const s = Date.parse(e.startsAt);
     return Number.isFinite(s) && Math.abs(s - t) <= w;
   }).length;
+
+  // Assessment pressure needs dated prelim or finals windows. A calendar that
+  // carries only term bounds cannot support the curve.
+  const hasAssessmentDates =
+    !!input.calendar.finalsStart || (input.calendar.prelimPeriods || []).length > 0;
+  const pressure = hasAssessmentDates
+    ? academicPressure(input.at, input.calendar)
+    : null;
+  const conflict = input.heatmap
+    ? classConflict(input.heatmap, input.at, input.timeZoneOffsetHours)
+    : null;
+  const academic =
+    pressure || conflict
+      ? academicFactor({ regime: r.regime, conflict, pressure })
+      : null;
+
+  // Only when a forecast hour actually covers this moment. An event outside the
+  // forecast window gets null, not a neutral factor dressed up as a reading.
+  const hour = input.weather ? weatherAt(input.weather, input.at) : null;
+  const weather = hour
+    ? weatherFactor(hour, {
+        outdoors: input.outdoors,
+        // Below freezing, precipitation falls as snow, which costs more.
+        snow: (hour.temperatureF ?? 40) <= 32,
+      })
+    : null;
+
   return {
     at: input.at,
     regime: r.regime,
@@ -168,6 +226,10 @@ export function campusState(input: {
       input.typicalDensity && input.typicalDensity > 0
         ? density / input.typicalDensity
         : null,
+    academicPressure: pressure ? pressure.pressure : null,
+    classIntensity: conflict ? conflict.intensity : null,
+    academic,
+    weather,
     note: r.note,
   };
 }
@@ -178,12 +240,18 @@ export type Alpha = {
   actual: number;
   /** what a comparable event would draw in a normal week */
   baseline: number;
-  /** what to expect given the regime and the competition that night */
+  /** what to expect given the regime, the competition and the academic week */
   expected: number;
   /** actual minus context-conditional expectation */
   alpha: number;
   /** alpha as a share of the context expectation */
   ratio: number | null;
+  /**
+   * Every multiplier applied between baseline and expectation, named. An
+   * officer being told their event underperformed is entitled to see exactly
+   * which conditions the model charged them for.
+   */
+  factors: { label: string; multiplier: number }[];
   verdict: "well_above" | "above" | "as_expected" | "below" | "well_below";
   reading: string;
 };
@@ -205,6 +273,10 @@ export function behaviouralAlpha(input: {
   competing?: number;
   /** proportional turnout lost per competing event */
   perCompetitor?: number;
+  /** academic multiplier; falls back to the state's own, then to neutral */
+  academic?: number;
+  /** weather multiplier; falls back to the state's own, then to neutral */
+  weather?: number;
 }): Alpha {
   const regimeFactor = REGIME_TURNOUT[input.state.regime] ?? 1;
   const competing = input.competing ?? input.state.eventDensity;
@@ -217,9 +289,34 @@ export function behaviouralAlpha(input: {
   // is nowhere near enough history to estimate it, and an earlier guess of
   // 0.03 was aggressive enough to score a genuinely poor night as a triumph.
   const decay = Math.exp(-(input.perCompetitor ?? 0.015) * Math.max(0, competing));
-  const expected = Math.max(0, input.baseline * regimeFactor * decay);
+  // The academic multiplier is already expressed as EXCESS over what the regime
+  // prices in (see academicFactor), so multiplying it here does not double-count
+  // the regime term above.
+  const academic = input.academic ?? input.state.academic?.factor ?? 1;
+  // Bounded hard in weatherFactor, because an indoor event on a residential
+  // campus is not twice as hard a sell in the rain, and a model free to claim
+  // that would explain away every badly-run event as bad weather.
+  const weather = input.weather ?? input.state.weather?.factor ?? 1;
+  const expected = Math.max(0, input.baseline * regimeFactor * decay * academic * weather);
   const alpha = input.actual - expected;
   const ratio = expected > 0 ? alpha / expected : null;
+
+  const factors = [
+    { label: input.state.regime.replace(/_/g, " "), multiplier: Number(regimeFactor.toFixed(3)) },
+    { label: `${competing} competing events`, multiplier: Number(decay.toFixed(3)) },
+  ];
+  if (academic !== 1)
+    factors.push({
+      label: input.state.academic?.reading ? "academic week" : "academic adjustment",
+      multiplier: Number(academic.toFixed(3)),
+    });
+  if (weather !== 1)
+    factors.push({
+      label: input.state.weather?.components.length
+        ? input.state.weather.components.map((c) => c.label).join(", ")
+        : "weather",
+      multiplier: Number(weather.toFixed(3)),
+    });
 
   const verdict: Alpha["verdict"] =
     ratio === null
@@ -234,10 +331,19 @@ export function behaviouralAlpha(input: {
               ? "below"
               : "as_expected";
 
+  const academicNote =
+    academic < 0.95
+      ? input.state.classIntensity !== null && input.state.classIntensity > 0.5
+        ? " and a heavy teaching hour"
+        : " and the academic week"
+      : academic > 1.05
+        ? " and an academically quiet week"
+        : "";
+  const weatherNote = weather < 0.97 ? " and the weather" : "";
   const ctx =
-    input.state.regime === "normal_term" && competing < 5
+    input.state.regime === "normal_term" && competing < 5 && !academicNote && !weatherNote
       ? ""
-      : ` given ${input.state.regime.replace("_", " ")}${competing ? ` and ${competing} competing events` : ""}`;
+      : ` given ${input.state.regime.replace("_", " ")}${competing ? ` and ${competing} competing events` : ""}${academicNote}${weatherNote}`;
 
   return {
     actual: input.actual,
@@ -245,6 +351,7 @@ export function behaviouralAlpha(input: {
     expected: Math.round(expected),
     alpha: Math.round(alpha),
     ratio,
+    factors,
     verdict,
     reading:
       verdict === "well_above"
