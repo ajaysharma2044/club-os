@@ -552,7 +552,7 @@ export function groupPurchaseOpportunities(
       ];
       if (gap > 0)
         caveats.push(
-          `Windows were allowed to sit up to ${options.maxGapDays} day(s) apart, so these events are not necessarily on the same day.`,
+          `Windows were allowed to sit up to ${options.maxGapDays} day${options.maxGapDays === 1 ? "" : "s"} apart, so these events do not all fall on the same date.`,
         );
       out.push({
         category: category as NeedCategory,

@@ -97,6 +97,8 @@ export const SIZING_METHODS = [
   "predictive_interval",
   /** a predictive quantile divided by a stated per-unit capacity */
   "per_unit_capacity",
+  /** a predictive quantile scaled by an attach rate nobody has measured */
+  "assumed_attach_rate",
   /** a count somebody typed in, not a guess at all */
   "stated_fact",
 ] as const;
@@ -392,7 +394,7 @@ const RULES: Rule[] = [
     size: (c) => ({
       low: round(c.q(PLANNING_QUANTILES.low) * 0.2),
       high: round(c.q(PLANNING_QUANTILES.high) * 0.6),
-      method: "predictive_interval",
+      method: "assumed_attach_rate",
       note: "Assumes between a fifth and three fifths of attendees take one. We have never measured an attach rate for this club, so treat the range as an illustration and not a forecast.",
     }),
   },
