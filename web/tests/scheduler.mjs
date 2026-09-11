@@ -240,4 +240,39 @@ ok(
   "raising caps to 10 seats all 17 second rounds",
 );
 
+// --- REGRESSION: stranded must equal the actual shortfall -----------------
+// A served candidate can remain reachable in the residual graph through a
+// reverse edge it shares with an unserved one. Inferring "unmet" from
+// reachability named all 35 CEC candidates stranded when only 14 were.
+{
+  const f = computeFeasibility(cec);
+  ok(
+    f.stranded.length === f.short,
+    `stranded (${f.stranded.length}) must equal short (${f.short})`,
+  );
+  ok(f.stranded.length === 14, `exactly 14 stranded on the CEC instance, got ${f.stranded.length}`);
+}
+// Hold across many random instances, which is how the bug was found.
+{
+  let mismatches = 0;
+  const rand = (seed) => { let x = seed; return () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648; };
+  const r = rand(20260911);
+  for (let trial = 0; trial < 400; trial++) {
+    const nC = 1 + Math.floor(r() * 6), nP = 1 + Math.floor(r() * 4), nS = 1 + Math.floor(r() * 4);
+    const all = Array.from({ length: nS }, (_, i) => `t${i}`);
+    const pick = () => all.filter(() => r() > 0.4);
+    const input = {
+      panelSize: 1,
+      candidates: Array.from({ length: nC }, (_, i) => `c${i}`),
+      panelists: Array.from({ length: nP }, (_, i) => ({ id: `p${i}`, cap: Math.floor(r() * 3) })),
+      candidateSlots: {}, panelistSlots: {},
+    };
+    for (const c of input.candidates) input.candidateSlots[c] = pick();
+    for (const p of input.panelists) input.panelistSlots[p.id] = pick();
+    const f = computeFeasibility(input);
+    if (f.stranded.length !== f.short) mismatches++;
+  }
+  ok(mismatches === 0, `stranded matched short in all 400 random instances, ${mismatches} mismatches`);
+}
+
 console.log(`${checks} scheduler assertions passed.`);

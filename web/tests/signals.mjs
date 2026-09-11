@@ -241,4 +241,33 @@ const wrongDomain = await fetch(origin + "/api/cec/invite/claim", {
 ok(wrongDomain.status === 400, "a non-Cornell address is turned away");
 ok((await req("invite?code=ZZZZ-ZZZZ")).data.valid === false, "an unknown code is not valid");
 
+// --- REGRESSION: point-in-time leaks --------------------------------------
+// The response to an offer is only known when it is recorded. Filtering
+// opportunities by their OFFER time and then reading a response stamped later
+// leaked the future backwards into every take rate, and dated the leaked
+// observation at the cutoff so it also carried maximum recency weight.
+{
+  // Everything above happened "now". A horizon in the past must therefore see
+  // no answered offers at all, regardless of how many exist today.
+  const past = new Date(Date.now() - 30 * 86400e3).toISOString();
+  await req(
+    "outcomes/label",
+    { subject_type: "person", subject_id: finisher.id, kind: "transition_completed", value: 1, horizon_start: past },
+    officer,
+  );
+  const run = (await req("behavior/registry/run", {}, officer)).data;
+  const takeRow = run.rows.find((r) => r.signal === "task_take_rate");
+  ok(
+    takeRow.pairs === 0 || takeRow.verdict === "insufficient_data",
+    "a horizon before the activity sees nothing leak backwards",
+  );
+  const panelRow = run.rows.find((r) => r.signal === "panel_take_rate");
+  ok(panelRow.verdict === "insufficient_data", "panel take rate does not fabricate history either");
+  const interviewRow = run.rows.find((r) => r.signal === "interview_reliability");
+  ok(
+    interviewRow.verdict === "insufficient_data",
+    "interview outcomes are read by status_at, so none leak before they were set",
+  );
+}
+
 console.log(`${checks} signal-pipeline assertions passed.`);

@@ -177,6 +177,10 @@ export type TakeRate = {
   pending: number;
   /** offers not attributable to the person's own choice; excluded from rates */
   excluded: number;
+  /** the fair denominator: offers the person actually answered or let lapse */
+  ownChoice: number;
+  /** accepted / ownChoice, or null when they were never really asked */
+  rate: number | null;
 };
 
 /** Per-kind take rates for a person as of a point in time (observed_at). */
@@ -201,6 +205,8 @@ export function takeRates(userId: string, asOf?: string): TakeRate[] {
         expired: 0,
         pending: 0,
         excluded: 0,
+        ownChoice: 0,
+        rate: null,
       });
     const t = by.get(r.kind)!;
     t.offered++;
@@ -209,6 +215,13 @@ export function takeRates(userId: string, asOf?: string): TakeRate[] {
     else if (r.response === "expired") t.expired++;
     else if (r.response === "pending") t.pending++;
     else t.excluded++;
+  }
+  // `offered` counts every row for display, but a rate must divide only by
+  // what the person actually decided. Counting a withdrawn or reassigned offer
+  // against someone attributes an officer's decision to them.
+  for (const t of by.values()) {
+    t.ownChoice = t.accepted + t.declined + t.expired;
+    t.rate = t.ownChoice > 0 ? t.accepted / t.ownChoice : null;
   }
   return [...by.values()];
 }

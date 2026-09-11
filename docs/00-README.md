@@ -25,6 +25,7 @@ Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw report
 | **15** | **[Behavioral quant layer](15-behavioral-quant-layer.md)** | **Turning operational activity into tested predictive signal. Opportunity adjustment, signal registry, and why the factor zoo waits.** |
 | 16 | [Quant review](16-quant-review.md) | Adversarial review of the math (pending) |
 | **17** | **[Two-layer intelligence](17-two-layer-intelligence.md)** | **Why club-level and person-level are one model, what differs, and where the real value sits (the interaction).** |
+| **18** | **[Campus context engine](18-campus-context-engine.md)** | **The fourth layer. Regimes, the campus state vector, and the attribution fix: alpha is actual minus expected-given-context.** |
 
 **Read 09 first.** The other eight documents are interfaces to it.
 

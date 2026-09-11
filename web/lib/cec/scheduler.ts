@@ -83,11 +83,17 @@ export function computeFeasibility(input: SchedulerInput): Feasibility {
   const caps = binding.filter((b) => b.label.startsWith("cap:")).length;
   const slots = binding.filter((b) => b.label.startsWith("slot:")).length;
 
-  // A candidate still reachable from the source in the residual graph has slack
-  // on their demand edge — that is precisely an unmet candidate. (Appearing in
-  // the cut means the opposite: their demand edge is saturated, i.e. served.)
-  const seen = net.reachable(source);
-  const stranded = input.candidates.filter((c) => seen[candNode.get(c)!]);
+  // A candidate is unmet iff their demand edge carries less than k units of
+  // flow. Read the flow directly — do NOT infer it from residual reachability.
+  // A fully served candidate can still be reachable through a reverse edge it
+  // shares with an unserved one, which on the real CEC instance named all 35
+  // candidates stranded when only 14 were.
+  const served = new Map<string, number>();
+  for (const e of net.graph[source]) {
+    if (e.label?.startsWith("candidate:"))
+      served.set(e.label.slice("candidate:".length), e.flow);
+  }
+  const stranded = input.candidates.filter((c) => (served.get(c) ?? 0) < k);
   // Distinguish "no overlap with anyone" from "lost the contest for capacity".
   const noOverlap = stranded.filter((c) => {
     const blocked = setOf(input.conflicts?.[c]);

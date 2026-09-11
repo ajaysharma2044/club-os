@@ -307,14 +307,22 @@ export function computeRaw(userId: string, asOf: string, events?: Ev[]): Record<
   }
 
   // --- take rates from the opportunity ledger --------------------------------
+  // `observed_at` is stamped when the offer is made and is never updated when
+  // the response arrives, so filtering on it returns rows whose response was
+  // recorded long after `asOf` — a point-in-time leak that also dated the
+  // point at `asOf`, giving a leaked observation maximum recency weight.
+  // Filter by offer time, then only count a response actually known by then.
   const opps = db()
-    .prepare("SELECT kind,response,responded_at,offered_at FROM opportunities WHERE offered_to=? AND observed_at<=?")
+    .prepare("SELECT kind,response,responded_at,offered_at FROM opportunities WHERE offered_to=? AND offered_at<=?")
     .all(userId, asOf) as { kind: string; response: string; responded_at: string | null; offered_at: string }[];
   const takeKey: Record<string, string> = { task: "task_take_rate", ownership: "ownership_take_rate", panel: "panel_take_rate" };
   for (const o of opps) {
     const key = takeKey[o.kind];
-    if (!key || !OWN_CHOICE.includes(o.response as any)) continue;
-    hit(out[key], o.response === "accepted", o.responded_at || o.offered_at, asOf);
+    if (!key) continue;
+    const known = !!o.responded_at && o.responded_at <= asOf;
+    if (!known) continue; // still pending as of asOf; carries no information
+    if (!OWN_CHOICE.includes(o.response as any)) continue;
+    hit(out[key], o.response === "accepted", o.responded_at as string, asOf);
   }
 
   // --- blockers ----------------------------------------------------------------
@@ -394,15 +402,20 @@ export function computeRaw(userId: string, asOf: string, events?: Ev[]): Record<
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='interview_assignments'")
     .get();
   if (hasInterviews) {
+    // `status` is mutable, so filtering on `created_at` reads an outcome that
+    // may have been recorded after `asOf`. Filter on when the status was set.
+    // Rows written before `status_at` existed are skipped rather than guessed.
     const rows = db()
-      .prepare("SELECT panel,status,created_at FROM interview_assignments WHERE created_at<=? AND status IN ('completed','no_show')")
-      .all(asOf) as { panel: string; status: string; created_at: string }[];
+      .prepare(
+        "SELECT panel,status,status_at FROM interview_assignments WHERE status_at IS NOT NULL AND status_at<=? AND status IN ('completed','no_show')",
+      )
+      .all(asOf) as { panel: string; status: string; status_at: string }[];
     for (const r of rows) {
       let panel: string[] = [];
       try {
         panel = JSON.parse(r.panel);
       } catch {}
-      if (panel.includes(userId)) hit(out.interview_reliability, r.status === "completed", r.created_at, asOf);
+      if (panel.includes(userId)) hit(out.interview_reliability, r.status === "completed", r.status_at, asOf);
     }
   }
 

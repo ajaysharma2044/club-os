@@ -68,9 +68,20 @@ CREATE TABLE IF NOT EXISTS interview_assignments(
   panel TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'offered',
   created_at TEXT NOT NULL,
+  -- When status last changed. Required: status is mutable, so any
+  -- point-in-time read filtering on created_at would see an outcome
+  -- recorded after its cutoff.
+  status_at TEXT,
   UNIQUE(round_id,candidate_id));
 CREATE INDEX IF NOT EXISTS interview_assign_round ON interview_assignments(round_id,status);
+CREATE INDEX IF NOT EXISTS interview_assign_status_at ON interview_assignments(status_at);
 `);
+  // Additive migration for databases created before status_at existed.
+  const cols = db()
+    .prepare("PRAGMA table_info(interview_assignments)")
+    .all() as { name: string }[];
+  if (!cols.some((c) => c.name === "status_at"))
+    db().exec("ALTER TABLE interview_assignments ADD COLUMN status_at TEXT");
 }
 
 type Round = {
@@ -469,7 +480,7 @@ export function interviews(u: User, action: string, b: any) {
         )
         .run(roundId);
       const ins = db().prepare(
-        "INSERT INTO interview_assignments(id,round_id,candidate_id,slot,panel,status,created_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(round_id,candidate_id) DO UPDATE SET slot=excluded.slot,panel=excluded.panel,status='offered'",
+        "INSERT INTO interview_assignments(id,round_id,candidate_id,slot,panel,status,created_at,status_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(round_id,candidate_id) DO UPDATE SET slot=excluded.slot,panel=excluded.panel,status='offered',status_at=excluded.status_at",
       );
       for (const a of assignments)
         ins.run(
@@ -479,6 +490,7 @@ export function interviews(u: User, action: string, b: any) {
           a.slot,
           JSON.stringify(a.panel),
           "offered",
+          now,
           now,
         );
       audit(u, "interview.solve.commit", roundId, {
@@ -505,8 +517,8 @@ export function interviews(u: User, action: string, b: any) {
       .get(key) as any;
     if (!row) fail("Assignment not found.", 404);
     db()
-      .prepare("UPDATE interview_assignments SET status='cancelled' WHERE id=?")
-      .run(key);
+      .prepare("UPDATE interview_assignments SET status='cancelled',status_at=? WHERE id=?")
+      .run(now, key);
     db()
       .prepare(
         "UPDATE interview_candidates SET status='pending' WHERE round_id=? AND candidate_id=?",
@@ -525,8 +537,8 @@ export function interviews(u: User, action: string, b: any) {
     if (!["offered", "accepted", "completed", "no_show"].includes(status))
       fail("Unknown status.");
     db()
-      .prepare("UPDATE interview_assignments SET status=? WHERE id=?")
-      .run(status, key);
+      .prepare("UPDATE interview_assignments SET status=?,status_at=? WHERE id=?")
+      .run(status, now, key);
     audit(u, "interview.assignment.status", key, { status });
     // No-shows and completions are the labels every downstream model needs.
     emit(u, "interview", "assignment", key, {
