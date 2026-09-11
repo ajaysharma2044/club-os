@@ -96,12 +96,46 @@ export function recordEvidence(
     objectType: string;
     object: string;
     sourceKey?: string;
-    level?: "system_observed" | "self_reported" | "counterparty_confirmed";
+    level?:
+      | "system_observed"
+      | "self_reported"
+      | "counterparty_confirmed"
+      | "system_derived"
+      | "external_published";
     context?: Record<string, unknown>;
+    /**
+     * When the thing actually happened. Defaults to now, which is correct for
+     * native writes — a member clicking "accept" happens as we learn it.
+     *
+     * It is NOT correct for anything we ingest. A campus event published on
+     * 1 September and read by us on 11 September genuinely has two different
+     * times, and collapsing them makes every backtest fiction: a model
+     * replaying 5 September would "know" a fact nobody had yet.
+     *
+     * Until now nothing in this codebase ever passed these separately, so the
+     * bitemporal column pair was degenerate — present in the schema, never
+     * exercised. Every correct reader already filters BOTH columns (see the
+     * snapshot query below), so splitting them here is safe; the half-filtered
+     * readers in signals.ts are the ones to fix next.
+     */
+    occurredAt?: string;
+    /** When WE learned it. Always defaults to now and should rarely be passed. */
+    observedAt?: string;
+    /** Where it came from. "club_os" for native work, a source id for ingest. */
+    source?: string;
+    visibility?: string;
+    policy?: string;
   },
 ) {
   const key = e.sourceKey || id(),
-    at = timestamp();
+    now = timestamp();
+  const observedAt = e.observedAt || now;
+  const occurredAt = e.occurredAt || observedAt;
+  // We cannot have observed something before it happened. A source claiming
+  // otherwise is malformed, and silently accepting it would put a row in the
+  // record that no point-in-time query can ever return correctly.
+  if (occurredAt > observedAt)
+    fail("Evidence cannot occur after it was observed.", 422);
   db()
     .prepare(
       "INSERT OR IGNORE INTO activity_events(id,source_key,organization_id,episode_id,actor_id,subject_id,action_family,event_type,object_type,object_id,occurred_at,observed_at,source,source_ref,evidence_level,visibility,policy,context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -117,13 +151,13 @@ export function recordEvidence(
       e.type,
       e.objectType,
       e.object,
-      at,
-      at,
-      "club_os",
+      occurredAt,
+      observedAt,
+      e.source || "club_os",
       e.sourceKey || e.object,
       e.level || "system_observed",
-      "club_internal",
-      POLICY,
+      e.visibility || "club_internal",
+      e.policy || POLICY,
       JSON.stringify(e.context || {}),
     );
 }
