@@ -21,6 +21,7 @@ Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw report
 | 11 | [The cross-club graph](11-cross-club-graph.md) | The math of seeing a person across every club they're in, and why it's not a dossier |
 | **12** | **[CEC field evidence](12-cec-field-evidence.md)** | **What a real club's chats actually show. The only primary operator evidence in the repo.** |
 | **13** | **[Problem to solution map](13-problem-solution-map.md)** | **Every observed failure, the specific fix, and the build order. Start here to build.** |
+| **14** | **[Quant engine per feature](14-quant-per-feature.md)** | **The math under each tool: max-flow scheduling, hierarchical attendance, newsvendor food, Rasch reliability, succession risk.** |
 
 **Read 09 first.** The other eight documents are interfaces to it.
 
