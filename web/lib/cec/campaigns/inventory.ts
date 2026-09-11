@@ -90,27 +90,31 @@ export const ACTIVATION_BURDEN_HOURS: Record<ActivationType, number> = {
 };
 
 /**
- * Activations that put a commercial message in front of members rather than
- * simply funding something the club was doing anyway.
+ * The ONLY activations that do not spend the club's attention budget.
  *
- * The distinction is the whole point of the frequency cap. A brand quietly
- * covering a competition entry fee does not spend the club's attention budget;
- * a sampling event does. Counting them the same way would either throttle
- * funding the club needs or wave through the fifth product demo in a month.
+ * Defined as an exclusion list rather than an inclusion list, deliberately, and
+ * the difference is a live loophole. Listing what counts as commercial means
+ * every activation type nobody thought to list is free, and the frequency cap
+ * can then be walked straight through: five brands each "just sponsoring the
+ * weekly run" is five brands in front of members in one week, and a cap that
+ * only counted product demos would have waved all five through.
+ *
+ * So the question is not "is this an advertisement" but "does a brand reach
+ * members through it". These three are money that arrives without a pitch —
+ * a covered entry fee, a travel grant, a scholarship. Everything else counts.
  */
-export const COMMERCIAL_ACTIVATIONS: ActivationType[] = [
-  "product_test",
-  "newsletter_placement",
-  "member_discount",
-  "sampling_event",
-  "recruiting_event",
-  "ambassador_program",
-  "demo_day",
-  "challenge",
+export const NON_COMMERCIAL_ACTIVATIONS: ActivationType[] = [
+  "scholarship",
+  "competition_funding",
+  "travel_sponsorship",
 ];
 
+export const COMMERCIAL_ACTIVATIONS: ActivationType[] = ACTIVATION_TYPES.filter(
+  (t) => !NON_COMMERCIAL_ACTIVATIONS.includes(t),
+);
+
 export function isCommercial(t: ActivationType): boolean {
-  return COMMERCIAL_ACTIVATIONS.includes(t);
+  return !NON_COMMERCIAL_ACTIVATIONS.includes(t);
 }
 
 export const SPONSOR_CATEGORIES = [
