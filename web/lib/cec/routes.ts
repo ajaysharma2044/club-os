@@ -22,4 +22,5 @@ export const cecRoutes: Record<string, string> = {
   directory: "/clubs/cec/directory",
   interviews: "/clubs/cec/interviews",
   signals: "/clubs/cec/signals",
+  planning: "/clubs/cec/planning",
 };

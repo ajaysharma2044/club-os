@@ -17,6 +17,7 @@ import "./cec.css";
 import ProjectSuggestions from "./ProjectSuggestions";
 import InterviewRounds from "./InterviewRounds";
 import MySignals from "./MySignals";
+import SlotAdvisor from "./SlotAdvisor";
 import ChatScheduler from "./ChatScheduler";
 import EpisodeRecord from "./EpisodeRecord";
 import AdaptiveIntake, { SharedAdaptiveProfiles } from "./AdaptiveIntake";
@@ -57,6 +58,7 @@ const navigation = [
   ["record", "The record", ChartLine],
   ["interviews", "Interviews", Users],
   ["signals", "My signals", ChartLine],
+  ["planning", "Planning", CalendarDots],
 ] as const;
 const empty = (text: string) => <div className="empty">{text}</div>;
 const tag = (v: string) => (
@@ -691,6 +693,7 @@ export function CECWorkspace({
     directory: "Builder directory",
     intake: "Your weekly update",
     schedule: "Your meetings",
+    planning: "Planning",
   };
   const subtitles: Record<string, string> = {
     home: "The work, people, and decisions that move CEC forward.",
@@ -703,6 +706,7 @@ export function CECWorkspace({
     directory: "Projects and profiles that members have chosen to share.",
     intake: "Confirm your context. Answer what is useful next.",
     schedule: "Confirmed plans, invitations, and your personal calendar feed.",
+    planning: "Pick a time against the campus, the timetable and the term.",
   };
   function Auth() {
     return (
@@ -2532,6 +2536,14 @@ export function CECWorkspace({
               <MySignals />
             ) : user ? (
               empty("Your signals become available after membership approval.")
+            ) : (
+              Auth()
+            )
+          ) : section === "planning" ? (
+            isOfficer ? (
+              <SlotAdvisor />
+            ) : user ? (
+              empty("Scheduling advice is available to officers.")
             ) : (
               Auth()
             )
