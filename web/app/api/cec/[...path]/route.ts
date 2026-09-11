@@ -23,6 +23,8 @@ import { opportunities, opportunityState } from "@/lib/cec/opportunities";
 import { outcomes } from "@/lib/cec/outcomes";
 import { behavior, behaviorState, registryLatest } from "@/lib/cec/signals";
 import { invites, inviteState, inviteInfo, claim } from "@/lib/cec/invites";
+import { assets, assetState } from "@/lib/cec/assets";
+import { checkin, attendanceState } from "@/lib/cec/checkin";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -155,6 +157,11 @@ export async function GET(
     }
     if (path === "behavior/self") return response(behaviorState(u));
     if (path === "invites/state") return response(inviteState(u));
+    if (path === "assets/state") return response(assetState(u));
+    if (path.startsWith("attendance/")) {
+      const eventId = path.slice(11);
+      return response(attendanceState(u, eventId));
+    }
     if (path === "behavior/registry") return response({ rows: registryLatest(u) });
     if (path === "opportunities/state") return response(opportunityState(u));
     if (path === "evidence") return response(evidenceRead(u));
@@ -260,6 +267,8 @@ export async function POST(
       interviewsInit();
       return response(interviews(u, path.slice(11), b));
     }
+    if (path.startsWith("assets/")) return response(assets(u, path.slice(7), b));
+    if (path.startsWith("checkin/")) return response(checkin(u, path.slice(8), b));
     if (path.startsWith("invites/"))
       return response(invites(u, path.slice(8), b));
     if (path.startsWith("opportunities/"))

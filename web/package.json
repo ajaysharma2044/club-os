@@ -7,9 +7,14 @@
     "start": "next start",
     "test:scheduler": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/scheduler.mjs",
     "test:api": "node scripts/cec-test-server.mjs",
-    "test": "npm run test:behavioral && npm run test:scheduler && npm run test:api && npm run test:signals",
+    "test": "npm run test:pure && npm run test:api && npm run test:signals",
     "test:behavioral": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/behavioral.mjs",
-    "test:signals": "node scripts/cec-signals-test.mjs"
+    "test:signals": "node scripts/cec-signals-test.mjs",
+    "test:forecast": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/forecast.mjs",
+    "test:clubhealth": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/clubhealth.mjs",
+    "test:assets": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/assets.mjs",
+    "test:checkin": "node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/checkin.mjs",
+    "test:pure": "npm run test:behavioral && npm run test:scheduler && npm run test:forecast && npm run test:clubhealth && npm run test:assets && npm run test:checkin"
   },
   "dependencies": {
     "@fontsource/commit-mono": "^5.2.5",

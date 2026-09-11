@@ -1,4 +1,3 @@
 {
-  "/api/cec/[...path]/route": "app/api/cec/[...path]/route.js",
   "/join/cec/page": "app/join/cec/page.js"
 }

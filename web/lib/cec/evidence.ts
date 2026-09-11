@@ -1,8 +1,8 @@
 import {
   db,
   tx,
-  User,
-  Item,
+  type User,
+  type Item,
   member,
   officer,
   item,
