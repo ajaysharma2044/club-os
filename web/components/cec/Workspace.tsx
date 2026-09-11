@@ -18,6 +18,7 @@ import ProjectSuggestions from "./ProjectSuggestions";
 import InterviewRounds from "./InterviewRounds";
 import MySignals from "./MySignals";
 import SlotAdvisor from "./SlotAdvisor";
+import UpNext from "./UpNext";
 import ChatScheduler from "./ChatScheduler";
 import EpisodeRecord from "./EpisodeRecord";
 import AdaptiveIntake, { SharedAdaptiveProfiles } from "./AdaptiveIntake";
@@ -813,6 +814,9 @@ export function CECWorkspace({
   function Home() {
     return (
       <>
+        {/* What needs you comes FIRST. The static counts below are context,
+            not the point (docs/22 section 5). */}
+        {isMember && <UpNext key={user.id} />}
         {user && (
           <div className="notice">
             <Link href={cecRoutes.intake} className="link">

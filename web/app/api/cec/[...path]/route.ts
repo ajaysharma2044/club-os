@@ -28,6 +28,10 @@ import { checkin, attendanceState } from "@/lib/cec/checkin";
 import { factorState } from "@/lib/cec/factor-store";
 import { planning, planningReadiness } from "@/lib/cec/planning/service";
 import { messaging, messagingState } from "@/lib/cec/messaging/service";
+import { upNext } from "@/lib/cec/upnext";
+import { inboxSummary } from "@/lib/cec/messaging/delivery";
+import { messagingInit } from "@/lib/cec/messaging/conversations";
+import { deliveryInit } from "@/lib/cec/messaging/delivery";
 import { flush, quant } from "@/lib/cec/quant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -162,6 +166,24 @@ export async function GET(
     if (path === "factors/state") return response(factorState(u));
     if (path === "planning/readiness") return response(planningReadiness(u));
     if (path === "messaging/state") return response(messagingState(u));
+    if (path === "upnext") {
+      const base = upNext(u);
+      // The caller's OWN unread, shown to the caller. That is the mirror test
+      // satisfied, not a breach of the messaging wall: the wall stops private
+      // conversation becoming evidence or signal, not a person seeing their
+      // own inbox. Nothing here is stored, scored or shown to anyone else.
+      messagingInit();
+      deliveryInit();
+      const inbox = inboxSummary(u);
+      return response({
+        ...base,
+        directed: {
+          mentions: inbox.total_mentions,
+          messages: inbox.total_unread,
+        },
+        ambient: inbox.total_unread > 0,
+      });
+    }
     if (path === "invites/state") return response(inviteState(u));
     if (path === "assets/state") return response(assetState(u));
     if (path.startsWith("attendance/")) {

@@ -219,6 +219,26 @@ export function captureItem(
       ownership_basis:
         r.kind === "task" ? "assigned_responsibility" : "record_creator",
       ...(r.kind === "task" ? { due_at: r.data.due_at } : {}),
+      // WHERE and WHEN an event moved, not just that it was edited.
+      //
+      // docs/12 §1 is the most expensive failure in the field evidence: a room
+      // changed, the listing was never updated, officers and attendees walked
+      // to the wrong building, and "URGENT" went out at 6:55pm for a 7pm start.
+      // The record knew the event had been edited and could not say what about
+      // it had moved, so no interface could warn anyone.
+      //
+      // Recorded only when the value actually changed, so the common case adds
+      // nothing to the row.
+      ...(r.kind === "event" || r.kind === "meeting"
+        ? {
+            ...(previous && previous.data.location !== r.data.location
+              ? { previous_location: previous.data.location ?? null }
+              : {}),
+            ...(previous && previous.data.starts_at !== r.data.starts_at
+              ? { previous_starts_at: previous.data.starts_at ?? null }
+              : {}),
+          }
+        : {}),
     },
   });
 }
