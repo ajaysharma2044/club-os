@@ -18,9 +18,11 @@
 import { db, officer, member, text, fail, timestamp, type User } from "../db";
 import { club, institution, calendarAt, offsetHoursAt } from "../institutions";
 import { rosterSnapshot, storedTerms, rosterSummary } from "../context/roster";
+import { checkinInit } from "../checkin";
 import { rosterAt, meetingHeatmap } from "../academic";
 import { campusEventsAsOf, type CanonicalEvent } from "../context/campus-events";
 import type { CampusEvent } from "../campus";
+import { recommendSlot, type SchedulingContext, type SlotRecommendation } from "./scheduling";
 
 /**
  * Canonical campus events -> the shape the scheduler consumes.
@@ -62,7 +64,6 @@ function toCampusEvents(rows: CanonicalEvent[]): CampusEvent[] {
   }
   return out;
 }
-import { recommendSlot, type SchedulingContext, type SlotRecommendation } from "./scheduling";
 
 /** How many candidate times an officer may compare at once. */
 const MAX_SLOTS = 12;
@@ -187,6 +188,12 @@ export function slotAdvice(u: User, b: any): SlotAdviceResult {
   } catch {
     campusEvents = [];
   }
+
+  // `checkins` is created lazily by checkinInit(), so a database on which
+  // nobody has yet opened a sign-in window does not have it. Calling the init
+  // is the codebase's idiom for this (scheduling.ts calls evidenceInit() for
+  // the same reason); assuming the table exists throws on a fresh install.
+  checkinInit();
 
   // Comparable past events, for the conversion posterior: RSVPs against the
   // attendance we actually recorded. Only closed events with both numbers.
