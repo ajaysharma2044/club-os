@@ -22,6 +22,7 @@ Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw report
 | **12** | **[CEC field evidence](12-cec-field-evidence.md)** | **What a real club's chats actually show. The only primary operator evidence in the repo.** |
 | **13** | **[Problem to solution map](13-problem-solution-map.md)** | **Every observed failure, the specific fix, and the build order. Start here to build.** |
 | **14** | **[Quant engine per feature](14-quant-per-feature.md)** | **The math under each tool: max-flow scheduling, hierarchical attendance, newsvendor food, Rasch reliability, succession risk.** |
+| **15** | **[Behavioral quant layer](15-behavioral-quant-layer.md)** | **Turning operational activity into tested predictive signal. Opportunity adjustment, signal registry, and why the factor zoo waits.** |
 
 **Read 09 first.** The other eight documents are interfaces to it.
 
