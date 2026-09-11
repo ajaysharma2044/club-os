@@ -1,17 +1,20 @@
 :root {
-  --licorice: #2d3b45;
-  --oxford: #394b58;
-  --ash: #6b7780;
-  --slate: #8b969e;
-  --tiara: #c7cdd1;
-  --porcelain: #f5f5f5;
+  --ink: #1a2330;
+  --porcelain: #f0f3f8;
   --paper: #ffffff;
-  --ink: #2d3b45;
-  --electric: #0374b5;
-  --navy: #1d354f;
+  --signal: #0c5fbf;
+  --pulse: #c2410c;
+
+  --licorice: #1c2b3a;
+  --oxford: #2a3d50;
+  --ash: #4f5c6a;
+  --slate: #6e7b89;
+  --tiara: #c5ced8;
+  --electric: var(--signal);
+  --navy: #122033;
   --shamrock: #0b874b;
   --crimson: #e0061f;
-  --fire: #fc5e13;
+  --fire: var(--pulse);
 
   --club-ember: #bb584a;
   --club-clay: #b3621e;
@@ -32,8 +35,9 @@
   --r: 4px;
   --r-btn: 6px;
 
-  --font-sans: var(--font-plex), "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: var(--font-plex-mono), "SF Mono", Menlo, monospace;
+  --font-sans: var(--font-figtree), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-figtree), sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 *,
@@ -66,7 +70,7 @@ body {
 }
 
 ::selection {
-  background: #c8e0f0;
+  background: #c9dcf4;
   color: var(--ink);
 }
 
@@ -279,12 +283,12 @@ table,
 }
 
 .club-rail .nav-item:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
   text-decoration: underline;
 }
 
 .club-rail .nav-item[aria-current="page"] {
-  background: #e5f2fa;
+  background: #e6f0fa;
   color: var(--navy);
   font-weight: 600;
   box-shadow: inset 4px 0 0 var(--electric);
@@ -339,9 +343,11 @@ table,
 
 .page-title h1 {
   margin: 0;
-  font-size: 22px;
+  font-family: var(--font-display);
+  font-size: 24px;
   font-weight: 600;
-  line-height: 1.25;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .page-actions {
@@ -352,15 +358,18 @@ table,
 }
 
 .text-display {
+  font-family: var(--font-display);
   font-size: 28px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
 }
 
 .text-title-1 {
-  font-size: 22px;
+  font-family: var(--font-display);
+  font-size: 24px;
   font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .text-title-2 {
@@ -486,8 +495,8 @@ table,
 }
 
 .views button[aria-pressed="true"] {
-  background: var(--navy);
-  border-color: var(--navy);
+  background: var(--signal);
+  border-color: var(--signal);
   color: #fff;
 }
 
@@ -505,13 +514,13 @@ table,
   border-radius: var(--r);
   overflow: hidden;
   min-height: 0;
-  box-shadow: 0 1px 2px rgba(45, 59, 69, 0.08);
+  box-shadow: 0 1px 2px rgba(26, 35, 48, 0.08);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .dash-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(45, 59, 69, 0.12);
+  box-shadow: 0 8px 20px rgba(26, 35, 48, 0.12);
 }
 
 .dash-band {
@@ -570,7 +579,7 @@ table,
 }
 
 .dash-tabs a:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
   color: var(--electric);
 }
 
@@ -707,7 +716,7 @@ table,
 .person-row:hover,
 .task-row:hover,
 .feed-row:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
 }
 
 .identity {
@@ -800,7 +809,7 @@ table,
 }
 
 .btn:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
 }
 
 .btn:active {
@@ -808,13 +817,13 @@ table,
 }
 
 .btn.primary {
-  background: var(--navy);
-  border-color: var(--navy);
+  background: var(--signal);
+  border-color: var(--signal);
   color: #fff;
 }
 
 .btn.primary:hover {
-  background: #163048;
+  background: #0a4fa3;
 }
 
 .btn.ghost {
@@ -1045,7 +1054,7 @@ table.data tfoot td {
 .kbar-scrim {
   position: fixed;
   inset: 0;
-  background: rgba(45, 59, 69, 0.4);
+  background: rgba(26, 35, 48, 0.4);
   z-index: 40;
   display: grid;
   place-items: start center;
@@ -1077,7 +1086,7 @@ table.data tfoot td {
 
 .pal-item[data-active="true"],
 .pal-item:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
 }
 
 .mobile-bar {
@@ -1145,7 +1154,8 @@ table.data tfoot td {
 
 .chat-list-head h1 {
   margin: 0;
-  font-size: 20px;
+  font-family: var(--font-display);
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -1177,7 +1187,7 @@ table.data tfoot td {
 }
 
 .chat-group-row[aria-current="true"] {
-  background: #e5f2fa;
+  background: #e6f0fa;
 }
 
 .chat-face {
@@ -1399,7 +1409,7 @@ table.data tfoot td {
   border-radius: 18px;
   font-size: 15px;
   line-height: 1.45;
-  box-shadow: 0 1px 2px rgba(45, 59, 69, 0.06);
+  box-shadow: 0 1px 2px rgba(26, 35, 48, 0.06);
 }
 
 .msg.mine .msg-bubble {
@@ -1414,7 +1424,7 @@ table.data tfoot td {
   border: 1px solid var(--tiara);
   border-radius: 12px;
   background: var(--paper);
-  box-shadow: 0 1px 2px rgba(45, 59, 69, 0.06);
+  box-shadow: 0 1px 2px rgba(26, 35, 48, 0.06);
 }
 
 .msg-card-kind {
@@ -1665,7 +1675,7 @@ table.data tfoot td {
 
 .cal-menu button:hover,
 .cal-menu a:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
 }
 
 .cal-url-row {
@@ -1893,7 +1903,7 @@ table.data tfoot td {
 
 .join-club:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(45, 59, 69, 0.12);
+  box-shadow: 0 8px 20px rgba(26, 35, 48, 0.12);
 }
 
 .join-club .btn {
@@ -1915,7 +1925,7 @@ table.data tfoot td {
 }
 
 .join-ping:hover {
-  background: #e5f2fa;
+  background: #e6f0fa;
 }
 
 .join-ping-mark {

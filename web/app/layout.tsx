@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { Bricolage_Grotesque, Figtree } from "next/font/google";
 import { Shell } from "@/components/Shell";
 import "./globals.css";
 
-const sans = IBM_Plex_Sans({
+const sans = Figtree({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-  variable: "--font-plex",
+  variable: "--font-figtree",
   display: "swap",
 });
 
-const mono = IBM_Plex_Mono({
+const display = Bricolage_Grotesque({
   subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-plex-mono",
+  weight: ["600", "700"],
+  variable: "--font-bricolage",
   display: "swap",
 });
 
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${display.variable}`}>
       <body>
         <Shell>{children}</Shell>
       </body>
