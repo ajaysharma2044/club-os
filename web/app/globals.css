@@ -38,6 +38,8 @@
   --font-sans: var(--font-figtree), "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-display: var(--font-bricolage), var(--font-figtree), sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --track-display: -0.03em;
+  --track-kicker: 0.08em;
 }
 
 *,
@@ -192,9 +194,12 @@ table,
   min-height: 60px;
   padding: 8px 4px;
   color: var(--tiara);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.2;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   text-align: center;
   border-radius: 0;
   background: transparent;
@@ -262,9 +267,11 @@ table,
 }
 
 .club-rail-head strong {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.25;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: var(--track-display);
 }
 
 .club-rail .nav-list {
@@ -344,10 +351,10 @@ table,
 .page-title h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: var(--track-display);
 }
 
 .page-actions {
@@ -360,21 +367,25 @@ table,
 .text-display {
   font-family: var(--font-display);
   font-size: 28px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
 }
 
 .text-title-1 {
   font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: var(--track-display);
 }
 
 .text-title-2 {
+  font-family: var(--font-display);
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
 }
 
 .text-title-3 {
@@ -399,11 +410,21 @@ table,
 }
 
 .text-micro {
+  font-family: var(--font-display);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: var(--track-kicker);
   text-transform: uppercase;
   color: var(--ash);
+}
+
+.write-in,
+.hero-need h2 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: var(--track-display);
 }
 
 .text-mono {
@@ -533,9 +554,11 @@ table,
 }
 
 .dash-band strong {
+  font-family: var(--font-display);
   font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
 }
 
 .dash-band span {
@@ -596,8 +619,10 @@ table,
 }
 
 .todo-head {
+  font-family: var(--font-display);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   padding: 8px 0;
   border-bottom: 1px solid var(--tiara);
   margin-bottom: 4px;
@@ -804,6 +829,7 @@ table,
   color: var(--electric);
   font-size: 14px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   cursor: pointer;
   transition: background 0.15s ease, transform 0.12s ease, border-color 0.15s ease;
 }
@@ -904,15 +930,19 @@ table,
 
 .stat dd {
   margin: 4px 0 0;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .money-hero .text-hero {
   display: block;
+  font-family: var(--font-display);
   font-size: 36px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1044,11 +1074,12 @@ table.data tfoot td {
 
 .topic {
   margin: 16px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
   color: var(--ash);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--track-kicker);
 }
 
 .kbar-scrim {
@@ -1155,9 +1186,10 @@ table.data tfoot td {
 .chat-list-head h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: var(--track-display);
 }
 
 .chat-groups {
@@ -1231,8 +1263,10 @@ table.data tfoot td {
 }
 
 .chat-group-title {
+  font-family: var(--font-display);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1286,9 +1320,10 @@ table.data tfoot td {
 
 .chat-room-who h2 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .chat-room-who p {
@@ -1519,7 +1554,10 @@ table.data tfoot td {
 
   .mobile-bar a {
     color: #fff;
-    font-weight: 600;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
   .main {
@@ -1841,6 +1879,11 @@ table.data tfoot td {
 
 .join-beat {
   margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: var(--track-kicker);
+  text-transform: uppercase;
 }
 
 .join-primary {

@@ -35,7 +35,7 @@ export default async function ClubHome({
           <p className="text-caption" style={{ margin: "0 0 6px" }}>
             {club.category} · {club.members} members · {club.role}
           </p>
-          <h1 className="text-title-1" style={{ fontSize: 28 }}>{club.name}</h1>
+          <h1 className="text-display">{club.name}</h1>
         </div>
         <div className="page-actions">
           <Link href={`/chat?c=${slug}`} className="btn">

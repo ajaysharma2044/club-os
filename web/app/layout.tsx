@@ -12,7 +12,7 @@ const sans = Figtree({
 
 const display = Bricolage_Grotesque({
   subsets: ["latin"],
-  weight: ["600", "700"],
+  weight: ["600", "700", "800"],
   variable: "--font-bricolage",
   display: "swap",
 });

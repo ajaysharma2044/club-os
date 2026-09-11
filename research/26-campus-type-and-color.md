@@ -98,3 +98,19 @@ CSS map (keep old names so components do not fork): `--ink`, `--licorice` = the 
 ### What this is not
 
 Not a seventh club tab. Not Cards/List switchers. Not a landing hero. Not dark mode. Not cream serif. Not Geist. Not filling the primary button with Baja orange.
+
+---
+
+## 5. Addendum — Cornell EC as type reference (2026-09-11)
+
+User pointed at [cornellec.com](https://www.cornellec.com/) for “font style and stuff.” Measured from their shipped CSS + headless screenshots (do not copy logo, photos, or copy):
+
+| Role | What they ship | Treatment |
+|---|---|---|
+| **Display** | **Space Grotesk** 700 only | All-caps stacks, `text-display-xl` 7rem / lh 0.9 / tracking −0.02em. Nav + buttons also display, `uppercase` + `tracking-wide` (0.025em). |
+| **Body** | **DM Sans** 400/500/600 | Sentence case, `text-xl`–`2xl` on the marketing pages. |
+| **Color with type** | True black on white | Mint `#3DFFA2` is a highlight / offset-shadow / button fill, never body text (fails AA on white). Brutalist 2px black rules. **Not cream + serif.** |
+
+**Took (feel, mapped onto the locked pair):** Bricolage stays the grotesque; we set it heavier (700–800), tighter (−0.03em), closer leading (1.05) on page titles at the top of the 22–26px band. Kickers, rail labels, and join beats pick up their uppercase + wide tracking. Write-in lines (“Show up.”, the owed item) sit at 22px — confident, not a 7rem hero. Figtree stays 14px / 400 / 1.5 so body still clears WCAG AA.
+
+**Refused:** Space Grotesk and DM Sans (DM Sans was already the “every dashboard” reject in §1). Their mint. A marketing hero on Home. All-caps page titles. Brutalist offset shadows. A seventh club tab. Club color as the primary button.
