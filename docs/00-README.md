@@ -1,6 +1,8 @@
 # Club OS — Research and Specification
 
-Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw reports in `/research/`. Synthesis in `/docs/`.
+Twenty-seven research tracks in `/research/`, synthesised into twenty-three numbered documents here plus three working notes.
+
+For what the system actually does with all this, and what it refuses to do, start at the [repository README](../README.md).
 
 ---
 
@@ -27,8 +29,11 @@ Twenty-one research tracks, roughly 120,000 words, about 900 sources. Raw report
 | **17** | **[Two-layer intelligence](17-two-layer-intelligence.md)** | **Why club-level and person-level are one model, what differs, and where the real value sits (the interaction).** |
 | **18** | **[Campus context engine](18-campus-context-engine.md)** | **The fourth layer. Regimes, the campus state vector, and the attribution fix: alpha is actual minus expected-given-context.** |
 | **19** | **[Academic layer, weather, historical timeline](19-academic-weather-history.md)** | **Every class and how hard it is, assessment pressure, the weather, and point-in-time reconstruction back to 2014 — plus the double-count that nearly happened twice.** |
+| 20 | [Context intelligence audit](20-context-intelligence-audit.md) | The full repository audit: existing primitives, what was dead code, and the gaps against the spec |
+| **21** | **[The context intelligence system](21-context-intelligence-system.md)** | **How every layer connects, and the table of what each one REFUSES to do — every row enforced in code and covered by a test.** |
+| **22** | **[Interface research](22-interface-research.md)** | **Why Canvas feels flat, mechanically. Five patterns worth stealing, three rejected, and the home screen that replaces static counts.** |
 
-**Read 09 first.** The other eight documents are interfaces to it.
+**Read 09 first.** Every other document is an interface to it.
 
 ---
 
