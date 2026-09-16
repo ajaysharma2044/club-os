@@ -1,7 +1,10 @@
 "use client";
 import Link from "next/link";
 import { cecRoutes } from "@/lib/cec/routes";
-import { useEffect, useRef, useState, FormEvent, ReactNode } from "react";
+import { useEffect, useState } from "react";
+import {Modal, Editor, type Field} from "./FormPrimitives";
+import {useWorkspaceData} from "./useWorkspaceData";
+import {TaskList} from "./TaskList";
 import {
   House,
   CalendarDots,
@@ -19,6 +22,7 @@ import InterviewRounds from "./InterviewRounds";
 import MySignals from "./MySignals";
 import SlotAdvisor from "./SlotAdvisor";
 import UpNext from "./UpNext";
+import MemberManagement from "./MemberManagement";
 import ChatScheduler from "./ChatScheduler";
 import EpisodeRecord from "./EpisodeRecord";
 import AdaptiveIntake, { SharedAdaptiveProfiles } from "./AdaptiveIntake";
@@ -29,14 +33,6 @@ type Row = {
   owner: string;
   data: Record<string, any>;
   version: number;
-};
-type Field = {
-  key: string;
-  label: string;
-  type?: string;
-  options?: { value: string; label: string }[];
-  required?: boolean;
-  value?: any;
 };
 const dateLabel = (s: string) =>
   new Date(s).toLocaleString("en-US", {
@@ -78,158 +74,6 @@ function fieldsFrom(options: string[]) {
   return options.map((value) => ({ value, label: value }));
 }
 
-function Modal({
-  title,
-  children,
-  close,
-}: {
-  title: string;
-  children: ReactNode;
-  close: () => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const prior = document.activeElement as HTMLElement;
-    const first = ref.current?.querySelector<HTMLElement>(
-      "input,select,textarea,button",
-    );
-    first?.focus();
-    const listener = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      if (e.key === "Tab") {
-        const nodes = ref.current?.querySelectorAll<HTMLElement>(
-          "button,input,select,textarea,a[href]",
-        );
-        if (!nodes?.length) return;
-        const a = nodes[0],
-          b = nodes[nodes.length - 1];
-        if (e.shiftKey && document.activeElement === a) {
-          e.preventDefault();
-          b.focus();
-        } else if (!e.shiftKey && document.activeElement === b) {
-          e.preventDefault();
-          a.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", listener);
-    return () => {
-      document.removeEventListener("keydown", listener);
-      prior?.focus();
-    };
-  }, [close]);
-  return (
-    <div className="modal-shade">
-      <div
-        ref={ref}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-      >
-        <header>
-          <h2>{title}</h2>
-          <button className="close" onClick={close} aria-label="Close dialog">
-            ×
-          </button>
-        </header>
-        {children}
-      </div>
-    </div>
-  );
-}
-function Editor({
-  fields,
-  onSubmit,
-  busy,
-  label = "Save",
-}: {
-  fields: Field[];
-  onSubmit: (d: any) => Promise<void>;
-  busy: boolean;
-  label?: string;
-}) {
-  const [values, setValues] = useState<any>(
-    Object.fromEntries(
-      fields.map((f) => [
-        f.key,
-        f.value ??
-          (f.type === "checkbox" ? false : f.options?.[0]?.value || ""),
-      ]),
-    ),
-  );
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const d = { ...values };
-    for (const f of fields) {
-      if (f.type === "datetime-local" && d[f.key])
-        d[f.key] = new Date(d[f.key]).toISOString();
-    }
-    await onSubmit(d);
-  }
-  return (
-    <form onSubmit={submit} className="form-grid">
-      {fields.map((f) => (
-        <label
-          className={f.type === "checkbox" ? "check" : "field"}
-          key={f.key}
-        >
-          {f.type === "checkbox" ? (
-            <>
-              <input
-                type="checkbox"
-                checked={!!values[f.key]}
-                onChange={(e) =>
-                  setValues({ ...values, [f.key]: e.target.checked })
-                }
-              />
-              {f.label}
-            </>
-          ) : (
-            <>
-              {f.label}
-              {f.options ? (
-                <select
-                  value={values[f.key]}
-                  onChange={(e) =>
-                    setValues({ ...values, [f.key]: e.target.value })
-                  }
-                >
-                  {f.options.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              ) : f.type === "textarea" ? (
-                <textarea
-                  required={f.required !== false}
-                  maxLength={4000}
-                  value={values[f.key]}
-                  onChange={(e) =>
-                    setValues({ ...values, [f.key]: e.target.value })
-                  }
-                />
-              ) : (
-                <input
-                  required={f.required !== false}
-                  type={f.type || "text"}
-                  value={values[f.key]}
-                  onChange={(e) =>
-                    setValues({ ...values, [f.key]: e.target.value })
-                  }
-                />
-              )}
-            </>
-          )}
-        </label>
-      ))}
-      <button disabled={busy} className="button" type="submit">
-        {busy ? "Saving…" : label}
-      </button>
-    </form>
-  );
-}
 export function CECWorkspace({
   section,
   embedded = false,
@@ -244,11 +88,8 @@ export function CECWorkspace({
   initialChannel?: string;
 }) {
   const Content = embedded ? "section" : "main";
-  const [data, setData] = useState<any>(null),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState(""),
-    [busy, setBusy] = useState(false),
-    [tab, setTab] = useState(initialTab),
+  const {data, directory, error, setError, notice, setNotice, busy, load, action, run} = useWorkspaceData(section);
+  const [tab, setTab] = useState(initialTab),
     [query, setQuery] = useState("");
   const [dialog, setDialog] = useState<{
     title: string;
@@ -257,7 +98,6 @@ export function CECWorkspace({
     label?: string;
   } | null>(null);
   const [insight, setInsight] = useState<any>(null),
-    [directory, setDirectory] = useState<any>(null),
     [authMode, setAuthMode] = useState("login");
   const [channel, setChannel] = useState(
       ["general", "events", "builders"].includes(initialChannel)
@@ -277,33 +117,6 @@ export function CECWorkspace({
           JSON.stringify(r.data).toLowerCase().includes(query.toLowerCase())),
     );
   const people: any[] = data?.people || [];
-  const loadSequence = useRef(0);
-  async function load() {
-    const current = ++loadSequence.current;
-    try {
-      const r = await fetch("/api/cec/state", { cache: "no-store" });
-      if (!r.ok)
-        throw new Error("Unable to load the club workspace. Please try again.");
-      const j = await r.json();
-      if (current !== loadSequence.current) return;
-      setData(j);
-      setError("");
-      if (section === "directory") {
-        const response = await fetch("/api/cec/directory", {
-          cache: "no-store",
-        });
-        if (!response.ok)
-          throw new Error("Unable to load the shared directory.");
-        const shared = await response.json();
-        if (current === loadSequence.current) setDirectory(shared);
-      }
-    } catch (e) {
-      if (current !== loadSequence.current) return;
-      setData(null);
-      setDirectory(null);
-      throw e;
-    }
-  }
   useEffect(() => {
     setChannel(
       ["general", "events", "builders"].includes(initialChannel)
@@ -315,60 +128,18 @@ export function CECWorkspace({
   useEffect(() => {
     setTab(initialTab);
     setQuery("");
-    load().catch((e) => setError(e.message));
   }, [section, initialTab]);
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === "visible")
-        load().catch((e) => setError(e.message));
-    };
-    window.addEventListener("focus", refresh);
-    window.addEventListener("cec:changed", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    const timer =
-      section === "work" ? window.setInterval(refresh, 15000) : null;
-    return () => {
-      loadSequence.current++;
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("cec:changed", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-      if (timer) clearInterval(timer);
-    };
-  }, [section]);
   useEffect(() => {
     setDialog(null);
     setInsight(null);
     setMessage("");
     setNotice("");
   }, [user?.id]);
-  async function action(path: string, body: any) {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const r = await fetch("/api/cec/" + path, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const result = await r.json();
-      if (!r.ok) throw new Error(result.error || "Unable to save.");
-      window.dispatchEvent(new Event("cec:changed"));
-      await load();
-      return result;
-    } catch (e: any) {
-      setError(e.message);
-      throw e;
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    if (data && section === "work" && window.location.hash.startsWith("#task-")) {
+      document.getElementById(decodeURIComponent(window.location.hash.slice(1)))?.scrollIntoView({ block: "center" });
     }
-  }
-  async function run(path: string, body: any) {
-    try {
-      await action(path, body);
-      setNotice("Saved to the club record.");
-    } catch {}
-  }
+  }, [!!data, section]);
   const button = (label: string, fn: () => void, secondary = false) => (
     <button
       disabled={busy}
@@ -886,7 +657,7 @@ export function CECWorkspace({
             </div>
             <div className="panel">
               <div className="panel-head">
-                <h2>Commitments</h2>
+                <div><h2>Tasks</h2><p className="muted">{isOfficer ? "Assign work, review submissions, and keep the club moving." : "Accept your assignment, share your work, and follow up on feedback."}</p></div>
                 <Link href={cecRoutes.work}>Open workspace →</Link>
               </div>
               {list("task")
@@ -1172,114 +943,8 @@ export function CECWorkspace({
         ) : (
           <>
             {current === "Tasks" && (
-              <div className="panel">
-                <div className="panel-head">
-                  <h2>Commitments</h2>
-                  {isOfficer && button("Assign task", () => create("task"))}
-                </div>
-                {list("task").map((r) => (
-                  <div className="row" key={r.id}>
-                    <div className="detail">
-                      <strong>{r.data.title}</strong>
-                      <small>
-                        {people.find((p) => p.id === r.data.assignee)?.name} ·{" "}
-                        {dateLabel(r.data.due_at)} ET
-                      </small>
-                      {r.data.origin && (
-                        <p className="source-note">From: {r.data.origin}</p>
-                      )}
-                    </div>
-                    {tag(r.data.status)}
-                    <div className="actions">
-                      {r.data.assignee === user.id &&
-                        r.data.status === "assigned" &&
-                        button(
-                          "Accept",
-                          () =>
-                            run("task.status", {
-                              id: r.id,
-                              status: "accepted",
-                            }),
-                          true,
-                        )}
-                      {r.data.assignee === user.id &&
-                        r.data.status === "accepted" &&
-                        button("Submit", () =>
-                          run("task.status", { id: r.id, status: "submitted" }),
-                        )}
-                      {isOfficer &&
-                        r.data.status === "submitted" &&
-                        button("Approve", () =>
-                          run("task.status", { id: r.id, status: "completed" }),
-                        )}
-                      {(isOfficer || r.data.assignee === user.id) &&
-                        ["accepted", "submitted"].includes(r.data.status) &&
-                        button(
-                          "Blocked",
-                          () =>
-                            show(
-                              "What is blocking this task?",
-                              [
-                                {
-                                  key: "category",
-                                  label: "Blocker",
-                                  options: fieldsFrom([
-                                    "waiting_on_person",
-                                    "waiting_on_external_partner",
-                                    "need_information",
-                                    "need_approval",
-                                    "need_resources",
-                                    "scope_unclear",
-                                    "technical_issue",
-                                    "time_constraint",
-                                    "other",
-                                  ]),
-                                },
-                                {
-                                  key: "note",
-                                  label: "What help is needed?",
-                                  type: "textarea",
-                                },
-                              ],
-                              async (d) => {
-                                await action("evidence/block", {
-                                  task_id: r.id,
-                                  ...d,
-                                });
-                              },
-                            ),
-                          true,
-                        )}
-                      {isOfficer &&
-                        r.data.status === "submitted" &&
-                        button(
-                          "Request revision",
-                          () =>
-                            run("task.status", {
-                              id: r.id,
-                              status: "accepted",
-                            }),
-                          true,
-                        )}
-                      {isOfficer &&
-                        !["completed", "cancelled"].includes(r.data.status) &&
-                        button(
-                          "Cancel",
-                          () =>
-                            run("task.status", {
-                              id: r.id,
-                              status: "cancelled",
-                            }),
-                          true,
-                        )}
-                    </div>
-                  </div>
-                ))}
-                {!list("task").length &&
-                  empty(
-                    "Assign the first task. Completion requires an officer review.",
-                  )}
-              </div>
+              <TaskList key={`${user.id}:${user.role}`} tasks={list("task")} people={people} user={user}
+                busy={busy} action={action} run={run} show={show} onAssign={() => create("task")} />
             )}
             {current === "Projects" && (
               <>
@@ -1658,16 +1323,16 @@ export function CECWorkspace({
     );
   }
   function People() {
-    const current = tab || "Recruitment";
+    const current = tab || (isMember ? "Roster" : "Recruitment");
     if (!user) return Auth();
     return (
       <>
         <Tabs
           values={[
+            ...(isMember ? ["Roster"] : []),
             "Recruitment",
             "Coffee chats",
             ...(isOfficer ? ["Weekly context"] : []),
-            ...(isMember ? ["Roster"] : []),
             "Forms",
           ]}
         />
@@ -1848,6 +1513,7 @@ export function CECWorkspace({
               )}
           </div>
         )}
+        {current === "Roster" && isOfficer && <MemberManagement userId={user.id} />}
         {current === "Roster" && isMember && (
           <div className="panel">
             <h2>People</h2>

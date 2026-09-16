@@ -92,12 +92,12 @@ export function profilesInit() {
 -- not a delete, so "they could see this between March and June" stays answerable.
 CREATE TABLE IF NOT EXISTS professional_profile_grants(
   id TEXT PRIMARY KEY,
-  person_id TEXT NOT NULL REFERENCES users(id),
+  person_id TEXT NOT NULL REFERENCES accounts(id),
   audience TEXT NOT NULL,
   scope TEXT NOT NULL,
   granted_at TEXT NOT NULL,
   revoked_at TEXT,
-  granted_by TEXT NOT NULL REFERENCES users(id),
+  granted_by TEXT NOT NULL REFERENCES accounts(id),
   note TEXT NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS grant_live ON professional_profile_grants(person_id,audience,scope) WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS grant_person ON professional_profile_grants(person_id,granted_at);

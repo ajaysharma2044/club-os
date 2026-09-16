@@ -160,7 +160,7 @@ export function skillsInit() {
 -- 'submissions'.
 CREATE TABLE IF NOT EXISTS skill_artifacts(
   id TEXT PRIMARY KEY,
-  person_id TEXT NOT NULL REFERENCES users(id),
+  person_id TEXT NOT NULL REFERENCES accounts(id),
   episode_id TEXT NOT NULL DEFAULT '',
   kind TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -169,7 +169,7 @@ CREATE TABLE IF NOT EXISTS skill_artifacts(
   -- when the thing was made, which is not when we heard about it
   produced_at TEXT NOT NULL,
   recorded_at TEXT NOT NULL,
-  recorded_by TEXT NOT NULL REFERENCES users(id),
+  recorded_by TEXT NOT NULL REFERENCES accounts(id),
   evidence_level TEXT NOT NULL,
   source_ref TEXT NOT NULL,
   context TEXT NOT NULL DEFAULT '{}');
@@ -182,7 +182,7 @@ CREATE TRIGGER IF NOT EXISTS skill_artifact_no_delete BEFORE DELETE ON skill_art
 -- The graph itself. One row = one skill, one person, one real record, one reason.
 CREATE TABLE IF NOT EXISTS evidence_skill_links(
   id TEXT PRIMARY KEY,
-  person_id TEXT NOT NULL REFERENCES users(id),
+  person_id TEXT NOT NULL REFERENCES accounts(id),
   skill_id TEXT NOT NULL,
   evidence_kind TEXT NOT NULL,
   -- points at episodes.id / activity_events.id / skill_artifacts.id / outcomes.id

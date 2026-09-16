@@ -103,10 +103,10 @@ const BANK: Question[] = [
 ];
 function init() {
   db().exec(`
-CREATE TABLE IF NOT EXISTS adaptive_preferences(user_id TEXT PRIMARY KEY REFERENCES users(id),shared INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS adaptive_facts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),field TEXT NOT NULL,value TEXT NOT NULL,source_type TEXT NOT NULL,source_url TEXT NOT NULL,observed_at TEXT NOT NULL,policy TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS adaptive_preferences(user_id TEXT PRIMARY KEY REFERENCES accounts(id),shared INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS adaptive_facts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),field TEXT NOT NULL,value TEXT NOT NULL,source_type TEXT NOT NULL,source_url TEXT NOT NULL,observed_at TEXT NOT NULL,policy TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS adaptive_facts_user ON adaptive_facts(user_id,observed_at);
-CREATE TABLE IF NOT EXISTS adaptive_sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),week TEXT NOT NULL,purpose TEXT NOT NULL,policy TEXT NOT NULL,created_at TEXT NOT NULL,completed_at TEXT,UNIQUE(user_id,week));
+CREATE TABLE IF NOT EXISTS adaptive_sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),week TEXT NOT NULL,purpose TEXT NOT NULL,policy TEXT NOT NULL,created_at TEXT NOT NULL,completed_at TEXT,UNIQUE(user_id,week));
 CREATE TABLE IF NOT EXISTS adaptive_decisions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES adaptive_sessions(id),question_id TEXT NOT NULL,snapshot TEXT NOT NULL,selected_at TEXT NOT NULL,exposed_at TEXT,answered_at TEXT,answer TEXT,status TEXT NOT NULL DEFAULT 'selected');
 `);
 }

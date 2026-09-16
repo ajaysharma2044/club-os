@@ -158,7 +158,7 @@ export function checkinInit() {
   if (ready) return;
   db().exec(`
 CREATE TABLE IF NOT EXISTS checkin_windows(
-  event_id TEXT PRIMARY KEY REFERENCES items(id),
+  event_id TEXT PRIMARY KEY REFERENCES records(id),
   opens_at TEXT NOT NULL,
   closes_at TEXT NOT NULL,
   grace_minutes INTEGER NOT NULL DEFAULT ${DEFAULT_GRACE_MINUTES},
@@ -166,8 +166,8 @@ CREATE TABLE IF NOT EXISTS checkin_windows(
   opened_by TEXT NOT NULL,
   opened_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS checkins(
-  event_id TEXT NOT NULL REFERENCES items(id),
-  user_id TEXT NOT NULL REFERENCES users(id),
+  event_id TEXT NOT NULL REFERENCES records(id),
+  user_id TEXT NOT NULL REFERENCES accounts(id),
   at TEXT NOT NULL,
   method TEXT NOT NULL,
   late INTEGER NOT NULL DEFAULT 0,
@@ -178,8 +178,8 @@ CREATE TABLE IF NOT EXISTS checkins(
 CREATE INDEX IF NOT EXISTS checkin_person ON checkins(user_id,at);
 CREATE TABLE IF NOT EXISTS integrity_events(
   id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id),
-  event_id TEXT NOT NULL REFERENCES items(id),
+  user_id TEXT NOT NULL REFERENCES accounts(id),
+  event_id TEXT NOT NULL REFERENCES records(id),
   kind TEXT NOT NULL DEFAULT 'left_early',
   at TEXT NOT NULL,
   recorded_by TEXT NOT NULL,
@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS integrity_events(
 CREATE UNIQUE INDEX IF NOT EXISTS integrity_once
   ON integrity_events(user_id,event_id,kind);
 CREATE TABLE IF NOT EXISTS integrity_flags(
-  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  user_id TEXT PRIMARY KEY REFERENCES accounts(id),
   state TEXT NOT NULL,
   occurrences INTEGER NOT NULL DEFAULT 0,
   set_by TEXT NOT NULL DEFAULT '',

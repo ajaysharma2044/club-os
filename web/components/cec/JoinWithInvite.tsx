@@ -1,11 +1,5 @@
 "use client";
-import { useEffect, useState, FormEvent } from "react";
-
-// One screen. Name, Cornell email, done.
-//
-// No password, no application, no officer approval in the way. Someone already
-// in the club should not have to apply to it. The invite link is the proof they
-// belong, which is the same trust model as the group chat it was shared in.
+import { useEffect, useRef, useState, FormEvent } from "react";
 
 export default function JoinWithInvite({ code }: { code: string }) {
   const [entered, setEntered] = useState(code);
@@ -14,12 +8,22 @@ export default function JoinWithInvite({ code }: { code: string }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
 
+  const checkSequence = useRef(0);
+  const [checkError, setCheckError] = useState("");
   async function check(c: string) {
+    const sequence = ++checkSequence.current;
+    setCheckError("");
+    setInfo(null);
     if (!c.trim()) return setInfo(null);
     try {
       const r = await fetch("/api/cec/invite?code=" + encodeURIComponent(c));
-      setInfo(await r.json());
+      const result = await r.json();
+      if (sequence !== checkSequence.current) return;
+      if (!r.ok) throw Error("Unable to check the invitation.");
+      setInfo(result);
     } catch {
+      if (sequence !== checkSequence.current) return;
+      setCheckError("Unable to check this invitation. Check your connection and try again.");
       setInfo(null);
     }
   }
@@ -40,6 +44,7 @@ export default function JoinWithInvite({ code }: { code: string }) {
           code: entered,
           name: form.get("name"),
           email: form.get("email"),
+          password: form.get("password"),
         }),
       });
       const j = await r.json();
@@ -79,7 +84,7 @@ export default function JoinWithInvite({ code }: { code: string }) {
         )}
 
         {info && !info.valid && entered && (
-          <div className="inline-alert" style={{ marginTop: 12 }}>
+          <div className="inline-alert" role="alert" style={{ marginTop: 12 }}>
             {info.reason}
           </div>
         )}
@@ -91,7 +96,7 @@ export default function JoinWithInvite({ code }: { code: string }) {
               <input name="name" required autoFocus autoComplete="name" />
             </label>
             <label className="field" style={{ marginTop: 12 }}>
-              <span className="text-label">Cornell email</span>
+              <span className="text-label">Email</span>
               <input
                 name="email"
                 type="email"
@@ -100,8 +105,13 @@ export default function JoinWithInvite({ code }: { code: string }) {
                 placeholder={`netid@${domain}`}
               />
             </label>
+            <label className="field" style={{ marginTop: 12 }}>
+              <span className="text-label">Password</span>
+              <input name="password" type="password" required minLength={12} maxLength={256} autoComplete="current-password" />
+              <small>Already have an account? Use its password. Otherwise choose at least 12 characters.</small>
+            </label>
             {error && (
-              <div className="inline-alert" style={{ marginTop: 12 }}>
+              <div className="inline-alert" role="alert" style={{ marginTop: 12 }}>
                 {error}
               </div>
             )}
@@ -114,12 +124,13 @@ export default function JoinWithInvite({ code }: { code: string }) {
               {busy ? "One moment…" : "Join"}
             </button>
             <p className="text-caption" style={{ marginTop: 12 }}>
-              No password needed. You can add one later from settings.
+              An invitation grants club access. Email ownership and university affiliation are not yet verified.
             </p>
           </form>
         )}
 
-        {!info && entered && <p className="text-caption">Checking…</p>}
+        {checkError && <div className="inline-alert" role="alert">{checkError} <button type="button" onClick={() => check(entered)}>Try again</button></div>}
+        {!info && !checkError && entered && <p className="text-caption" role="status">Checking invitation…</p>}
         {!entered && !code && (
           <p className="text-caption" style={{ marginTop: 12 }}>
             Paste the code an officer shared in the group chat.

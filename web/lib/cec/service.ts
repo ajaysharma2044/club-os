@@ -8,9 +8,10 @@ import {
 } from "./evidence";
 import {
   db,
+  clubRole,
   tx,
-  User,
-  Item,
+  type User,
+  type Item,
   fail,
   text,
   url,
@@ -105,6 +106,11 @@ export function auth(action: string, b: any) {
   });
 }
 export function state(u: User | null) {
+  if (u) {
+    const role = clubRole(u.id);
+    if (!role) fail("This account has no current membership in this organization.", 403);
+    u = { ...u, role: role as User["role"] };
+  }
   const all = items();
   const publicEvents = all
     .filter((r) => r.kind === "event" && r.data.status === "published")
@@ -135,7 +141,7 @@ export function state(u: User | null) {
     : isMember
       ? db()
           .prepare(
-            "SELECT id,name,role FROM users WHERE role!='applicant' ORDER BY name",
+            "SELECT id,name,role FROM users WHERE role IN ('member','officer') ORDER BY name",
           )
           .all()
       : [];
@@ -214,6 +220,12 @@ export function state(u: User | null) {
   };
 }
 export function mutate(u: User, action: string, b: any) {
+  const role = clubRole(u.id);
+  if (!role) fail("This account has no current membership in this organization.", 403);
+  u = { ...u, role: role as User["role"] };
+  if ((b.organization_id && b.organization_id !== "cornell-ec") ||
+      (b.data?.organization_id && b.data.organization_id !== "cornell-ec"))
+    fail("This endpoint belongs to CEC.", 403);
   evidenceInit();
   return tx(() => {
     if (action === "create" || action === "update") {
@@ -325,6 +337,9 @@ export function mutate(u: User, action: string, b: any) {
       if (!flow[r.data.status]?.includes(target))
         fail("Invalid task transition.");
       if (target === "completed") officer(u);
+      // Returning submitted work for revision is a review decision, not a new
+      // acceptance by the assignee. Match the officer-only Request revision UI.
+      if (r.data.status === "submitted" && target === "accepted") officer(u);
       // An assignee may cancel work they have not yet accepted: that is
       // declining an offer, and it is a different behavioural fact from an
       // officer withdrawing it. Without this, "declined" is unreachable and
@@ -334,7 +349,27 @@ export function mutate(u: User, action: string, b: any) {
         !(r.data.status === "assigned" && r.data.assignee === u.id)
       )
         officer(u);
-      const data = { ...r.data, status: target };
+      const reviewing = r.data.status === "submitted" &&
+        (target === "accepted" || target === "completed");
+      if (target === "submitted" || reviewing) {
+        if (!Number.isInteger(b.version) || b.version !== r.version)
+          fail("This task changed. Refresh and review the latest work before continuing.", 409);
+      }
+      const history = [...(r.data.work_history || [])];
+      if (target === "submitted") {
+        const note = b.submission_note === undefined || b.submission_note === ""
+          ? "" : text(b.submission_note, 4000);
+        const artifact = url(b.artifact_url);
+        if (!note && !artifact) fail("Add a completion note or a link to your work.");
+        history.push({ id: id(), kind: "submission", actor: u.id, at: timestamp(),
+          note, artifact_url: artifact });
+      } else if (reviewing) {
+        const submission = history.findLast((entry: any) => entry.kind === "submission");
+        history.push({ id: id(), kind: target === "completed" ? "approval" : "revision",
+          actor: u.id, at: timestamp(), submission_id: submission?.id || null,
+          note: target === "accepted" ? text(b.revision_note, 4000) : "" });
+      }
+      const data = { ...r.data, status: target, work_history: history };
       db()
         .prepare(
           "UPDATE items SET data=?,updated_at=?,version=version+1 WHERE id=?",
@@ -473,7 +508,7 @@ export function mutate(u: User, action: string, b: any) {
       )
         fail("You already have an overlapping booking.");
       db()
-        .prepare("INSERT INTO bookings VALUES (?,?,?)")
+        .prepare("INSERT INTO bookings(slot_id,user_id,created_at) VALUES (?,?,?)")
         .run(slot.id, u.id, timestamp());
       audit(u, "coffee_chat.booked", slot.id);
       emit(u, "coffee_chat", u.id, slot.id, {
@@ -515,7 +550,7 @@ export function mutate(u: User, action: string, b: any) {
         fail("You have already submitted this form.");
       const rid = id();
       db()
-        .prepare("INSERT INTO responses VALUES (?,?,?,?,?)")
+        .prepare("INSERT INTO responses(id,form_id,user_id,answers,created_at) VALUES (?,?,?,?,?)")
         .run(rid, f.id, u.id, JSON.stringify(answers), timestamp());
       audit(u, "form.submitted", f.id);
       return {};
@@ -558,7 +593,7 @@ export function mutate(u: User, action: string, b: any) {
         fail("Unknown channel.");
       const key = id();
       db()
-        .prepare("INSERT INTO messages VALUES (?,?,?,?,?)")
+        .prepare("INSERT INTO messages(id,user_id,channel,body,created_at) VALUES (?,?,?,?,?)")
         .run(key, u.id, b.channel, text(b.body, 4000), timestamp());
       audit(u, "message.sent", key, { channel: b.channel });
       return {};

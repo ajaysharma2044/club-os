@@ -20,11 +20,14 @@ feature math and current limits.
   resolution, reported outcomes, visible correction history and dated feature snapshots.
 - Password accounts, expiring HttpOnly sessions, officer/member/applicant permissions.
 - One-time protected officer setup; subsequent signups start as applicants.
+- Password-authenticated member invitations and officer membership controls, including
+  role changes, session-revoking removal, restoration and atomic leadership transfer.
 - Event drafts/publication, capacity-aware RSVP and waitlist, officer attendance,
   per-event and calendar-wide ICS downloads.
 - Recruitment applications, private reviews, acceptance into membership, coffee-chat
   slots with transactional booking and overlapping-time checks.
-- Tasks with owner, due time, origin and project links; accept/submit/officer-approve cycle.
+- Tasks with owner, due time, origin and project links; accept/decline, submit work,
+  officer revision feedback and approval, with retained submission and review history.
 - Projects with stage, artifact links and explicit sharing; document links; meetings
   with agendas and confirmed decisions; learning assignments and reviewed submissions.
 - Native club forms with required answers, duplicate prevention and immutable question
@@ -36,6 +39,20 @@ feature math and current limits.
 - A transactional outbox feeding the Python quant engine. Retry is idempotent. Forecasts
   refuse to run when synchronization is pending. Monte Carlo planning is available
   alongside a versioned beta-binomial attendance baseline.
+
+### Task submission and review
+
+Members submit a completion note, an HTTP(S) artifact link, or both. Officers can
+approve or request a revision with required feedback. Each review references the
+submission reviewed; resubmission retains earlier work and feedback. General task
+edits cannot replace this server-owned history. Existing tasks remain compatible;
+reviews of legacy submissions explicitly indicate when no work record exists.
+
+`task.status` requires the current task `version` when submitting or reviewing work.
+Stale submissions/reviews return HTTP 409 without changing the record. Submission
+fields are `submission_note` and `artifact_url`; revision feedback is `revision_note`.
+History, task state, audit evidence and outbox records are written transactionally.
+Artifact links are references, not uploaded or archived copies of external files.
 
 ## Local setup
 
@@ -76,6 +93,16 @@ weekly rollover, subscription revocation, episode evidence, corrections, snapsho
 and logout. It also checks connected page rendering, old-link redirects and the
 CEC-only route boundary. All fixture people and data are synthetic.
 
+## Organization boundaries
+
+Accounts and organization memberships are separate. Existing data migrates into
+CEC; roles are resolved from current CEC membership. Core records carry organization
+ownership and database guards enforce same-organization relationships. Existing
+CEC routes use scoped views, so another organization’s records cannot appear in
+their queries. Auxiliary modules remain CEC-only. See the
+[organization schema and migration notes](docs/27-organization-schema.md). This
+is not yet a general multi-club deployment.
+
 ## Architecture and storage
 
 `web/lib/cec/db.ts`: SQLite schema and durable transactions.
@@ -90,8 +117,11 @@ CEC-only route boundary. All fixture people and data are synthetic.
 Application data is in `web/.data/cec.sqlite`; the derived quant record is in
 `web/.data/quant.sqlite`. Both databases and their WAL files require a persistent
 volume and coordinated backups. No user data belongs in git. Outbox delivery occurs
-after mutations and can be retried from The record; there is not yet a background
-scheduler or push synchronization.
+after mutations and can be retried from The record. A separate Python worker adds
+automatic retries, bounded backoff, status reporting and daily SQLite backups.
+Start it with `npm run pipeline:work` from `web/`; it is not started by Next.js.
+See [pipeline operations and recovery](docs/26-pipeline-operations.md). Push
+synchronization and notification workers are not yet implemented.
 
 The published frontend had no configured Convex deployment. This implementation is
 an executable **single-server SQLite edition**, not a claimed Convex deployment.
@@ -100,6 +130,12 @@ outbox and historical-query invariants. Do not deploy it onto ephemeral serverle
 storage or run horizontally against separate local databases.
 
 ## Hosting
+
+A portable Compose deployment now includes HTTPS, a restarted worker, encrypted
+off-machine backup jobs and operational webhook alerts. It is prepared but has not
+been deployed or container-tested locally. See [pilot launch runbook](docs/28-pilot-launch.md)
+for configuration, retention, recovery drills and remaining provider setup.
+
 
 A Dockerfile is provided for a Node + Python server. Build from the repository root.
 Set `CEC_ORIGIN=https://your-host`, a random `CEC_BOOTSTRAP_TOKEN`, and
@@ -119,7 +155,7 @@ Credentials, approved scopes and university agreements cannot be supplied by cod
 This is a functional pilot, not the full multi-campus platform from the long-term
 spec. Before broad use, add verified email / SSO, password recovery, account lifecycle
 and end-to-end erasure, record-level sharing grants, attachment storage, pagination,
-retention policies, backup restore tests, operational monitoring and live connector
+retention policies, off-machine backups, production recovery drills, alerting and live connector
 workers. There is no automatic room reservation, payment collection, autonomous
 outreach, private-message mining or validated prediction of founder success.
 

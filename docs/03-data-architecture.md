@@ -2,6 +2,11 @@
 
 *Draft v0.1. The quant engine that sits on top of this is documented separately in `04-quant-engine.md`.*
 
+> Historical architecture proposal, not the current implementation contract. The running
+> pilot uses SQLite. Message-metadata analytics and hidden profile proposals below do not
+> describe the current privacy boundaries. See [System design](23-system-design.md),
+> [MVP scope](24-mvp-system.md), and the repository README for the current direction.
+
 ---
 
 ## 1. Three layers, kept separate

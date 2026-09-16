@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS assets(
   kind TEXT NOT NULL,
   name TEXT NOT NULL,
   location TEXT NOT NULL DEFAULT '',
-  holder_id TEXT REFERENCES users(id),
+  holder_id TEXT REFERENCES accounts(id),
   role_key TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
@@ -117,7 +117,7 @@ CREATE INDEX IF NOT EXISTS asset_role ON assets(role_key);
 -- "who has access" is a page instead of a question in the group chat.
 CREATE TABLE IF NOT EXISTS asset_access(
   asset_id TEXT NOT NULL REFERENCES assets(id),
-  user_id TEXT NOT NULL REFERENCES users(id),
+  user_id TEXT NOT NULL REFERENCES accounts(id),
   level TEXT NOT NULL,
   granted_at TEXT NOT NULL,
   granted_by TEXT NOT NULL,

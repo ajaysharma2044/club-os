@@ -1,3 +1,5 @@
+import { recordServerError } from "@/lib/cec/operations";
+import { membershipState, changeMembership } from "@/lib/cec/memberships";
 import { NextRequest, NextResponse } from "next/server";
 import {
   db,
@@ -43,6 +45,7 @@ function response(value: unknown, status = 200) {
 }
 function error(e: any) {
   const status = e.status || 500;
+  if (status >= 500) recordServerError();
   return response(
     {
       error:
@@ -62,6 +65,10 @@ export async function GET(
 ) {
   try {
     const path = (await params).path.join("/");
+    if (path === "health") {
+      db().prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
+      return response({ok:true});
+    }
     const u = principal(req);
     if (path === "calendar/feed")
       return new NextResponse(
@@ -81,7 +88,7 @@ export async function GET(
       return response({
         people: db()
           .prepare(
-            "SELECT id,name,interests FROM users WHERE shared=1 AND role!='applicant'",
+            "SELECT id,name,interests FROM users WHERE shared=1 AND role IN ('member','officer')",
           )
           .all(),
         projects: items("project")
@@ -157,6 +164,7 @@ export async function GET(
       });
     }
     if (!u) fail("Sign in to continue.", 401);
+    if (path === "memberships/state") return response(membershipState(u));
     if (path === "schedule/state") return response(scheduleState(u));
     if (path === "interviews/state") {
       interviewsInit();
@@ -291,6 +299,7 @@ export async function POST(
     const u = principal(req);
     if (!u) fail("Sign in to continue.", 401);
     throttle("mutate:" + u.id, 500);
+    if (path === "memberships/change") return response(changeMembership(u,b));
     if (path.startsWith("interviews/")) {
       interviewsInit();
       return response(interviews(u, path.slice(11), b));
@@ -319,7 +328,7 @@ export async function POST(
       return response(recommendations(u, path.slice(16), b));
     if (path === "quant/retry") {
       officer(u);
-      await flush();
+      await flush(true);
       return response({ ok: true });
     }
     if (path === "quant/forecast") {

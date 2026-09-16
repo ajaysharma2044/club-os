@@ -93,8 +93,8 @@ for (let i = 0; i < 4; i++) {
 }
 // Finisher completes three of four; the fourth stays open and un-due.
 for (const t of accepted.slice(0, 3)) {
-  await req("task.status", { id: t.id, status: "submitted" }, finisher.cookie);
-  await req("task.status", { id: t.id, status: "completed" }, officer);
+  await req("task.status", { id: t.id, status: "submitted", version: 2, submission_note: "Synthetic completed task." }, finisher.cookie);
+  await req("task.status", { id: t.id, status: "completed", version: 3 }, officer);
 }
 // Decliner is offered three and turns down two, accepts one.
 const offeredToDecliner = [];
@@ -217,7 +217,7 @@ ok(memberBlocked.status === 403, "members cannot load interview rounds");
 const ownSignals = await fetch(origin + "/api/cec/behavior/self", { headers: { Cookie: finisher.cookie } });
 ok(ownSignals.status === 200, "members can load their own signals");
 
-// --- invite onboarding: one screen, no password, no application -----------
+// --- invite onboarding: password-authenticated membership claim -----------
 const inv = (await req("invites/create", { label: "Fall members" }, officer)).data;
 ok(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(inv.code), `code is short and readable: ${inv.code}`);
 const look = (await req("invite?code=" + inv.code)).data;
@@ -226,9 +226,9 @@ ok(look.email_domain === "cornell.edu", "defaults to the Cornell domain");
 const joined = await fetch(origin + "/api/cec/invite/claim", {
   method: "POST",
   headers: { "Content-Type": "application/json", Origin: origin },
-  body: JSON.stringify({ code: inv.code, name: "Henrik Gombos", email: `hg-${suffix}@cornell.edu` }),
+  body: JSON.stringify({ code: inv.code, name: "Henrik Gombos", password: "Synthetic-pilot-password-2026!", email: `hg-${suffix}@cornell.edu` }),
 });
-ok(joined.status === 200, "joining needs only a name and an email");
+ok(joined.status === 200, "joining requires a reusable account password");
 const newCookie = joined.headers.get("set-cookie")?.split(";")[0] || "";
 ok(newCookie.startsWith("cec_session="), "joining signs you straight in");
 const who = (await req("state", undefined, newCookie)).data.user;
@@ -236,7 +236,7 @@ ok(who.role === "member", `lands as a member, not an applicant: got ${who.role}`
 const wrongDomain = await fetch(origin + "/api/cec/invite/claim", {
   method: "POST",
   headers: { "Content-Type": "application/json", Origin: origin },
-  body: JSON.stringify({ code: inv.code, name: "Outsider", email: "x@gmail.com" }),
+  body: JSON.stringify({ code: inv.code, name: "Outsider", password: "Synthetic-pilot-password-2026!", email: "x@gmail.com" }),
 });
 ok(wrongDomain.status === 400, "a non-Cornell address is turned away");
 ok((await req("invite?code=ZZZZ-ZZZZ")).data.valid === false, "an unknown code is not valid");

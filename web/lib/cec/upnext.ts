@@ -234,7 +234,7 @@ export function upNext(u: User, asOfIso?: string): UpNext {
     const due = d.due_at;
     // A task with no due date still belongs here if it is assigned and open —
     // it simply sorts after everything that has a time.
-    if (due && (Date.parse(due) < now - DAY || due > horizonEnd)) continue;
+    if (due && due > horizonEnd) continue;
 
     rows.push({
       id: t.id,
@@ -242,7 +242,7 @@ export function upNext(u: User, asOfIso?: string): UpNext {
       title: String(d.title || "Task"),
       at: due || null,
       place: null,
-      state: d.status || "assigned",
+      state: d.status === "accepted" && d.work_history?.at(-1)?.kind === "revision" ? "changes_requested" : d.status || "assigned",
       count: null,
       changes: [],
       actions:
@@ -251,7 +251,7 @@ export function upNext(u: User, asOfIso?: string): UpNext {
               { kind: "task.accept", label: "Accept", target: t.id, primary: true },
               { kind: "task.decline", label: "Decline", target: t.id },
             ]
-          : [{ kind: "task.submit", label: "Mark done", target: t.id, primary: true }],
+          : [{ kind: "task.view", label: d.status === "submitted" ? "View submitted work" : d.work_history?.at(-1)?.kind === "revision" ? "Review feedback" : "Submit work", target: t.id, primary: true }],
       needsAnswer: d.status === "assigned",
     });
   }
@@ -321,7 +321,7 @@ export function upNext(u: User, asOfIso?: string): UpNext {
     directed: { mentions: 0, messages: 0 },
     ambient: false,
     note: rows.length
-      ? "Everything here is waiting on you."
+      ? "Your upcoming plans and open work."
       : "Nothing needs you in the next week.",
   };
 }

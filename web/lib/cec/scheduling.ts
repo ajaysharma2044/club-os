@@ -18,10 +18,10 @@ const POLICY = "chat-schedule-proposal-v1";
 export function scheduleInit() {
   evidenceInit();
   db().exec(`
-CREATE TABLE IF NOT EXISTS schedule_proposals(id TEXT PRIMARY KEY,owner TEXT NOT NULL REFERENCES users(id),source_ids TEXT NOT NULL,draft TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'proposed',created_at TEXT NOT NULL,policy TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS scheduled_meetings(id TEXT PRIMARY KEY,proposal_id TEXT UNIQUE NOT NULL REFERENCES schedule_proposals(id),owner TEXT NOT NULL REFERENCES users(id),title TEXT NOT NULL,starts_at TEXT NOT NULL,ends_at TEXT NOT NULL,location TEXT NOT NULL,status TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS meeting_participants(meeting_id TEXT REFERENCES scheduled_meetings(id),user_id TEXT REFERENCES users(id),status TEXT NOT NULL,ever_accepted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(meeting_id,user_id));
-CREATE TABLE IF NOT EXISTS calendar_preferences(user_id TEXT PRIMARY KEY REFERENCES users(id),token_hash TEXT,auto_add INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS schedule_proposals(id TEXT PRIMARY KEY,owner TEXT NOT NULL REFERENCES accounts(id),source_ids TEXT NOT NULL,draft TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'proposed',created_at TEXT NOT NULL,policy TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS scheduled_meetings(id TEXT PRIMARY KEY,proposal_id TEXT UNIQUE NOT NULL REFERENCES schedule_proposals(id),owner TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,starts_at TEXT NOT NULL,ends_at TEXT NOT NULL,location TEXT NOT NULL,status TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS meeting_participants(meeting_id TEXT REFERENCES scheduled_meetings(id),user_id TEXT REFERENCES accounts(id),status TEXT NOT NULL,ever_accepted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(meeting_id,user_id));
+CREATE TABLE IF NOT EXISTS calendar_preferences(user_id TEXT PRIMARY KEY REFERENCES accounts(id),token_hash TEXT,auto_add INTEGER NOT NULL DEFAULT 0);
 `);
 }
 function parts(d: Date) {
@@ -212,7 +212,7 @@ export function schedule(u: User, action: string, b: any) {
         participants.some(
           (uid) =>
             !db()
-              .prepare("SELECT 1 FROM users WHERE id=? AND role!='applicant'")
+              .prepare("SELECT 1 FROM users WHERE id=? AND role IN ('member','officer')")
               .get(uid),
         )
       )
@@ -425,7 +425,7 @@ export function calendarFeed(token: string) {
   if (!/^[a-f0-9]{64}$/.test(token)) fail("Calendar link not found.", 404);
   const p = db()
     .prepare(
-      "SELECT p.user_id FROM calendar_preferences p JOIN users u ON u.id=p.user_id WHERE p.token_hash=? AND u.role!='applicant'",
+      "SELECT p.user_id FROM calendar_preferences p JOIN users u ON u.id=p.user_id WHERE p.token_hash=? AND u.role IN ('member','officer')",
     )
     .get(hash(token)) as any;
   if (!p) fail("Calendar link not found.", 404);

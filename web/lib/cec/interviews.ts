@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS interview_rounds(
   created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS interview_panelists(
   round_id TEXT NOT NULL REFERENCES interview_rounds(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   weekly_cap INTEGER NOT NULL DEFAULT 3,
   PRIMARY KEY(round_id,user_id));
 CREATE TABLE IF NOT EXISTS interview_availability(

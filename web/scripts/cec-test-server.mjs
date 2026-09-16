@@ -44,7 +44,8 @@ try {
     await new Promise((r) => setTimeout(r, 1000));
   }
   if (!ready) throw Error("Server did not start");
-  for (const suite of ["tests/cec-api.mjs", "tests/cec-pages.mjs"]) {
+  const suites = process.argv.includes("--pilot") ? ["tests/cec-pilot-api.mjs"] : ["tests/cec-api.mjs", "tests/cec-pages.mjs", "tests/cec-organization-api.mjs"];
+  for (const suite of suites) {
     const test = spawn(process.execPath, [suite], { env, stdio: "inherit" });
     const code = await new Promise((r) => test.on("exit", r));
     if (code !== 0) throw Error(suite + " failed");

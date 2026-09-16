@@ -49,21 +49,19 @@ type Data = {
 const DAY_MS = 86400e3;
 
 /** "Tonight" / "Thursday" / "Sun 12 Oct" — the grouping a person thinks in. */
+const timeZone = "America/New_York";
 function bucket(at: string | null, now: Date): string {
   if (!at) return "No date yet";
   const d = new Date(at);
-  const days = Math.floor(
-    (new Date(d.toDateString()).getTime() - new Date(now.toDateString()).getTime()) / DAY_MS,
-  );
+  const day = (value: Date) => Date.parse(value.toLocaleDateString("en-CA", { timeZone }) + "T00:00:00Z");
+  const days = Math.round((day(d) - day(now)) / DAY_MS);
   if (days < 0) return "Overdue";
-  if (days === 0) return d.getHours() >= 17 ? "Tonight" : "Today";
+  if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
-  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
-  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  if (days < 7) return d.toLocaleDateString(undefined, { timeZone, weekday: "long" });
+  return d.toLocaleDateString(undefined, { timeZone, weekday: "short", day: "numeric", month: "short" });
 }
-
-const clock = (at: string | null) =>
-  at ? new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+const clock = (at: string | null) => at ? new Date(at).toLocaleTimeString(undefined, { timeZone, hour: "numeric", minute: "2-digit" }) + " ET" : "";
 
 export default function UpNext() {
   const [data, setData] = useState<Data | null>(null);
@@ -79,6 +77,7 @@ export default function UpNext() {
       const j = await r.json();
       if (!r.ok) throw Error(j.error);
       setData(j);
+      setError("");
     } catch (e: any) {
       setError(e.message);
     }
@@ -86,6 +85,12 @@ export default function UpNext() {
 
   useEffect(() => {
     load();
+    window.addEventListener("focus", load);
+    window.addEventListener("cec:changed", load);
+    return () => {
+      window.removeEventListener("focus", load);
+      window.removeEventListener("cec:changed", load);
+    };
   }, [load]);
 
   const act = async (row: Row, a: Action) => {
@@ -114,10 +119,12 @@ export default function UpNext() {
     );
     try {
       const body =
-        a.kind.startsWith("rsvp.")
+        a.kind === "task.accept" || a.kind === "task.decline"
+          ? { id: a.target, status: a.kind === "task.accept" ? "accepted" : "cancelled" }
+          : a.kind.startsWith("rsvp.")
           ? { event_id: a.target, status: a.kind === "rsvp.yes" ? "yes" : "no" }
           : { id: a.target };
-      const path = a.kind.startsWith("rsvp.") ? "rsvp" : a.kind.replace(".", "/");
+      const path = a.kind.startsWith("task.") ? "task.status" : a.kind.startsWith("rsvp.") ? "rsvp" : a.kind.replace(".", "/");
       const r = await fetch(`/api/cec/${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,7 +145,7 @@ export default function UpNext() {
     }
   };
 
-  if (error) return <div className="inline-alert">{error}</div>;
+  if (error) return <div className="inline-alert" role="alert">{error} <button type="button" onClick={load}>Try again</button></div>;
   if (!data) return <div className="empty">Loading what needs you…</div>;
 
   const now = new Date();
@@ -151,7 +158,7 @@ export default function UpNext() {
   }
 
   return (
-    <section className="panel">
+    <section className="panel" style={{ display: "block" }}>
       <header className="panel-head">
         <div>
           <h2 className="text-title-2">Up next</h2>
@@ -190,7 +197,7 @@ export default function UpNext() {
 
       {groups.map((g) => (
         <div key={g.label} style={{ marginTop: 18 }}>
-          <p className="text-micro" style={{ textTransform: "uppercase" }}>
+          <p className="text-caption">
             {g.label}
           </p>
           {g.rows.map((row) => {
@@ -203,6 +210,7 @@ export default function UpNext() {
                 className="card"
                 style={{
                   marginTop: 8,
+                  padding: 16,
                   transition: "border-color 180ms ease, opacity 120ms ease",
                   opacity: busy ? 0.7 : 1,
                   borderLeft: moved
@@ -212,17 +220,18 @@ export default function UpNext() {
                       : undefined,
                 }}
               >
-                <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+                <div className="upnext-row">
                   <span
                     className="num"
                     style={{ fontVariantNumeric: "tabular-nums", minWidth: 62 }}
                   >
-                    {clock(row.at)}
+                    {row.kind === "task" && row.at ? new Date(row.at).toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric" }) : clock(row.at)}
                   </span>
                   <div style={{ flex: 1 }}>
                     <h3 className="text-title-3" style={{ margin: 0 }}>
                       {row.title}
                     </h3>
+                    {row.kind === "task" && <p className="text-caption">{({assigned: "Awaiting your acceptance", accepted: "In progress", changes_requested: "Changes requested — review your feedback", submitted: "Waiting for officer review"} as Record<string, string>)[row.state]}</p>}
 
                     {/* THE CHANGED-FIELD DIFF. The old value stays visible,
                         struck through, so nobody walks to the old room. */}
@@ -260,10 +269,14 @@ export default function UpNext() {
                     </p>
                   </div>
 
-                  {/* Every row carries its action inline. No row is a link to a
-                      page where the real action lives (docs/22 §5.1). */}
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {row.actions.map((a) => (
+                  {/* Work submission opens the workspace to capture evidence;
+                      lightweight RSVP and assignment responses remain inline. */}
+                  <div className="upnext-actions">
+                    {row.actions.map((a) => a.kind === "task.view" ? (
+                      <a className="button" key={a.kind} href={`/clubs/cec/workspace#task-${encodeURIComponent(a.target)}`}>
+                        {a.label}
+                      </a>
+                    ) : (
                       <button
                         key={a.kind}
                         type="button"

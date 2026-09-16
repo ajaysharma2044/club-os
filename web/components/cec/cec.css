@@ -231,6 +231,7 @@
   gap: 24px;
 }
 .cec .panel {
+  display: block;
   background: white;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -695,4 +696,52 @@
 .cec .adaptive input[type="radio"] {
   accent-color: #b31b1b;
   flex-shrink: 0;
+}
+
+/* Tasks: compact work queue with the latest handoff kept in view. */
+.cec .task-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0 20px; }
+.cec .task-filters [aria-pressed="true"] { background: var(--ink); color: white; border-color: var(--ink); }
+.cec .task-filters span { margin-left: 8px; font-variant-numeric: tabular-nums; }
+.cec .task-row { align-items: flex-start; scroll-margin-top: 100px; padding: 24px 0; }
+.cec .task-row:target { outline: 2px solid var(--red); outline-offset: 8px; }
+.cec .task-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.cec .task-heading h3 { font-size: 18px; margin: 0; overflow-wrap: anywhere; }
+.cec .task-actions { flex: 0 0 170px; flex-wrap: wrap; justify-content: flex-start; }
+.cec .task-feedback { margin-top: 16px; padding: 14px 16px; background: #f2f5f8; border-left: 3px solid #58748d; }
+.cec .task-feedback.revision { background: #fff5ed; border-color: #a35021; }
+.cec .task-feedback p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0; max-width: 72ch; }
+.cec .task-row details { margin-top: 16px; overflow-wrap: anywhere; }
+.cec .task-row summary { cursor: pointer; font-size: 14px; }
+.upnext-row { display: flex; gap: 12px; align-items: baseline; }
+.upnext-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 700px) {
+  .cec .task-row { flex-direction: column; }
+  .cec .task-actions { flex-basis: auto; width: 100%; }
+  .cec .task-actions .button { min-height: 44px; }
+  .upnext-row { flex-wrap: wrap; }
+  .upnext-row > div { min-width: 0; overflow-wrap: anywhere; }
+  .upnext-actions { width: 100%; }
+  .upnext-actions button, .upnext-actions a { min-height: 44px; }
+}
+
+/* Shared keyboard and narrow-screen form guarantees. */
+.cec :is(input, select, textarea, summary):focus-visible {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+}
+.cec .modal { max-height: 90dvh; }
+.cec .task-row > .task-actions { max-width: none; }
+.cec .task-row .resource p { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .cec .panel-head { flex-wrap: wrap; }
+  .cec :is(button, .button, select, summary) { min-height: 44px; }
+  .cec :is(input, select, textarea) { font-size: 16px; }
+  .cec .modal header { align-items: flex-start; }
+  .cec .modal header h2 { min-width: 0; overflow-wrap: anywhere; }
+}
+.cec.cec-dialog-root { min-height: 0; background: transparent; transform: none; }
+@media (max-width: 700px) {
+  .cec .membership-controls .row { flex-direction: column; }
+  .cec .membership-controls .row > div { min-width: 0; overflow-wrap: anywhere; }
+  .cec .membership-controls .row > .actions { max-width: none; }
 }

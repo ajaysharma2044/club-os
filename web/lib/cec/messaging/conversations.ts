@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS conversations(
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
   title TEXT NOT NULL DEFAULT '',
-  created_by TEXT NOT NULL REFERENCES users(id),
+  created_by TEXT NOT NULL REFERENCES accounts(id),
   created_at TEXT NOT NULL,
   archived_at TEXT,
   -- Deterministic identity for conversations that must not be duplicated:
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS conversations(
   dedupe_key TEXT);
 CREATE TABLE IF NOT EXISTS conversation_members(
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   joined_at TEXT NOT NULL,
   left_at TEXT,
   last_read_at TEXT,
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages(
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   id TEXT UNIQUE NOT NULL,
   conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  author_id TEXT NOT NULL REFERENCES users(id),
+  author_id TEXT NOT NULL REFERENCES accounts(id),
   body TEXT NOT NULL,
   reply_to TEXT,
   created_at TEXT NOT NULL,
@@ -152,7 +152,7 @@ CREATE INDEX IF NOT EXISTS conversation_member_user ON conversation_members(user
 CREATE TABLE IF NOT EXISTS message_mentions(
   message_id TEXT NOT NULL REFERENCES conversation_messages(id) ON DELETE CASCADE,
   conversation_id TEXT NOT NULL,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL,
   PRIMARY KEY(message_id,user_id));
 CREATE INDEX IF NOT EXISTS mention_inbox ON message_mentions(user_id,conversation_id);

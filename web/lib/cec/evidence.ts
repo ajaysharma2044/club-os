@@ -48,13 +48,13 @@ export const BLOCKERS = [
 
 export function evidenceInit() {
   db().exec(`
-CREATE TABLE IF NOT EXISTS episodes(id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,owner TEXT NOT NULL REFERENCES users(id),title TEXT NOT NULL,goal TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',source_type TEXT NOT NULL,source_id TEXT NOT NULL,created_at TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,UNIQUE(source_type,source_id));
+CREATE TABLE IF NOT EXISTS episodes(id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,owner TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,goal TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',source_type TEXT NOT NULL,source_id TEXT NOT NULL,created_at TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,UNIQUE(source_type,source_id));
 CREATE TABLE IF NOT EXISTS episode_objects(object_type TEXT NOT NULL,object_id TEXT NOT NULL,episode_id TEXT NOT NULL REFERENCES episodes(id),PRIMARY KEY(object_type,object_id));
-CREATE TABLE IF NOT EXISTS activity_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,source_key TEXT UNIQUE NOT NULL,organization_id TEXT NOT NULL,episode_id TEXT NOT NULL REFERENCES episodes(id),actor_id TEXT NOT NULL REFERENCES users(id),subject_id TEXT NOT NULL REFERENCES users(id),action_family TEXT NOT NULL,event_type TEXT NOT NULL,object_type TEXT NOT NULL,object_id TEXT NOT NULL,occurred_at TEXT NOT NULL,observed_at TEXT NOT NULL,source TEXT NOT NULL,source_ref TEXT NOT NULL,evidence_level TEXT NOT NULL,visibility TEXT NOT NULL,policy TEXT NOT NULL,context TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS activity_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,source_key TEXT UNIQUE NOT NULL,organization_id TEXT NOT NULL,episode_id TEXT NOT NULL REFERENCES episodes(id),actor_id TEXT NOT NULL REFERENCES accounts(id),subject_id TEXT NOT NULL REFERENCES accounts(id),action_family TEXT NOT NULL,event_type TEXT NOT NULL,object_type TEXT NOT NULL,object_id TEXT NOT NULL,occurred_at TEXT NOT NULL,observed_at TEXT NOT NULL,source TEXT NOT NULL,source_ref TEXT NOT NULL,evidence_level TEXT NOT NULL,visibility TEXT NOT NULL,policy TEXT NOT NULL,context TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS activity_episode ON activity_events(episode_id,seq);
 CREATE INDEX IF NOT EXISTS activity_subject ON activity_events(subject_id,seq);
-CREATE TABLE IF NOT EXISTS evidence_snapshots(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),as_of TEXT NOT NULL,computed_at TEXT NOT NULL,policy TEXT NOT NULL,evidence_hash TEXT NOT NULL,features TEXT NOT NULL,UNIQUE(user_id,as_of,policy,evidence_hash));
-CREATE TABLE IF NOT EXISTS work_blockers(id TEXT PRIMARY KEY,episode_id TEXT NOT NULL REFERENCES episodes(id),task_id TEXT NOT NULL REFERENCES items(id),reporter TEXT NOT NULL REFERENCES users(id),category TEXT NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL,resolved_at TEXT,resolver TEXT REFERENCES users(id),resolution TEXT);
+CREATE TABLE IF NOT EXISTS evidence_snapshots(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),as_of TEXT NOT NULL,computed_at TEXT NOT NULL,policy TEXT NOT NULL,evidence_hash TEXT NOT NULL,features TEXT NOT NULL,UNIQUE(user_id,as_of,policy,evidence_hash));
+CREATE TABLE IF NOT EXISTS work_blockers(id TEXT PRIMARY KEY,episode_id TEXT NOT NULL REFERENCES episodes(id),task_id TEXT NOT NULL REFERENCES records(id),reporter TEXT NOT NULL REFERENCES accounts(id),category TEXT NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL,resolved_at TEXT,resolver TEXT REFERENCES accounts(id),resolution TEXT);
 CREATE UNIQUE INDEX IF NOT EXISTS blocker_open ON work_blockers(task_id) WHERE resolved_at IS NULL;
 CREATE TRIGGER IF NOT EXISTS activity_no_update BEFORE UPDATE ON activity_events BEGIN SELECT RAISE(ABORT,'append only; add a correction'); END;
 CREATE TRIGGER IF NOT EXISTS activity_no_delete BEFORE DELETE ON activity_events BEGIN SELECT RAISE(ABORT,'append only; use a governed erasure migration'); END;
@@ -280,6 +280,9 @@ export function captureTask(u: User, r: Item, from: string, sourceKey: string) {
           : status === "completed"
             ? "officer_approved"
             : status,
+      ...((status === "submitted" || status === "completed" ||
+        (status === "accepted" && from === "submitted")) && r.data.work_history?.length
+        ? { work_record: r.data.work_history.at(-1) } : {}),
     },
   });
 }

@@ -9,3 +9,8 @@ node_modules/
 .netlify
 .next-dbg/
 .next-sig/
+work/
+
+# Production configuration and secrets
+deploy/*.env
+deploy/secrets/

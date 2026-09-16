@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS opportunities(
   kind TEXT NOT NULL,
   object_type TEXT NOT NULL,
   object_id TEXT NOT NULL,
-  offered_to TEXT NOT NULL REFERENCES users(id),
+  offered_to TEXT NOT NULL REFERENCES accounts(id),
   offered_by TEXT NOT NULL,
   episode_id TEXT NOT NULL DEFAULT '',
   offered_at TEXT NOT NULL,

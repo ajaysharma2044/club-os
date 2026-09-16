@@ -1,3 +1,4 @@
+import { migrateOrganizations, migrateMembershipControls, installCECGuards } from "./migrations";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -21,6 +22,7 @@ export type Item = {
   id: string;
   kind: string;
   owner: string;
+  organization_id: string;
   data: Record<string, any>;
   created_at: string;
   updated_at: string;
@@ -95,7 +97,17 @@ export function db() {
  CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
  CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'append only'); END;
  `);
+  try {
+  migrateOrganizations(connection);
+  migrateMembershipControls(connection);
+  const execute = connection.exec.bind(connection);
+  installCECGuards(connection, execute);
+  connection.exec = (sql: string) => {
+    execute(sql);
+    if (/CREATE\s+TABLE/i.test(sql)) installCECGuards(connection, execute);
+  };
   return connection;
+  } catch (error) { connection.close(); connection = undefined as any; throw error; }
 }
 export function tx<T>(f: () => T): T {
   const d = db();
@@ -168,7 +180,7 @@ export function user(token: string | undefined): User | null {
   return (
     (db()
       .prepare(
-        "SELECT u.id,u.name,u.email,u.role,u.interests,u.shared FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?",
+        "SELECT u.id,u.name,u.email,u.role,u.interests,u.shared FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>? AND u.role IN ('applicant','member','officer')",
       )
       .get(hash(token), Date.now()) as User) || null
   );
@@ -180,11 +192,14 @@ export function session(userId: string) {
     .run(hash(token), userId, Date.now() + 7 * 86400000);
   return token;
 }
+export function clubRole(userId: string): string | undefined {
+  return (db().prepare("SELECT role FROM users WHERE id=? AND role IN ('applicant','member','officer')").get(userId) as any)?.role;
+}
 export function officer(u: User) {
-  if (u.role !== "officer") fail("Officer access required.", 403);
+  if (clubRole(u.id) !== "officer") fail("Officer access required.", 403);
 }
 export function member(u: User) {
-  if (u.role === "applicant") fail("Club membership required.", 403);
+  if (!["officer", "member"].includes(clubRole(u.id) || "")) fail("Club membership required.", 403);
 }
 export function throttle(key: string, max = 15) {
   const d = db();
@@ -220,6 +235,7 @@ export function emit(
 ) {
   const key = id();
   const body = {
+    organization_id: "cornell-ec",
     source: "native",
     external_id: key,
     fact_key: `${kind}:${subject}:${object_id}`,
@@ -288,7 +304,7 @@ export function entity(
       const assignee = text(input.assignee);
       if (
         !db()
-          .prepare("SELECT 1 FROM users WHERE id=? AND role!='applicant'")
+          .prepare("SELECT 1 FROM users WHERE id=? AND role IN ('member','officer')")
           .get(assignee)
       )
         fail("Select a member.");
@@ -300,6 +316,8 @@ export function entity(
         due_at: date(input.due_at),
         project_id: input.project_id || "",
         origin: String(input.origin || "").slice(0, 300),
+        // Work and review history is server-owned; general edits cannot forge or erase it.
+        work_history: previous?.data.work_history || [],
       };
     }
     case "project":

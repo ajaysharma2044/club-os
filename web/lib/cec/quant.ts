@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { resolve, dirname } from "node:path";
-import { db } from "./db";
 export function quant(input: unknown): Promise<any> {
   return new Promise((yes, no) => {
     const script =
@@ -48,28 +47,16 @@ export function quant(input: unknown): Promise<any> {
   });
 }
 let flushing: Promise<void> | null = null;
-export async function flush() {
+export async function flush(force = false) {
   if (flushing) return flushing;
-  flushing = (async () => {
-    for (const row of db()
-      .prepare(
-        "SELECT * FROM outbox WHERE delivered=0 ORDER BY rowid LIMIT 100",
-      )
-      .all() as any[]) {
-      try {
-        await quant({ action: "ingest", event: JSON.parse(row.body) });
-        db()
-          .prepare("UPDATE outbox SET delivered=1,error=? WHERE id=?")
-          .run("", row.id);
-      } catch (e) {
-        db()
-          .prepare("UPDATE outbox SET error=? WHERE id=?")
-          .run("Delivery failed; retry available", row.id);
-        break;
-      }
-    }
-  })().finally(() => {
-    flushing = null;
-  });
+  flushing = new Promise<void>((yes, no) => {
+    const child = spawn(process.env.PYTHON_BINARY || "python3", [
+      resolve(process.cwd(), "../services/quant/pipeline.py"), force ? "retry" : "once",
+    ], { env: process.env, stdio: ["ignore", "ignore", "ignore"] });
+    child.on("error", no);
+    child.on("close", (code) => code === 0 ? yes() : no(new Error("Pipeline worker unavailable.")));
+  }).catch(() => {
+    // The domain transaction is already committed. The worker will retry later.
+  }).finally(() => { flushing = null; });
   return flushing;
 }

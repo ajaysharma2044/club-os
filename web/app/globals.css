@@ -2291,3 +2291,7 @@ table.data tfoot td {
   outline: none;
   box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--electric);
 }
+
+/* Keep the mobile navigation control legible on the dark shell. */
+.mobile-bar .btn.ghost { color: #fff; min-height: 44px; }
+.mobile-bar .btn.ghost:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }

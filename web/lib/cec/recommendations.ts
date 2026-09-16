@@ -7,7 +7,7 @@ const features = "declared-interests-project-text-v1";
 function init() {
   db()
     .exec(`CREATE TABLE IF NOT EXISTS model_versions(id TEXT PRIMARY KEY,feature_version TEXT NOT NULL,description TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS recommendations(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id),project_id TEXT NOT NULL REFERENCES items(id),model_version TEXT NOT NULL,feature_version TEXT NOT NULL,score REAL NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS recommendations(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),project_id TEXT NOT NULL REFERENCES records(id),model_version TEXT NOT NULL,feature_version TEXT NOT NULL,score REAL NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS recommendation_events(id TEXT PRIMARY KEY,recommendation_id TEXT NOT NULL REFERENCES recommendations(id),kind TEXT NOT NULL,value TEXT NOT NULL,created_at TEXT NOT NULL,UNIQUE(recommendation_id,kind,value));`);
   db()
     .prepare("INSERT OR IGNORE INTO model_versions VALUES(?,?,?)")
@@ -31,7 +31,7 @@ function eligible(u: User) {
       p.data.shared &&
       db()
         .prepare(
-          "SELECT 1 FROM users WHERE id=? AND shared=1 AND role!='applicant'",
+          "SELECT 1 FROM users WHERE id=? AND shared=1 AND role IN ('member','officer')",
         )
         .get(p.owner),
   );

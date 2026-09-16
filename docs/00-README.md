@@ -1,6 +1,11 @@
 # Club OS — Research and Specification
 
-Twenty-seven research tracks in `/research/`, synthesised into twenty-three numbered documents here plus three working notes.
+Research in `/research/`, synthesised into the numbered documents and working notes here.
+
+For the current systems discussion, start with [System design](23-system-design.md)
+and [MVP system scope](24-mvp-system.md). These distinguish proposed requirements from
+the implemented single-club pilot. Older research below includes historical claims and
+proposals; it is not a current implementation inventory.
 
 For what the system actually does with all this, and what it refuses to do, start at the [repository README](../README.md).
 
@@ -32,6 +37,9 @@ For what the system actually does with all this, and what it refuses to do, star
 | 20 | [Context intelligence audit](20-context-intelligence-audit.md) | The full repository audit: existing primitives, what was dead code, and the gaps against the spec |
 | **21** | **[The context intelligence system](21-context-intelligence-system.md)** | **How every layer connects, and the table of what each one REFUSES to do — every row enforced in code and covered by a test.** |
 | **22** | **[Interface research](22-interface-research.md)** | **Why Canvas feels flat, mechanically. Five patterns worth stealing, three rejected, and the home screen that replaces static counts.** |
+| **23** | **[System design](23-system-design.md)** | **Domain boundaries, identity, permissions, records, integrations, intelligence and reliability contracts.** |
+| **24** | **[MVP system scope](24-mvp-system.md)** | **The first complete operating loop, existing foundations, launch gaps, acceptance gates and build order.** |
+| **25** | **[Agentic coding loop](25-agentic-coding-loop.md)** | **Task contracts, implementation and review loop, local/CI verification and completion criteria.** |
 
 **Read 09 first.** Every other document is an interface to it.
 
@@ -90,4 +98,9 @@ For what the system actually does with all this, and what it refuses to do, star
 
 ## What is not done yet
 
-No code. No wireframes. No financial model spreadsheet. No pitch deck. The research and specification layer is complete enough to start any of those.
+This index originated before implementation. The repository now includes a working
+single-club application and Python companion; see [README-CEC](../README-CEC.md) for
+documented functionality and [MVP system scope](24-mvp-system.md) for proposed launch gates.
+
+- [Frontend patterns and component guide](29-frontend-patterns.md): component ownership,
+  data lifecycle, forms/dialogs, responsive rules, and verification expectations.

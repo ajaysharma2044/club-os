@@ -1,0 +1,106 @@
+name: club-os
+x-app: &app
+  image: club-os:local
+  build: .
+  init: true
+  restart: unless-stopped
+  environment: &environment
+    NODE_ENV: production
+    CEC_DATABASE: /data/cec.sqlite
+    CEC_BACKUP_DIR: /backups
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+services:
+  permissions:
+    <<: *app
+    restart: "no"
+    user: root
+    command: [sh, -c, 'chown 1000:1000 /data /backups /ops && chmod 700 /data /backups /ops']
+    volumes: [data:/data, backups:/backups, operations:/ops]
+  web:
+    <<: *app
+    env_file: [deploy/app.env]
+    environment:
+      <<: *environment
+      CEC_ORIGIN: https://${CEC_DOMAIN:?Set CEC_DOMAIN in deploy/production.env}
+    command: [npm, run, start, --, --hostname, 0.0.0.0]
+    volumes: [data:/data]
+    depends_on:
+      permissions:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/cec/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+  worker:
+    <<: *app
+    command: [python3, ../services/quant/pipeline.py, work]
+    volumes: [data:/data, backups:/backups]
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, ../services/quant/operations.py, health, --mode, worker]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+  offsite:
+    <<: *app
+    command: [python3, ../services/quant/operations.py, offsite]
+    env_file: [deploy/backup.env]
+    environment:
+      <<: *environment
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      RESTIC_CACHE_DIR: /ops/restic-cache
+    secrets: [restic_password]
+    volumes: [backups:/backups, operations:/ops]
+    depends_on:
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, ../services/quant/operations.py, health, --mode, offsite]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+  monitor:
+    <<: *app
+    command: [python3, ../services/quant/operations.py, monitor]
+    env_file: [deploy/monitor.env]
+    environment:
+      <<: *environment
+      CEC_HEALTH_URL: http://web:3000/api/cec/health
+    volumes: [data:/data, operations:/ops]
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python3, ../services/quant/operations.py, health, --mode, monitor]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      CEC_DOMAIN: ${CEC_DOMAIN:?Set CEC_DOMAIN in deploy/production.env}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: [./deploy/Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data, caddy_config:/config]
+    depends_on:
+      web:
+        condition: service_healthy
+volumes:
+  data:
+  backups:
+  operations:
+  caddy_data:
+  caddy_config:
+secrets:
+  restic_password:
+    file: ./deploy/secrets/restic-password

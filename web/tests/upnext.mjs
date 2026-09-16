@@ -194,12 +194,16 @@ const putEvent = (id, data, createdAt = NOW) =>
       )
       .run(id, "task", "m2", JSON.stringify(data), NOW, NOW, 1);
 
+  putTask("t-overdue", { title: "Still owed", status: "accepted", assignee: "m1", due_at: at(-72), work_history: [{kind: "revision"}] });
   putTask("t-mine", { title: "Book the room", status: "assigned", assignee: "m1", due_at: at(20) });
   putTask("t-nodate", { title: "Chase the sponsor", status: "accepted", assignee: "m1" });
+  putTask("t-review", { title: "Awaiting review", status: "submitted", assignee: "m1", due_at: at(20) });
   putTask("t-theirs", { title: "Not mine", status: "assigned", assignee: "m2", due_at: at(20) });
   putTask("t-done", { title: "Finished", status: "completed", assignee: "m1", due_at: at(5) });
 
   const ids = upNext(maya, NOW).rows.map((r) => r.id);
+  ok(ids.includes("t-overdue"), "overdue open work remains visible after 24 hours");
+  ok(upNext(maya, NOW).rows.find(r => r.id === "t-overdue").state === "changes_requested", "pending revision has a distinct state");
   ok(ids.includes("t-mine"), "a task assigned to me appears");
   ok(
     ids.includes("t-nodate"),
@@ -209,6 +213,10 @@ const putEvent = (id, data, createdAt = NOW) =>
   ok(!ids.includes("t-done"), "a completed task does not");
 
   const mine = upNext(maya, NOW).rows.find((r) => r.id === "t-mine");
+  const accepted = upNext(maya, NOW).rows.find((r) => r.id === "t-nodate");
+  const submitted = upNext(maya, NOW).rows.find((r) => r.id === "t-review");
+  ok(accepted.actions[0].kind === "task.view" && accepted.actions[0].label === "Submit work", "submission opens the evidence form instead of an empty status mutation");
+  ok(submitted.actions[0].kind === "task.view" && submitted.actions[0].label === "View submitted work", "submitted work is not offered a duplicate submission action");
   ok(mine.needsAnswer === true, "an unaccepted assignment needs an answer");
   ok(
     mine.actions.some((a) => a.kind === "task.accept") &&

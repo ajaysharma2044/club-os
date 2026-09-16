@@ -26,6 +26,9 @@ async function request(path, body, cookie = "", expected = 200) {
   checks++;
   return { data, cookie: r.headers.get("set-cookie")?.split(";")[0] || cookie };
 }
+async function taskVersion(id, cookie) {
+  return (await request("state", undefined, cookie)).data.items.find((r) => r.id === id).version;
+}
 const setup = await request("auth/setup", {
   name: "Test Officer",
   email: `officer-${suffix}@example.test`,
@@ -141,14 +144,14 @@ await request(
   400,
 );
 await request("task.status", { id: task, status: "accepted" }, participant);
-await request("task.status", { id: task, status: "submitted" }, participant);
+await request("task.status", { id: task, status: "submitted", version: await taskVersion(task, participant), submission_note: "Prepared agenda." }, participant);
 await request(
   "task.status",
   { id: task, status: "completed" },
   participant,
   403,
 );
-await request("task.status", { id: task, status: "completed" }, officer);
+await request("task.status", { id: task, status: "completed", version: await taskVersion(task, officer) }, officer);
 const slot = (
   await request(
     "create",
@@ -791,6 +794,13 @@ await request(
   403,
 );
 await request("task.status", { id: nextTask, status: "accepted" }, participant);
+const acceptedVersion = await taskVersion(nextTask, participant);
+await request("task.status", { id: nextTask, status: "submitted", version: acceptedVersion }, participant, 400);
+await request("task.status", { id: nextTask, status: "submitted", version: acceptedVersion,
+  artifact_url: "javascript:alert(1)" }, participant, 400);
+await request("task.status", { id: nextTask, status: "submitted", submission_note: "No version" }, participant, 409);
+assert.equal(await taskVersion(nextTask, participant), acceptedVersion);
+checks++;
 const blockerBody = {
   task_id: nextTask,
   category: "need_approval",
@@ -832,16 +842,60 @@ await request(
 );
 await request(
   "task.status",
-  { id: nextTask, status: "submitted" },
+  { id: nextTask, status: "submitted", version: await taskVersion(nextTask, participant), submission_note: "Prepared room plan.", artifact_url: "https://example.com/room-plan" },
   participant,
 );
-await request("task.status", { id: nextTask, status: "accepted" }, officer);
+// Returning submitted work for revision is an officer review action. A member
+// cannot withdraw it through the API or create revision evidence on their own.
+const beforeRevisionState = (await request("state", undefined, officer)).data;
+const beforeRevisionTask = beforeRevisionState.items.find((r) => r.id === nextTask);
+const beforeRevisionEvidence = (await request("evidence", undefined, participant))
+  .data.events.filter((e) => e.object_id === nextTask);
 await request(
   "task.status",
-  { id: nextTask, status: "submitted" },
+  { id: nextTask, status: "accepted" },
+  participant,
+  403,
+);
+const afterDeniedRevisionState = (await request("state", undefined, officer)).data;
+assert.deepEqual(
+  afterDeniedRevisionState.items.find((r) => r.id === nextTask),
+  beforeRevisionTask,
+);
+assert.deepEqual(afterDeniedRevisionState.audit, beforeRevisionState.audit);
+assert.deepEqual(
+  (await request("evidence", undefined, participant)).data.events.filter(
+    (e) => e.object_id === nextTask,
+  ),
+  beforeRevisionEvidence,
+);
+checks += 3;
+await request("task.status", { id: nextTask, status: "accepted", version: beforeRevisionTask.version }, officer, 400);
+await request("task.status", { id: nextTask, status: "accepted", version: await taskVersion(nextTask, officer), revision_note: "Add the updated room capacity." }, officer);
+await request(
+  "task.status",
+  { id: nextTask, status: "submitted", version: await taskVersion(nextTask, participant), submission_note: "Prepared room plan.", artifact_url: "https://example.com/room-plan" },
   participant,
 );
-await request("task.status", { id: nextTask, status: "completed" }, officer);
+const resubmitted = (await request("state", undefined, officer)).data.items.find((r) => r.id === nextTask);
+await request("task.status", { id: nextTask, status: "completed", version: beforeRevisionTask.version }, officer, 409);
+await request("task.status", { id: nextTask, status: "accepted", version: beforeRevisionTask.version, revision_note: "Stale feedback" }, officer, 409);
+assert.equal(await taskVersion(nextTask, officer), resubmitted.version);
+await request("task.status", { id: nextTask, status: "completed", version: resubmitted.version }, officer);
+let completedWork = (await request("state", undefined, officer)).data.items.find((r) => r.id === nextTask);
+const history = completedWork.data.work_history;
+assert.deepEqual(history.map((entry) => entry.kind), ["submission", "revision", "submission", "approval"]);
+assert.equal(history[0].artifact_url, "https://example.com/room-plan");
+assert.equal(history[1].note, "Add the updated room capacity.");
+assert.equal(history[1].submission_id, history[0].id);
+assert.equal(history[3].submission_id, history[2].id);
+assert.notEqual(history[0].id, history[2].id);
+// General task updates cannot replace the server-owned history, even for officers.
+await request("update", { id: nextTask, version: completedWork.version,
+  data: { ...completedWork.data, work_history: [{ kind: "approval", note: "forged" }] } }, officer);
+completedWork = (await request("state", undefined, officer)).data.items.find((r) => r.id === nextTask);
+assert.deepEqual(completedWork.data.work_history, history);
+checks += 8;
 evidence = (await request("evidence", undefined, participant)).data;
 assert.equal(evidence.features.accepted, 1);
 assert.equal(evidence.features.approved, 1);

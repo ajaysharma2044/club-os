@@ -78,7 +78,7 @@ export function deliveryInit() {
   messagingInit();
   db().exec(`
 CREATE TABLE IF NOT EXISTS notification_prefs(
-  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  user_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   dm TEXT NOT NULL DEFAULT 'all',
   groups TEXT NOT NULL DEFAULT 'all',
   channels TEXT NOT NULL DEFAULT 'mentions',

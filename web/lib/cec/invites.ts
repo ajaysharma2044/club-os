@@ -1,17 +1,3 @@
-// Invite-link onboarding.
-//
-// The existing path asks a new member for a 12-character password, makes them
-// an applicant, then requires an application and an officer review before they
-// can do anything. For someone who is already in the club that is four steps
-// too many, and the field evidence (docs/12) is clear about where these
-// students actually coordinate: an officer drops a link in the group chat.
-//
-// So: an officer generates a link, pastes it into GroupMe, and a member gives
-// their name and Cornell email and is in. One screen, no password, no
-// application. Email verification can harden this later; today the honest
-// security model is the same as the group chat the link was shared in, which
-// is what it replaces.
-
 import {
   db,
   fail,
@@ -24,6 +10,9 @@ import {
   audit,
   emit,
   password,
+  verify,
+  throttle,
+  tx,
   type User,
 } from "./db";
 import { randomBytes } from "node:crypto";
@@ -90,14 +79,14 @@ export function inviteInfo(code: string): InviteInfo {
     };
   const now = timestamp();
   const remaining = Math.max(0, row.max_uses - row.uses);
-  const valid = !row.revoked && row.expires_at > now && remaining > 0;
+  const valid = row.role === "member" && !row.revoked && row.expires_at > now && remaining > 0;
   return {
     code: row.code,
     label: row.label,
     role: row.role,
     email_domain: row.email_domain,
     valid,
-    reason: row.revoked
+    reason: row.role !== "member" ? "Ask an officer for a new member invitation." : row.revoked
       ? "That invite has been turned off."
       : row.expires_at <= now
         ? "That invite has expired. Ask an officer for a new link."
@@ -109,61 +98,53 @@ export function inviteInfo(code: string): InviteInfo {
   };
 }
 
-/** Join with an invite: name + email, no password, straight to member. */
+/** A bearer invitation grants membership, never proof of account ownership. */
 export function claim(b: any): { token: string; name: string } {
   invitesInit();
-  const info = inviteInfo(String(b.code || ""));
-  if (!info.valid) fail(info.reason || "That invite link is not valid.", 403);
-
-  const name = text(b.name, 100);
+  const code = text(b.code, 32).toUpperCase();
   const email = text(b.email, 254).toLowerCase();
+  throttle("invite:email:" + hash(email), 10);
+  throttle("invite:claims", 500);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("Enter a valid email.");
-  if (info.email_domain && !email.endsWith("@" + info.email_domain))
-    fail(`Use your @${info.email_domain} address.`);
-
-  const existing = db()
-    .prepare("SELECT * FROM users WHERE email=?")
-    .get(email) as any;
-
-  // An existing account just signs in and is upgraded to member if it was
-  // still sitting at applicant. Nobody is ever asked to make a second account.
-  if (existing) {
-    if (existing.role === "applicant")
-      db().prepare("UPDATE users SET role=? WHERE id=?").run(info.role, existing.id);
-    db()
-      .prepare("INSERT OR IGNORE INTO invite_claims VALUES (?,?,?)")
-      .run(info.code, existing.id, timestamp());
-    return { token: session(existing.id), name: existing.name };
-  }
-
-  const uid = id();
-  // Passwordless: store an unusable credential rather than a guessable one.
-  // A member can set a real password later from settings.
-  const unusable = password(randomBytes(32).toString("hex"));
-  db()
-    .prepare("INSERT INTO users(id,name,email,password,role) VALUES (?,?,?,?,?)")
-    .run(uid, name, email, unusable, info.role);
-  db()
-    .prepare("UPDATE invites SET uses=uses+1 WHERE code=?")
-    .run(info.code);
-  db()
-    .prepare("INSERT OR IGNORE INTO invite_claims VALUES (?,?,?)")
-    .run(info.code, uid, timestamp());
-
-  const u = {
-    id: uid,
-    name,
-    email,
-    role: info.role,
-    interests: "",
-    shared: 0,
-  } as User;
-  audit(u, "account.created", uid, { role: info.role, via: "invite" });
-  emit(u, "membership", uid, "cornell-ec", {
-    status: "active",
-    role: info.role,
+  const suppliedPassword = text(b.password, 256);
+  return tx(() => {
+    const invitation = db().prepare("SELECT * FROM invites WHERE code=?").get(code) as any;
+    if (!invitation || invitation.revoked || invitation.expires_at <= timestamp() || invitation.role !== "member")
+      fail("This invitation is unavailable. Ask an officer for a new member invitation.", 403);
+    if (invitation.email_domain && !email.endsWith("@" + invitation.email_domain))
+      fail(`Use your @${invitation.email_domain} address.`);
+    const existing = db().prepare("SELECT * FROM accounts WHERE email=?").get(email) as any;
+    if (existing && !verify(suppliedPassword, existing.password))
+      fail("Unable to join. Use your existing account password, or contact an officer for account recovery.", 401);
+    const membership = existing ? db().prepare(
+      "SELECT * FROM memberships WHERE organization_id='cornell-ec' AND user_id=?").get(existing.id) as any : null;
+    if (membership && ["left", "suspended"].includes(membership.status))
+      fail("An officer must restore your membership before you can rejoin.", 403);
+    const alreadyClaimed = existing && db().prepare(
+      "SELECT 1 FROM invite_claims WHERE code=? AND user_id=?").get(code, existing.id);
+    if (!alreadyClaimed && invitation.uses >= invitation.max_uses)
+      fail("This invitation has reached its limit. Ask an officer for another.", 409);
+    const uid = existing?.id || id();
+    const name = existing?.name || text(b.name, 100);
+    if (!existing) {
+      db().prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,'member')")
+        .run(uid, name, email, password(suppliedPassword));
+    } else if (!membership) {
+      db().prepare("INSERT INTO memberships(organization_id,user_id,role,status) VALUES('cornell-ec',?,'member','active')").run(uid);
+    } else if (membership.status === "pending") {
+      db().prepare("UPDATE memberships SET role='member',status='active',joined_at=? WHERE organization_id='cornell-ec' AND user_id=?")
+        .run(timestamp(), uid);
+    }
+    const actor = { id: uid, name, email, role: membership?.role === "officer" ? "officer" : "member", interests: "", shared: 0 } as User;
+    if (!existing) audit(actor, "account.created", uid, {role:"member",via:"invite"});
+    if (!alreadyClaimed) {
+      db().prepare("INSERT INTO invite_claims(code,user_id,claimed_at) VALUES(?,?,?)").run(code, uid, timestamp());
+      db().prepare("UPDATE invites SET uses=uses+1 WHERE code=?").run(code);
+      audit(actor, "invite.claim", uid, { code });
+      if (!membership || membership.status === "pending") emit(actor, "membership", uid, "cornell-ec", { status: "active", role: "member" });
+    }
+    return { token: session(uid), name };
   });
-  return { token: session(uid), name };
 }
 
 export function inviteState(u: User) {
@@ -181,7 +162,7 @@ export function inviteState(u: User) {
       uses: r.uses,
       max_uses: r.max_uses,
       expires_at: r.expires_at,
-      active: r.expires_at > now && r.uses < r.max_uses,
+      active: r.role === "member" && r.expires_at > now && r.uses < r.max_uses,
     })),
   };
 }
@@ -190,8 +171,14 @@ export function invites(u: User, action: string, b: any) {
   officer(u);
   invitesInit();
   if (action === "create") {
+    if (b.role && b.role !== "member") fail("Invite members first, then promote them from membership controls.", 400);
     const code = makeCode();
-    const days = Math.max(1, Math.min(90, Number(b.days) || 14));
+    const days = b.days === undefined ? 14 : Number(b.days);
+    const maxUses = b.max_uses === undefined ? 200 : Number(b.max_uses);
+    const domain = b.email_domain === undefined ? "cornell.edu" : String(b.email_domain).trim().toLowerCase();
+    if (!Number.isInteger(days) || days < 1 || days > 90 || !Number.isInteger(maxUses) || maxUses < 1 || maxUses > 500)
+      fail("Choose 1–90 days and 1–500 members.");
+    if (domain && (domain.length > 60 || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain))) fail("Enter an email domain, such as cornell.edu.");
     db()
       .prepare(
         "INSERT INTO invites(code,label,role,email_domain,created_by,created_at,expires_at,max_uses) VALUES (?,?,?,?,?,?,?,?)",
@@ -199,12 +186,12 @@ export function invites(u: User, action: string, b: any) {
       .run(
         code,
         typeof b.label === "string" ? b.label.slice(0, 80) : "",
-        b.role === "officer" ? "officer" : "member",
-        typeof b.email_domain === "string" ? b.email_domain.slice(0, 60) : "cornell.edu",
+        "member",
+        domain,
         u.id,
         timestamp(),
         new Date(Date.now() + days * 86400e3).toISOString(),
-        Math.max(1, Math.min(500, Number(b.max_uses) || 200)),
+        maxUses,
       );
     audit(u, "invite.create", code, { days });
     return { code };
