@@ -10,6 +10,9 @@ const origin = "http://localhost:" + port;
 const env = {
   ...process.env,
   CEC_DATABASE: join(dir, "cec.sqlite"),
+  CEC_EMAIL_MODE: process.argv.includes("--email") ? "capture" : "disabled",
+  CEC_EMAIL_KEY: randomBytes(32).toString("hex"),
+  CEC_EMAIL_FROM: "Club OS <test@example.test>",
   CEC_BOOTSTRAP_TOKEN: secret,
   CEC_ORIGIN: origin,
   CEC_TEST_ORIGIN: origin,
@@ -44,7 +47,7 @@ try {
     await new Promise((r) => setTimeout(r, 1000));
   }
   if (!ready) throw Error("Server did not start");
-  const suites = process.argv.includes("--pilot") ? ["tests/cec-pilot-api.mjs"] : ["tests/cec-api.mjs", "tests/cec-pages.mjs", "tests/cec-organization-api.mjs"];
+  const suites = process.argv.includes("--email") ? ["tests/cec-email-api.mjs"] : process.argv.includes("--pilot") ? ["tests/cec-pilot-api.mjs"] : ["tests/cec-api.mjs", "tests/cec-pages.mjs", "tests/cec-organization-api.mjs"];
   for (const suite of suites) {
     const test = spawn(process.execPath, [suite], { env, stdio: "inherit" });
     const code = await new Promise((r) => test.on("exit", r));

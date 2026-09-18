@@ -17,9 +17,10 @@
   member join → assignment → submission → revision → resubmission → approval flow,
   plus account takeover, stale edits, access removal, transfer and concurrent claims.
 
-Email ownership/affiliation is not verified. Password reset/email recovery is not
-configured. Legacy passwordless accounts cannot authenticate via invitations;
-use a verified recovery process before restoring those accounts. Do not reset an
+Email verification and password recovery are implemented in [doc 30](30-outgoing-email.md),
+but outgoing delivery is disabled until configured. University affiliation is not verified.
+Legacy passwordless accounts cannot authenticate via invitations; use mailbox verification
+through the recovery flow before restoring those accounts. Do not reset an
 account password based solely on knowing its email or possessing an invite code.
 
 ## Production package (prepared, not deployed)
@@ -30,6 +31,7 @@ account password based solely on knowing its email or possessing an invite code.
 |---|---|
 | web | Next.js on a persistent `/data` volume |
 | worker | Retry outbox delivery and create daily SQLite snapshots |
+| email | Poll encrypted email jobs; disabled until sender configuration (doc 30) |
 | offsite | Encrypt snapshots with restic and upload to the configured remote repository |
 | monitor | Check web/worker health, error activity, backlog, disk and backup freshness |
 | proxy | Caddy HTTPS endpoint; application port stays internal |
@@ -41,6 +43,8 @@ Monitor alerts on meaningful state changes and hourly while a problem remains,
 then reports recovery. It emits fixed operational codes, never user records,
 request bodies, names or email addresses. If the entire host is offline, its own
 monitor cannot alert: configure an external uptime check against `/api/cec/health`.
+The email worker does not yet have heartbeat/backlog alert integration; inspect its
+logs and account delivery status during the pilot.
 
 ## Host configuration
 
@@ -64,7 +68,7 @@ serverless filesystem. Pin approved image digests before production rollout.
 ```sh
 docker compose --env-file deploy/production.env -f compose.production.yaml config --quiet
 docker compose --env-file deploy/production.env -f compose.production.yaml build
-docker compose --env-file deploy/production.env -f compose.production.yaml up -d permissions web worker
+docker compose --env-file deploy/production.env -f compose.production.yaml up -d permissions web worker email
 ```
 
 The app's first health request migrates the database. Before upgrading an existing
@@ -132,3 +136,12 @@ alert destination; these have not been supplied.
 Implementation references: [Compose startup readiness](https://docs.docker.com/compose/how-tos/startup-order/),
 [restic repository configuration](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html),
 [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
+
+### Repeatable local pilot and recovery rehearsal
+
+From web/, `node scripts/cec-test-server.mjs --email` creates isolated synthetic officer
+and member accounts, exercises captured email and task review, then snapshots/restores the
+application and quant databases. It verifies retained history, revoked sessions/security
+links, cancelled pending email, application initialization and idempotent analytics replay.
+This is a local rehearsal, not evidence of off-machine backups or host disaster recovery.
+See task 011 for actual results and doc 31 for the next integration prototypes.

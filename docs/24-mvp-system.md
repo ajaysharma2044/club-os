@@ -33,7 +33,7 @@ extension. The MVP must be useful without an AI service or live Google integrati
 | Home | Actions due, upcoming events, changed time/place, blockers | Up next is implemented |
 | Meetings and work | Notes, confirmed decisions, project/task links, accept/submit/review, artifact URLs | Native meetings, projects and task workflow are documented as implemented |
 | Events | Publish, RSVP/waitlist, calendar export, attendance, correction | Native workflows exist |
-| Communication | In-app action visibility plus a reliable way to notify inactive users | Messaging exists; external email delivery is unconfigured |
+| Communication | In-app action visibility plus a reliable way to notify inactive users | Outgoing email flows/worker implemented (doc 30); live sender unconfigured |
 | Continuity | Club-owned history, documents, asset custodian, role handoff, export | Asset register and export exist; end-to-end handoff needs explicit verification |
 | Data controls | Explain visibility; support correction, revocation and deletion | Partial controls exist; full lifecycle remains a documented gap |
 

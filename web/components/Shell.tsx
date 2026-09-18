@@ -199,6 +199,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                           (
                             {
                               record: "Club record",
+                              operations: "Officer workspace",
                               intake: "Weekly update",
                               schedule: "Calendar",
                               directory: "Shared projects",

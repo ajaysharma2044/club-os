@@ -1,4 +1,4 @@
-import { migrateOrganizations, migrateMembershipControls, installCECGuards } from "./migrations";
+import { migrateOrganizations, migrateMembershipControls, migrateEmail, installCECGuards } from "./migrations";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -100,6 +100,7 @@ export function db() {
   try {
   migrateOrganizations(connection);
   migrateMembershipControls(connection);
+  migrateEmail(connection);
   const execute = connection.exec.bind(connection);
   installCECGuards(connection, execute);
   connection.exec = (sql: string) => {
@@ -109,17 +110,21 @@ export function db() {
   return connection;
   } catch (error) { connection.close(); connection = undefined as any; throw error; }
 }
+let transactionDepth = 0;
 export function tx<T>(f: () => T): T {
-  const d = db();
-  d.exec("BEGIN IMMEDIATE");
+  const d = db(), depth = transactionDepth++;
+  const savepoint = `cec_nested_${depth}`;
   try {
-    const value = f();
-    d.exec("COMMIT");
-    return value;
-  } catch (e) {
-    d.exec("ROLLBACK");
-    throw e;
-  }
+    d.exec(depth ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
+    try {
+      const value = f();
+      d.exec(depth ? `RELEASE ${savepoint}` : "COMMIT");
+      return value;
+    } catch (error) {
+      d.exec(depth ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+      throw error;
+    }
+  } finally { transactionDepth--; }
 }
 export function fail(message: string, status = 400): never {
   throw Object.assign(new Error(message), { status });

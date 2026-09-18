@@ -104,3 +104,9 @@ documented functionality and [MVP system scope](24-mvp-system.md) for proposed l
 
 - [Frontend patterns and component guide](29-frontend-patterns.md): component ownership,
   data lifecycle, forms/dialogs, responsive rules, and verification expectations.
+- [Outgoing email](30-outgoing-email.md): verification/recovery, emailed invitations,
+  task notifications, encrypted durable queue, sender setup and restore behavior.
+- [Officer integration prototypes](31-integration-prototypes.md): CSV, calendar,
+  selected email, documents and channel announcement scopes and acceptance gates.
+- [Officer workspace workflows](32-officer-workflows.md): implemented CSV imports,
+  meeting follow-ups, overview, handoff packets and calendar subscriptions.

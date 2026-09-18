@@ -209,3 +209,18 @@ export function migrateMembershipControls(d: DatabaseSync) {
     d.exec('COMMIT');
   } catch (error) { d.exec('ROLLBACK'); throw error; }
 }
+
+export function migrateEmail(d: DatabaseSync) {
+  if (d.prepare('SELECT 1 FROM schema_migrations WHERE version=3').get()) return;
+  d.exec("BEGIN IMMEDIATE");
+  try {
+    if (d.prepare("SELECT 1 FROM schema_migrations WHERE version=3").get()) { d.exec("COMMIT"); return; }
+    d.exec(`CREATE TABLE account_email(user_id TEXT PRIMARY KEY REFERENCES accounts(id),email TEXT NOT NULL,verified_at TEXT,task_notifications INTEGER NOT NULL DEFAULT 1 CHECK(task_notifications IN(0,1)));
+    CREATE TABLE email_tokens(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),email TEXT NOT NULL,purpose TEXT NOT NULL CHECK(purpose IN('verify','reset')),expires INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE email_jobs(id TEXT PRIMARY KEY,dedupe TEXT NOT NULL UNIQUE,organization_id TEXT NOT NULL DEFAULT 'cornell-ec' CHECK(organization_id='cornell-ec'),kind TEXT NOT NULL,user_id TEXT REFERENCES accounts(id),object_id TEXT NOT NULL DEFAULT '',token_hash TEXT REFERENCES email_tokens(hash),mode TEXT NOT NULL CHECK(mode IN('capture','resend')),payload TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'queued',created INTEGER NOT NULL,expires INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt INTEGER NOT NULL DEFAULT 0,first_attempt INTEGER,lease TEXT,lease_until INTEGER NOT NULL DEFAULT 0,provider_id TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '');
+    CREATE INDEX email_jobs_due ON email_jobs(status,next_attempt);
+    `);
+    d.prepare("INSERT INTO schema_migrations VALUES(3,?)").run(new Date().toISOString());
+    d.exec("COMMIT");
+  } catch (error) { d.exec("ROLLBACK"); throw error; }
+}

@@ -1,4 +1,5 @@
 "use client";
+import EmailSettings from "./EmailSettings";
 import Link from "next/link";
 import { cecRoutes } from "@/lib/cec/routes";
 import { useEffect, useState } from "react";
@@ -532,6 +533,7 @@ export function CECWorkspace({
             } catch {}
           }}
         />
+        <p><a className="link" href="/recover/cec">Forgot password?</a></p>
         <div className="actions" style={{ marginTop: 18 }}>
           <button
             className="button secondary small"
@@ -553,7 +555,7 @@ export function CECWorkspace({
           )}
         </div>
         <p className="source-note">
-          Email ownership is not yet verified. This account does not claim
+          Verify email ownership in account settings. This account does not claim
           Cornell affiliation.
         </p>
       </div>
@@ -1940,6 +1942,7 @@ export function CECWorkspace({
           </div>
         </div>
         <div>
+          <EmailSettings />
           <div className="panel">
             <h2>Connections</h2>
             {[
@@ -2118,6 +2121,7 @@ export function CECWorkspace({
               <h1>{titles[section] || "Workspace"}</h1>
               <p className="muted">{subtitles[section]}</p>
             </div>
+            {isOfficer && <Link className="button secondary" href="/clubs/cec/operations">Officer workspace</Link>}
             {isOfficer && section === "home" && (
               <button className="button" onClick={() => create("event")}>
                 <Plus size={17} />

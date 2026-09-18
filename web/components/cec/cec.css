@@ -745,3 +745,10 @@
   .cec .membership-controls .row > div { min-width: 0; overflow-wrap: anywhere; }
   .cec .membership-controls .row > .actions { max-width: none; }
 }
+
+.cec.officer-tools { width: 100%; min-width: 0; }
+.cec.officer-tools fieldset { min-width: 0; margin: 16px 0; padding: 16px; border: 1px solid var(--line); }
+.cec.officer-tools .panel { overflow-wrap: anywhere; }
+.cec.officer-tools details { margin: 16px 0; }
+.cec.officer-tools summary { cursor: pointer; font-weight: 600; }
+.cec.officer-tools input, .cec.officer-tools textarea, .cec.officer-tools select { max-width: 100%; }

@@ -70,3 +70,12 @@ Do not run a recurring or unattended agent loop unless requested.
 - Keep stateful components at module scope, use shared dialog primitives, and record
   actual breakpoint/keyboard/browser coverage in the task document. Do not equate
   viewport emulation with physical-device or full assistive-technology certification.
+
+## Documentation for major updates
+
+Every major update must include documentation in the same change: the user-visible
+behavior, system/data contracts, configuration and operations, verification evidence,
+and known limits. Update the relevant design/frontend/runbook guide and docs index;
+record acceptance criteria and actual results under docs/tasks/. Keep README runtime
+claims consistent with implementation. Configuration and mocked tests are not proof
+of a live provider connection. Never put credentials, tokens or private data in docs.

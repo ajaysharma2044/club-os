@@ -1,4 +1,5 @@
 "use client";
+import { EmailInvitation } from "./EmailSettings";
 import { FormEvent, useEffect, useState } from 'react';
 
 type Membership = { user_id:string; name:string; email:string; role:string; status:string; version:number };
@@ -57,7 +58,7 @@ export default function MemberManagement({userId}:{userId:string}) {
     <p className="muted">Invitations grant member access only. Existing accounts must authenticate. An email domain does not verify university affiliation.</p>
     {invites.map(invite=><div className="row" key={invite.code}>
       <div><strong>{invite.label||'Member invitation'}</strong><small>{invite.uses}/{invite.max_uses} claimed · {invite.active?'Active':'Unavailable'}</small>
-        {invite.active&&<a href={'/join/cec?i='+encodeURIComponent(invite.code)}>Open invitation {invite.code}</a>}</div>
+        {invite.active&&<><a href={'/join/cec?i='+encodeURIComponent(invite.code)}>Open invitation {invite.code}</a><EmailInvitation code={invite.code} disabled={busy}/></>}</div>
       <button className="button secondary" disabled={busy} onClick={async()=>{
         setBusy(true);setError('');try{await post('invites/revoke',{code:invite.code});await load();setNotice('Invitation revoked.');}
         catch(e:any){setError(e.message);}finally{setBusy(false);}

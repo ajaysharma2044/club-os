@@ -124,7 +124,7 @@ export default function JoinWithInvite({ code }: { code: string }) {
               {busy ? "One moment…" : "Join"}
             </button>
             <p className="text-caption" style={{ marginTop: 12 }}>
-              An invitation grants club access. Email ownership and university affiliation are not yet verified.
+              An invitation grants club access. Verify your email in account settings. University affiliation is not verified.
             </p>
           </form>
         )}

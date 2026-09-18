@@ -1,3 +1,5 @@
+import { toolsState, toolsAction, clubCalendar } from '@/lib/cec/officer-tools';
+import { emailState, emailAction, requestReset, consumeEmailToken } from '@/lib/cec/email';
 import { recordServerError } from "@/lib/cec/operations";
 import { membershipState, changeMembership } from "@/lib/cec/memberships";
 import { NextRequest, NextResponse } from "next/server";
@@ -65,6 +67,7 @@ export async function GET(
 ) {
   try {
     const path = (await params).path.join("/");
+    if (path === "club-calendar") return new NextResponse(clubCalendar(req.nextUrl.searchParams.get("token")||""),{headers:{"Content-Type":"text/calendar; charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
     if (path === "health") {
       db().prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
       return response({ok:true});
@@ -164,6 +167,8 @@ export async function GET(
       });
     }
     if (!u) fail("Sign in to continue.", 401);
+    if (path === "officer-tools/state") return response(toolsState(u));
+    if (path === "email/state") return response(emailState(u));
     if (path === "memberships/state") return response(membershipState(u));
     if (path === "schedule/state") return response(scheduleState(u));
     if (path === "interviews/state") {
@@ -261,6 +266,9 @@ export async function POST(
     if (!b || typeof b !== "object" || Array.isArray(b))
       fail("JSON object required.");
     const path = (await params).path.join("/");
+    if (path === "email/reset/request") return response(requestReset(b));
+    if (path === "email/reset/confirm") return response(consumeEmailToken("reset",b));
+    if (path === "email/verify/confirm") return response(consumeEmailToken("verify",b));
     if (path === "invite/claim") {
       const result = claim(b);
       const r = response({ ok: true, name: result.name });
@@ -299,6 +307,8 @@ export async function POST(
     const u = principal(req);
     if (!u) fail("Sign in to continue.", 401);
     throttle("mutate:" + u.id, 500);
+    if (path.startsWith("officer-tools/")) { const result=toolsAction(u,path.slice(14),b); await flush(); return response(result); }
+    if (path.startsWith("email/")) return response(emailAction(u,path.slice(6),b));
     if (path === "memberships/change") return response(changeMembership(u,b));
     if (path.startsWith("interviews/")) {
       interviewsInit();

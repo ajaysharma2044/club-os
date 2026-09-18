@@ -173,6 +173,9 @@ def restore(source, destination):
             os.chmod(staging / name, 0o600)
         with contextlib.closing(connect(staging / 'cec.sqlite')) as connection:
             connection.execute('DELETE FROM sessions')
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='email_tokens'").fetchone():
+                connection.execute('UPDATE email_tokens SET used=1')
+                connection.execute("UPDATE email_jobs SET status='cancelled', payload='', lease=NULL, lease_until=0 WHERE status IN ('queued','processing')")
             # Retry state may contain stale backoff timestamps from before recovery.
             init(connection)
             connection.execute('DELETE FROM pipeline_retry')

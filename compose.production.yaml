@@ -50,6 +50,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+  email:
+    <<: *app
+    env_file: [deploy/app.env]
+    command: [npm, run, email:work]
+    volumes: [data:/data]
+    depends_on:
+      web:
+        condition: service_healthy
   offsite:
     <<: *app
     command: [python3, ../services/quant/operations.py, offsite]

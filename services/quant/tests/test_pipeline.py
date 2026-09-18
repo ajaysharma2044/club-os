@@ -26,6 +26,9 @@ class PipelineTest(unittest.TestCase):
         self.connection.executescript('''PRAGMA journal_mode=WAL;
             CREATE TABLE outbox(id TEXT PRIMARY KEY, body TEXT, delivered INTEGER DEFAULT 0, error TEXT DEFAULT '');
             CREATE TABLE sessions(token TEXT); INSERT INTO sessions VALUES ('synthetic-session');
+            CREATE TABLE email_tokens(used INTEGER); INSERT INTO email_tokens VALUES(0);
+            CREATE TABLE email_jobs(status TEXT,payload TEXT,lease TEXT,lease_until INTEGER);
+            INSERT INTO email_jobs VALUES('processing','encrypted','old-lease',100);
             CREATE TABLE tasks(id TEXT, note TEXT); INSERT INTO tasks VALUES ('task1','Durable submission');''')
         event = {'source':'native', 'external_id':'event1', 'fact_key':'task:member:task1',
                  'kind':'task', 'subject':'member', 'object_id':'task1',
@@ -77,6 +80,8 @@ class PipelineTest(unittest.TestCase):
         with contextlib.closing(sqlite3.connect(target / 'cec.sqlite')) as restored:
             self.assertEqual(restored.execute('SELECT note FROM tasks').fetchone()[0], 'Durable submission')
             self.assertEqual(restored.execute('SELECT COUNT(*) FROM sessions').fetchone()[0], 0)
+            self.assertEqual(restored.execute('SELECT used FROM email_tokens').fetchone()[0], 1)
+            self.assertEqual(restored.execute('SELECT status,payload,lease FROM email_jobs').fetchone(), ('cancelled', '', None))
         self.assertEqual(pipeline.deliver(target / 'cec.sqlite')['delivered'], 1)
         with self.assertRaises(ValueError):
             pipeline.restore(saved, target)

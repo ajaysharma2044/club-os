@@ -153,7 +153,8 @@ The interface says "not configured" for these; it never fabricates connected sta
 Credentials, approved scopes and university agreements cannot be supplied by code.
 
 This is a functional pilot, not the full multi-campus platform from the long-term
-spec. Before broad use, add verified email / SSO, password recovery, account lifecycle
+spec. Email verification/recovery is implemented but needs a live sender (doc 30).
+Before broad use, add institutional SSO, account lifecycle
 and end-to-end erasure, record-level sharing grants, attachment storage, pagination,
 retention policies, off-machine backups, production recovery drills, alerting and live connector
 workers. There is no automatic room reservation, payment collection, autonomous
@@ -166,3 +167,30 @@ source's own access controls.
 ### Recommendation feedback loop
 
 Members can explicitly request shared project suggestions on the overview. A versioned binary-token cosine baseline matches declared interests to project text, limits the slate to one project per owner, and suppresses declined projects for 30 days. This is project relevance, not a person or hiring score. Each decision records model/feature versions; visible cards create separate exposures; saves, dismissals, and self-reported collaboration outcomes are separate events. Ownership and current sharing are checked on every feedback request. No trained model, causal uplift, automated outreach, or recruiter eligibility decision is claimed. Before external discovery, add separate firm-specific permissions, retention/deletion workflows, authenticated buyers, and audited access grants; public profile sharing is not consent to selling data.
+
+## Outgoing email
+
+Verification, password recovery, officer invitation emails and verified-member task
+notifications use an encrypted durable queue and a separate Node worker. Delivery is
+**disabled by default**; local capture and mocked-provider tests do not establish a live
+connection. See [email setup and operations](docs/30-outgoing-email.md), including sender
+configuration, truthful delivery states and restore behavior. From web/ use
+`npm run email:work`; production Compose includes a separate email service.
+
+## Pilot validation and upcoming integrations
+
+The email API suite includes a complete separate-officer/member workflow and a paired
+SQLite backup/restore drill with application reopen and safe analytics replay. Run it
+from web/ with `node scripts/cec-test-server.mjs --email`. This uses temporary synthetic
+data and local email capture. See [prototype sequence](docs/31-integration-prototypes.md)
+for CSV imports, calendar publishing, selected-email capture, document selection and
+channel announcements; these provider prototypes are not yet connected.
+
+## Officer workspace
+
+Open `/clubs/cec/operations` from the Officer workspace link. Includes reviewed CSV
+imports (contacts, roster prospects, registered-member attendance), meeting decisions
+with linked task assignment, action overview, handoff packets/acceptance/export and a
+revocable club calendar subscription. See [workflow guide](docs/32-officer-workflows.md).
+Calendar publishing uses ICS polling, not direct Google/Outlook writes; external clients
+need a reachable hosted URL. Email remains disabled while domain setup is deferred.

@@ -1,3 +1,4 @@
+import { queueTaskEmail } from './email';
 import { offer, respond } from "./opportunities";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -311,6 +312,7 @@ export function mutate(u: User, action: string, b: any) {
           offer(u, { kind: "task", objectType: "task", objectId: r.id, to: data.assignee });
         }
       }
+      if (kind === "task" && (!previous || previous.data.assignee !== data.assignee)) queueTaskEmail(r,"assignment");
       publishRecord(u, r);
       return { id: r.id };
     }
@@ -389,6 +391,7 @@ export function mutate(u: User, action: string, b: any) {
             response: u.id === r.data.assignee ? "declined" : "withdrawn",
           });
       }
+      if (r.data.status === "submitted" && target === "accepted") queueTaskEmail(item(r.id),"revision");
       publishRecord(u, item(r.id));
       return {};
     }

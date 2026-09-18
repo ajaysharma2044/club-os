@@ -104,3 +104,25 @@ For changed pilot surfaces check:
 Record exact coverage in docs/tasks. Browser viewport emulation is not a real iOS/Android
 keyboard test, and accessibility-tree checks are not a complete screen-reader audit.
 Physical-device and assistive-technology testing remain release follow-ups.
+
+## Email access and delivery UI
+
+`EmailSettings.tsx` owns account verification status, notification preference and request
+history; its `EmailInvitation` handles one officer invitation recipient. `EmailLinkForm`
+is shared by /verify/cec and /recover/cec. All are module-level components with local
+busy/error/status state and labeled native forms. Security links use URL fragments and
+require an explicit submit; successful consumption clears the fragment. They never
+consume links on page load. Errors preserve form inputs. Provider acceptance is labeled
+separately from inbox delivery; capture/disabled modes are visible. Task email links use
+the existing workspace #task-ID anchor contract. See doc 30 for API/data/operations.
+
+## Officer workspace
+
+`OfficerTools.tsx` provides the /clubs/cec/operations route with module-level Overview,
+Imports, Meetings, Handoffs and Calendar components. Each workflow owns its draft inputs,
+error/status messages and busy state. Import preview is invalidated when inputs change;
+confirmation uses a server revision. Meeting confirmation uses a stable per-draft request
+ID and native meeting version. State refresh follows successful writes and an explicit
+Refresh button. This is an officer-only server boundary, not only a hidden navigation link.
+Native task cards remain the review surface. Calendar UI explicitly distinguishes polling
+subscriptions from direct OAuth synchronization. See doc 32 for data and access contracts.

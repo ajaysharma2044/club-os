@@ -41,7 +41,7 @@ The analytics worker currently supports CEC only and refuses another organizatio
 
 ## Migration and recovery
 
-`schema_migrations` records version 1. The migration backfills existing users/records,
+The initial migration records version 1 in `schema_migrations`. It backfills existing users/records,
 renames physical tables, preserves IDs/data/versions and runs foreign-key and legacy
 relationship validation in a transaction. Invalid task links fail with rollback.
 Existing alumni become left members. Legacy joined timestamps default to migration
@@ -67,3 +67,9 @@ triggers, not separate typed task/project tables. Several polymorphic auxiliary
 relationships remain text IDs; guards block known foreign-organization identities
 but do not establish that every arbitrary external reference exists. Normalize
 those relationships when their workflows are expanded.
+
+## Email schema (migration 3)
+
+Additive account_email, email_tokens and email_jobs tables link to accounts; all remain
+CEC-scoped through the existing guards. Mailbox verification never modifies membership
+roles or restores access. See [email data and restore contracts](30-outgoing-email.md).
