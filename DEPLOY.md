@@ -28,24 +28,34 @@ would be false.
 
 ---
 
-## Recommended: a container host with a volume
+## Recommended: the production compose stack
 
-Zero code changes. The [`Dockerfile`](Dockerfile) at the repository root already does
-this: Node 22 + Python 3, `CEC_DATABASE=/data/cec.sqlite`, running as a non-root user.
+Zero code changes. [`compose.production.yaml`](compose.production.yaml) already runs the
+whole thing — `web`, a background `worker`, an `email` sender, scheduled `backups`, an
+`offsite` copy, a `monitor`, and a Caddy `proxy` for TLS — with the record on a named
+`data` volume mounted at `/data` and healthchecks on the app.
+
+```bash
+cp deploy/production.env.example deploy/production.env   # set CEC_DOMAIN
+cp deploy/app.env.example        deploy/app.env          # set CEC_BOOTSTRAP_TOKEN
+docker compose -f compose.production.yaml up -d
+```
+
+See [docs/28-pilot-launch.md](docs/28-pilot-launch.md) for the launch runbook and
+[docs/26-pipeline-operations.md](docs/26-pipeline-operations.md) for operating it.
+
+### Or a managed container host
+
+The same [`Dockerfile`](Dockerfile) deploys unchanged to Fly.io, Railway or Render. The
+only requirement is a volume mounted where `CEC_DATABASE` points.
 
 ```bash
 # Fly.io
 fly launch --dockerfile Dockerfile
 fly volumes create data --size 1
-# then in fly.toml:
-#   [mounts]
-#   source = "data"
-#   destination = "/data"
+# fly.toml:  [mounts]  source = "data"  destination = "/data"
 fly deploy
 ```
-
-Railway and Render are the same shape: deploy the Dockerfile, attach a volume, mount it
-at `/data`. Any small VPS works too — this is an ordinary long-running Node process.
 
 ### Required environment
 
@@ -57,7 +67,9 @@ at `/data`. Any small VPS works too — this is an ordinary long-running Node pr
 | `CEC_BOOTSTRAP_TOKEN` | one-time token for creating the first officer account |
 | `CEC_INTEGRATION_KEY` | AES key for OAuth token storage (`openssl rand -hex 32`) |
 
-Back up the volume. It is the club's record, and it is one file — `sqlite3 /data/cec.sqlite ".backup /tmp/out.sqlite"` on a schedule is enough.
+The compose stack handles backups. On a managed host, back the volume up yourself —
+it is the club's record, and it is one file:
+`sqlite3 /data/cec.sqlite ".backup /tmp/out.sqlite"` on a schedule is enough.
 
 ---
 
