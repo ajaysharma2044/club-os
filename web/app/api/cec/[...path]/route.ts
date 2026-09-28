@@ -32,6 +32,7 @@ import { checkin, attendanceState } from "@/lib/cec/checkin";
 import { factorState } from "@/lib/cec/factor-store";
 import { planning, planningReadiness } from "@/lib/cec/planning/service";
 import { messaging, messagingState } from "@/lib/cec/messaging/service";
+import { integrations } from "@/lib/cec/integrations/status";
 import { upNext } from "@/lib/cec/upnext";
 import { inboxSummary } from "@/lib/cec/messaging/delivery";
 import { messagingInit } from "@/lib/cec/messaging/conversations";
@@ -330,6 +331,8 @@ export async function POST(
       return response(evidenceAction(u, path.slice(9), b));
     if (path.startsWith("adaptive/"))
       return response(adaptive(u, path.slice(9), b));
+    if (path.startsWith("integrations/"))
+      return response(integrations(u, path.slice(13), b));
     if (path.startsWith("messaging/"))
       return response(messaging(u, path.slice(10), b));
     if (path.startsWith("planning/"))

@@ -14,6 +14,7 @@ import {
   Handshake,
   ChartLine,
   ChatCircleDots,
+  Plugs,
   ArrowUpRight,
   Plus,
   SignOut,
@@ -24,6 +25,8 @@ import InterviewRounds from "./InterviewRounds";
 import MySignals from "./MySignals";
 import SlotAdvisor from "./SlotAdvisor";
 import UpNext from "./UpNext";
+import Messages from "./Messages";
+import Integrations from "./Integrations";
 import MemberManagement from "./MemberManagement";
 import ChatScheduler from "./ChatScheduler";
 import EpisodeRecord from "./EpisodeRecord";
@@ -58,6 +61,8 @@ const navigation = [
   ["interviews", "Interviews", Users],
   ["signals", "My signals", ChartLine],
   ["planning", "Planning", CalendarDots],
+  ["messages", "Messages", ChatCircleDots],
+  ["integrations", "Integrations", Plugs],
 ] as const;
 const empty = (text: string) => <div className="empty">{text}</div>;
 const tag = (v: string) => (
@@ -468,6 +473,8 @@ export function CECWorkspace({
     intake: "Your weekly update",
     schedule: "Your meetings",
     planning: "Planning",
+    messages: "Messages",
+    integrations: "Integrations",
   };
   const subtitles: Record<string, string> = {
     home: "The work, people, and decisions that move CEC forward.",
@@ -481,6 +488,8 @@ export function CECWorkspace({
     intake: "Confirm your context. Answer what is useful next.",
     schedule: "Confirmed plans, invitations, and your personal calendar feed.",
     planning: "Pick a time against the campus, the timetable and the term.",
+    messages: "Direct messages, groups and channels. Private to their participants.",
+    integrations: "What is connected, what is not, and exactly who has to do what.",
   };
   function Auth() {
     return (
@@ -2211,6 +2220,22 @@ export function CECWorkspace({
               <MySignals />
             ) : user ? (
               empty("Your signals become available after membership approval.")
+            ) : (
+              Auth()
+            )
+          ) : section === "messages" ? (
+            isMember ? (
+              <Messages />
+            ) : user ? (
+              empty("Messages become available after membership approval.")
+            ) : (
+              Auth()
+            )
+          ) : section === "integrations" ? (
+            isOfficer ? (
+              <Integrations />
+            ) : user ? (
+              empty("Integration setup is available to officers.")
             ) : (
               Auth()
             )
