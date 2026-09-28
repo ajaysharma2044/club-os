@@ -193,9 +193,15 @@ npm --prefix web run build     # production build
 file. On Netlify, Vercel or Lambda every invocation gets a fresh filesystem, so the
 database is created empty on each cold start and every signup silently vanishes.
 
-`db.ts` now refuses to open on those hosts rather than losing data quietly. The
-[`Dockerfile`](Dockerfile) at the repository root is the supported path: Node + Python
-with `CEC_DATABASE` on a mounted `/data`.
+`db.ts` refuses to open on those hosts rather than losing data quietly, returning a
+`503` with a human-readable reason rather than a misleading "please try again".
+
+The [`Dockerfile`](Dockerfile) at the repository root is the supported path: Node +
+Python with `CEC_DATABASE` on a mounted `/data`. Fly.io, Railway and Render all work
+unchanged.
+
+**Full instructions, including what you can and cannot put on Vercel or Netlify, and
+what a Postgres migration would actually cost: [DEPLOY.md](DEPLOY.md).**
 
 ---
 

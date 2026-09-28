@@ -62,15 +62,26 @@ function refuseEphemeralStorage(file: string) {
   // A path under /tmp or the Lambda task root is ephemeral wherever it runs.
   const ephemeralPath = /^\/tmp\//.test(file) || /^\/var\/task\//.test(file);
   if (!host && !ephemeralPath) return;
-  throw new Error(
-    `Club OS refuses to open its database here. ${
-      host ? `This is running on ${host}, which gives each invocation a fresh, empty filesystem.` : ""
-    }${ephemeralPath ? ` The database path (${file}) is ephemeral storage.` : ""} ` +
-      "Every signup, RSVP, task and attendance record would be silently lost on the next cold start. " +
-      "Run it on a host with a persistent volume instead — the Dockerfile at the repository root does this, " +
-      "with CEC_DATABASE pointing at a mounted /data. " +
-      "Set CEC_ALLOW_EPHEMERAL=1 only for a throwaway demo where losing all data is expected.",
+  // 503, deliberately, and NOT 500.
+  //
+  // The API's error handler replaces any 500 with "Unable to complete this
+  // request. Please try again." That sentence would be a lie here: retrying
+  // cannot fix a host that has no persistent disk, and it would send someone
+  // hunting a transient fault for an hour. A 503 carries its real message
+  // through to the caller, so the screen says what is actually wrong.
+  const e: Error & { status?: number; operatorDetail?: string } = new Error(
+    host
+      ? `Club OS is not available on ${host}. It keeps a permanent record — members, RSVPs, attendance, money — and ${host} gives every request a fresh, empty disk, so that record could not survive. It needs a host with persistent storage.`
+      : "Club OS is not available here. Its database path is temporary storage, so the record could not survive a restart. It needs a host with persistent storage.",
   );
+  e.status = 503;
+  // The fix, for whoever is reading logs rather than the screen.
+  e.operatorDetail =
+    `Refused to open ${file}. ` +
+    "Deploy on a host with a mounted volume — the Dockerfile at the repository root does this, with CEC_DATABASE pointing at /data. " +
+    "Fly.io, Railway and Render all support this; Vercel, Netlify and Lambda do not. " +
+    "CEC_ALLOW_EPHEMERAL=1 overrides only for a throwaway demo where losing all data is expected.";
+  throw e;
 }
 
 let connection: DatabaseSync;
