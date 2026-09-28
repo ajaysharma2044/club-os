@@ -13,3 +13,4 @@ out
 # Test-server build output (CEC_DIST_DIR)
 .next-sig/
 .next-test/
+.vercel

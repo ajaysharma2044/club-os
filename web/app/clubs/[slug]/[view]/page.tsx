@@ -1,7 +1,7 @@
 import OfficerTools from "@/components/cec/OfficerTools";
 import { notFound } from "next/navigation";
 import { CECWorkspace } from "@/components/cec/Workspace";
-const views = ["record", "intake", "schedule", "directory", "interviews", "signals", "planning"];
+const views = ["record", "intake", "schedule", "directory", "interviews", "signals", "planning", "messages"];
 export default async function Page({
   params,
 }: {

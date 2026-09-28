@@ -13,6 +13,7 @@ import {
   Users,
   Handshake,
   ChartLine,
+  ChatCircleDots,
   ArrowUpRight,
   Plus,
   SignOut,
