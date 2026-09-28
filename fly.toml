@@ -1,0 +1,54 @@
+# Fly.io deployment for Club OS.
+#
+# The one thing that matters here is the [mounts] block. Club OS keeps its
+# entire record in a single SQLite file, and db.ts refuses to start on a host
+# that cannot promise the file survives — which is why Vercel, Netlify and
+# Lambda cannot run it. A Fly volume is a real disk attached to the machine,
+# so the record persists across deploys and restarts.
+#
+# auto_stop_machines is deliberately OFF. A stopped machine is fine for a
+# stateless web app, but this one runs a background worker and a scheduled
+# backup, and a club's check-in window should not depend on a cold start.
+
+app = "club-os-cec"
+primary_region = "ewr"          # Newark — closest Fly region to Ithaca
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  CEC_DATABASE = "/data/cec.sqlite"
+  CEC_BACKUP_DIR = "/data/backups"
+  PORT = "3000"
+
+# The record. Without this the app refuses to start, by design.
+[mounts]
+  source = "cec_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+# SQLite gives one writer. A second machine would be a second database, not a
+# second replica, so this stays at one until the storage layer changes.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[checks.health]
+  type = "http"
+  port = 3000
+  path = "/api/cec/health"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "60s"

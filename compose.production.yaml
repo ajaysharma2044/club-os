@@ -18,6 +18,11 @@ services:
     <<: *app
     restart: "no"
     user: root
+    # Opt out of the entrypoint's privilege drop: this service exists to chown
+    # volumes and must stay root to do it.
+    environment:
+      <<: *environment
+      CEC_ENTRYPOINT_ROOT: "1"
     command: [sh, -c, 'chown 1000:1000 /data /backups /ops && chmod 700 /data /backups /ops']
     volumes: [data:/data, backups:/backups, operations:/ops]
   web:
