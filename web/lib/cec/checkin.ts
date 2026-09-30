@@ -73,17 +73,17 @@ const SECRET_KEY = "checkin.secret";
 const DEFAULT_GRACE_MINUTES = 15;
 
 let cachedSecret = "";
-function secret(): string {
+async function secret(): Promise<string> {
   if (cachedSecret) return cachedSecret;
   const fromEnv = process.env.CEC_CHECKIN_SECRET;
   if (fromEnv && fromEnv.length >= 16) return (cachedSecret = fromEnv);
-  checkinInit();
-  db()
+  (await checkinInit());
+  (await db()
     .prepare("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)")
-    .run(SECRET_KEY, randomBytes(32).toString("hex"));
-  const row = db()
+    .run(SECRET_KEY, randomBytes(32).toString("hex")));
+  const row = (await db()
     .prepare("SELECT value FROM settings WHERE key=?")
-    .get(SECRET_KEY) as { value: string };
+    .get(SECRET_KEY)) as { value: string };
   return (cachedSecret = row.value);
 }
 
@@ -91,8 +91,8 @@ function bucket(at: number): number {
   return Math.floor(at / WINDOW_MS);
 }
 
-function derive(eventId: string, at: number): string {
-  const digest = createHmac("sha256", secret())
+async function derive(eventId: string, at: number): Promise<string> {
+  const digest = createHmac("sha256", (await secret()))
     .update(`${eventId}:${bucket(at)}`)
     .digest();
   let out = "";
@@ -102,13 +102,13 @@ function derive(eventId: string, at: number): string {
 }
 
 /** The code to put on the projector right now. */
-export function currentCode(eventId: string): string {
-  return derive(text(eventId, 64), Date.now());
+export async function currentCode(eventId: string): Promise<string> {
+  return (await derive(text(eventId, 64), Date.now()));
 }
 
 /** The code that was on screen at a given instant. Diagnostics and tests. */
-export function codeAt(eventId: string, at: number): string {
-  return derive(text(eventId, 64), at);
+export async function codeAt(eventId: string, at: number): Promise<string> {
+  return (await derive(text(eventId, 64), at));
 }
 
 function normalize(code: unknown): string {
@@ -120,7 +120,7 @@ function normalize(code: unknown): string {
 }
 
 /** True for the current 30s bucket or the one immediately before it. */
-export function verifyCode(eventId: string, code: unknown): boolean {
+export async function verifyCode(eventId: string, code: unknown): Promise<boolean> {
   const given = normalize(code);
   if (!given) return false;
   const now = Date.now();
@@ -129,7 +129,7 @@ export function verifyCode(eventId: string, code: unknown): boolean {
   // Both candidates are always compared so verification takes the same time
   // whether the first, the second, or neither matched.
   for (const at of [now, now - WINDOW_MS]) {
-    const candidate = Buffer.from(derive(eventId, at));
+    const candidate = Buffer.from((await derive(eventId, at)));
     if (
       candidate.length === buf.length &&
       timingSafeEqual(candidate, buf)
@@ -154,9 +154,9 @@ export function verifyCode(eventId: string, code: unknown): boolean {
 // the officer who set it and the officer who cleared it both named.
 
 let ready = false;
-export function checkinInit() {
+export async function checkinInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS checkin_windows(
   event_id TEXT PRIMARY KEY REFERENCES records(id),
   opens_at TEXT NOT NULL,
@@ -197,7 +197,7 @@ CREATE TABLE IF NOT EXISTS integrity_flags(
   cleared_at TEXT NOT NULL DEFAULT '',
   cleared_reason TEXT NOT NULL DEFAULT '',
   counted_from TEXT NOT NULL DEFAULT '');
-`);
+`));
   ready = true;
 }
 
@@ -241,11 +241,11 @@ export type CheckinResult = {
   warning?: string;
 };
 
-function windowFor(eventId: string): CheckinWindow {
-  checkinInit();
-  const row = db()
+async function windowFor(eventId: string): Promise<CheckinWindow> {
+  (await checkinInit());
+  const row = (await db()
     .prepare("SELECT * FROM checkin_windows WHERE event_id=?")
-    .get(eventId) as CheckinWindow | undefined;
+    .get(eventId)) as CheckinWindow | undefined;
   if (!row)
     fail(
       "Sign-in is not open for this event yet. An officer opens it from the event page.",
@@ -293,31 +293,31 @@ const EMPTY_FLAG = (userId: string): Flag => ({
   counted_from: "",
 });
 
-function flagRow(userId: string): Flag {
-  checkinInit();
-  const row = db()
+async function flagRow(userId: string): Promise<Flag> {
+  (await checkinInit());
+  const row = (await db()
     .prepare("SELECT * FROM integrity_flags WHERE user_id=?")
-    .get(userId) as Flag | undefined;
+    .get(userId)) as Flag | undefined;
   return row ? { ...row, state: row.state as FlagState } : EMPTY_FLAG(userId);
 }
 
 /** Officer-only view of one person's integrity state. Never member-visible. */
-export function flagFor(u: User, userId: string): Flag {
-  officer(u);
-  return flagRow(text(userId, 64));
+export async function flagFor(u: User, userId: string): Promise<Flag> {
+  (await officer(u));
+  return (await flagRow(text(userId, 64)));
 }
 
-function isBlocked(userId: string): boolean {
-  return flagRow(userId).state === "blocked";
+async function isBlocked(userId: string): Promise<boolean> {
+  return (await flagRow(userId)).state === "blocked";
 }
 
 /** Occurrences counted since the last officer clearance. */
-function occurrencesSince(userId: string, from: string): number {
-  const row = db()
+async function occurrencesSince(userId: string, from: string): Promise<number> {
+  const row = (await db()
     .prepare(
       "SELECT COUNT(*) n FROM integrity_events WHERE user_id=? AND kind='left_early' AND at>?",
     )
-    .get(userId, from) as { n: number };
+    .get(userId, from)) as { n: number };
   return row.n;
 }
 
@@ -325,7 +325,7 @@ function occurrencesSince(userId: string, from: string): number {
 // Opening the window
 // ---------------------------------------------------------------------------
 
-export function openCheckin(
+export async function openCheckin(
   u: User,
   eventId: string,
   o: {
@@ -336,10 +336,10 @@ export function openCheckin(
     /** Minutes of grace before an arrival counts as late. */
     grace?: number;
   },
-): CheckinWindow {
-  officer(u);
-  checkinInit();
-  const event = item(text(eventId, 64), "event");
+): Promise<CheckinWindow> {
+  (await officer(u));
+  (await checkinInit());
+  const event = (await item(text(eventId, 64), "event"));
   const opens = date(o.opens),
     closes = date(o.closes);
   if (closes <= opens) fail("Sign-in must close after it opens.");
@@ -349,7 +349,7 @@ export function openCheckin(
       : Math.max(0, Math.min(180, Math.floor(Number(o.grace))));
   if (!Number.isFinite(grace)) fail("Grace must be a number of minutes.");
   const food = o.food === undefined ? 1 : o.food ? 1 : 0;
-  db()
+  (await db()
     .prepare(
       `INSERT INTO checkin_windows(event_id,opens_at,closes_at,grace_minutes,food,opened_by,opened_at)
        VALUES (?,?,?,?,?,?,?)
@@ -358,34 +358,34 @@ export function openCheckin(
          grace_minutes=excluded.grace_minutes,food=excluded.food,
          opened_by=excluded.opened_by,opened_at=excluded.opened_at`,
     )
-    .run(event.id, opens, closes, grace, food, u.id, timestamp());
-  audit(u, "checkin.open", event.id, {
+    .run(event.id, opens, closes, grace, food, u.id, timestamp()));
+  (await audit(u, "checkin.open", event.id, {
     opens_at: opens,
     closes_at: closes,
     food: !!food,
     grace_minutes: grace,
-  });
-  return windowFor(event.id);
+  }));
+  return (await windowFor(event.id));
 }
 
 // ---------------------------------------------------------------------------
 // Checking in
 // ---------------------------------------------------------------------------
 
-function record(
+async function record(
   u: User,
   o: {
-    event: ReturnType<typeof item>;
+    event: Awaited<ReturnType<typeof item>>;
     w: CheckinWindow;
     userId: string;
     method: "qr" | "officer";
     warning?: string;
   },
-): CheckinResult {
+): Promise<CheckinResult> {
   const { event, w, userId, method } = o;
-  const existing = db()
+  const existing = (await db()
     .prepare("SELECT * FROM checkins WHERE event_id=? AND user_id=?")
-    .get(event.id, userId) as
+    .get(event.id, userId)) as
     | {
         at: string;
         method: string;
@@ -417,20 +417,20 @@ function record(
   );
   const late = minutesPastOpen > w.grace_minutes;
 
-  const rsvp = db()
+  const rsvp = (await db()
     .prepare("SELECT status FROM rsvps WHERE event_id=? AND user_id=?")
-    .get(event.id, userId) as { status: string } | undefined;
+    .get(event.id, userId)) as { status: string } | undefined;
   // A walk-in is a real attendee. The president wanted to know who came, and
   // "they never filled the form" is not an answer. They get an rsvp row so the
   // existing roster queries see them, tagged so the denominator stays honest.
   if (!rsvp)
-    db()
+    (await db()
       .prepare(
         "INSERT INTO rsvps(event_id,user_id,status,created_at) VALUES (?,?,?,?)",
       )
-      .run(event.id, userId, "yes", now);
+      .run(event.id, userId, "yes", now));
 
-  db()
+  (await db()
     .prepare(
       "INSERT INTO checkins(event_id,user_id,at,method,late,late_minutes,walk_in,recorded_by) VALUES (?,?,?,?,?,?,?,?)",
     )
@@ -443,27 +443,27 @@ function record(
       minutesPastOpen,
       rsvp ? 0 : 1,
       u.id,
-    );
+    ));
   // The column older code already reads. Attendance is 'present' the moment
   // someone is in the room; leaving early is recorded separately rather than
   // rewriting the fact that they were here.
-  db()
+  (await db()
     .prepare("UPDATE rsvps SET attendance=? WHERE event_id=? AND user_id=?")
-    .run("present", event.id, userId);
+    .run("present", event.id, userId));
 
-  const sourceKey = audit(u, "checkin.present", event.id, {
+  const sourceKey = (await audit(u, "checkin.present", event.id, {
     subject: userId,
     method,
     late,
     late_minutes: minutesPastOpen,
     walk_in: !rsvp,
     ...(o.warning ? { override: o.warning } : {}),
-  });
-  capturePresence(u, event.id, userId, "present", true, sourceKey);
+  }));
+  (await capturePresence(u, event.id, userId, "present", true, sourceKey));
   // 'attendance' is a declared kind in the quant store's closed schema, with
   // exactly these two keys. Lateness, walk-in status and integrity state stay
   // on this side of the wall.
-  emit(u, "attendance", userId, event.id, { status: "present", method });
+  (await emit(u, "attendance", userId, event.id, { status: "present", method }));
 
   return {
     event_id: event.id,
@@ -480,14 +480,14 @@ function record(
 }
 
 /** A member scanning the code on the screen. */
-export function checkIn(
+export async function checkIn(
   u: User,
   b: { eventId: string; code: string },
-): CheckinResult {
-  member(u);
-  checkinInit();
-  const event = item(text(b.eventId, 64), "event");
-  const w = windowFor(event.id);
+): Promise<CheckinResult> {
+  (await member(u));
+  (await checkinInit());
+  const event = (await item(text(b.eventId, 64), "event"));
+  const w = (await windowFor(event.id));
   const now = timestamp();
   if (now < w.opens_at)
     fail(
@@ -499,17 +499,17 @@ export function checkIn(
       `Sign-in closed at ${clockLabel(w.closes_at)}. Find an officer and they can sign you in by hand.`,
       409,
     );
-  if (!verifyCode(event.id, b.code))
+  if (!(await verifyCode(event.id, b.code)))
     fail(
       "That code is not the one on the screen right now. Scan again — it changes every 30 seconds, and a screenshot will not work.",
       403,
     );
-  if (w.food && isBlocked(u.id))
+  if (w.food && (await isBlocked(u.id)))
     fail(
       "Sign-in for food events is paused on your account. Speak to an officer at the door and they can sort it out.",
       403,
     );
-  return record(u, { event, w, userId: u.id, method: "qr" });
+  return (await record(u, { event, w, userId: u.id, method: "qr" }));
 }
 
 /**
@@ -522,54 +522,54 @@ export function checkIn(
  * back as a warning and written into the audit as an override. What it will
  * not do is invent attendance before the doors open.
  */
-export function officerCheckIn(
+export async function officerCheckIn(
   u: User,
   b: { eventId: string; userId: string },
-): CheckinResult {
-  officer(u);
-  checkinInit();
-  const event = item(text(b.eventId, 64), "event");
+): Promise<CheckinResult> {
+  (await officer(u));
+  (await checkinInit());
+  const event = (await item(text(b.eventId, 64), "event"));
   const userId = text(b.userId, 64);
-  if (!db().prepare("SELECT 1 FROM users WHERE id=?").get(userId))
+  if (!(await db().prepare("SELECT 1 FROM users WHERE id=?").get(userId)))
     fail("That person is not on the roster.", 404);
-  const w = windowFor(event.id);
+  const w = (await windowFor(event.id));
   const now = timestamp();
   if (now < w.opens_at)
     fail(`Sign-in opens at ${clockLabel(w.opens_at)}.`, 409);
   const notes: string[] = [];
   if (now > w.closes_at) notes.push("recorded after sign-in closed");
-  if (w.food && isBlocked(userId))
+  if (w.food && (await isBlocked(userId)))
     notes.push("this person's sign-in was flagged; you signed them in anyway");
-  return record(u, {
+  return (await record(u, {
     event,
     w,
     userId,
     method: "officer",
     ...(notes.length ? { warning: notes.join("; ") } : {}),
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
 // Escalation
 // ---------------------------------------------------------------------------
 
-export function markLeftEarly(
+export async function markLeftEarly(
   u: User,
   b: { eventId: string; userId: string; note?: string },
-): { occurrences: number; state: FlagState; tolerated: boolean } {
-  officer(u);
-  checkinInit();
-  const event = item(text(b.eventId, 64), "event");
+): Promise<{ occurrences: number; state: FlagState; tolerated: boolean }> {
+  (await officer(u));
+  (await checkinInit());
+  const event = (await item(text(b.eventId, 64), "event"));
   const userId = text(b.userId, 64);
   if (
-    !db()
+    !(await db()
       .prepare("SELECT 1 FROM checkins WHERE event_id=? AND user_id=?")
-      .get(event.id, userId)
+      .get(event.id, userId))
   )
     fail("Only someone who signed in can be marked as leaving early.", 409);
-  const flag = flagRow(userId);
+  const flag = (await flagRow(userId));
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       "INSERT OR IGNORE INTO integrity_events(id,user_id,event_id,kind,at,recorded_by,note) VALUES (?,?,?,'left_early',?,?,?)",
     )
@@ -580,12 +580,12 @@ export function markLeftEarly(
       now,
       u.id,
       typeof b.note === "string" ? b.note.slice(0, 500) : "",
-    );
-  const occurrences = occurrencesSince(userId, flag.counted_from);
+    ));
+  const occurrences = (await occurrencesSince(userId, flag.counted_from));
   // One is tolerated and recorded; the second is what the officer's own
   // proposal says it is.
   const state: FlagState = occurrences >= 2 ? "blocked" : "noted";
-  db()
+  (await db()
     .prepare(
       `INSERT INTO integrity_flags(user_id,state,occurrences,set_by,set_at,reason,counted_from)
        VALUES (?,?,?,?,?,?,?)
@@ -603,26 +603,26 @@ export function markLeftEarly(
         ? "Second recorded early departure from a food event."
         : "First recorded early departure. Tolerated.",
       flag.counted_from,
-    );
-  audit(u, "checkin.left_early", event.id, {
+    ));
+  (await audit(u, "checkin.left_early", event.id, {
     subject: userId,
     occurrences,
     state,
-  });
+  }));
   return { occurrences, state, tolerated: state !== "blocked" };
 }
 
 /** An officer lifts the flag. Reversible by design; the reason is required. */
-export function clearFlag(
+export async function clearFlag(
   u: User,
   b: { userId: string; reason: string },
-): Flag {
-  officer(u);
-  checkinInit();
+): Promise<Flag> {
+  (await officer(u));
+  (await checkinInit());
   const userId = text(b.userId, 64);
   const reason = text(b.reason, 500);
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO integrity_flags(user_id,state,occurrences,cleared_by,cleared_at,cleared_reason,counted_from)
        VALUES (?,'clear',0,?,?,?,?)
@@ -631,9 +631,9 @@ export function clearFlag(
          cleared_by=excluded.cleared_by,cleared_at=excluded.cleared_at,
          cleared_reason=excluded.cleared_reason,counted_from=excluded.counted_from`,
     )
-    .run(userId, u.id, now, reason, now);
-  audit(u, "checkin.flag_cleared", userId, { reason });
-  return flagRow(userId);
+    .run(userId, u.id, now, reason, now));
+  (await audit(u, "checkin.flag_cleared", userId, { reason }));
+  return (await flagRow(userId));
 }
 
 // ---------------------------------------------------------------------------
@@ -659,25 +659,25 @@ export type AttendanceState = {
   rate: number;
 };
 
-export function attendanceState(u: User, eventId: string): AttendanceState {
-  officer(u);
-  checkinInit();
-  const event = item(text(eventId, 64), "event");
-  const w = windowFor(event.id);
-  const counts = db()
+export async function attendanceState(u: User, eventId: string): Promise<AttendanceState> {
+  (await officer(u));
+  (await checkinInit());
+  const event = (await item(text(eventId, 64), "event"));
+  const w = (await windowFor(event.id));
+  const counts = (await db()
     .prepare(
       `SELECT COUNT(*) present,
               COALESCE(SUM(late),0) late,
               COALESCE(SUM(walk_in),0) walk_ins
        FROM checkins WHERE event_id=?`,
     )
-    .get(event.id) as { present: number; late: number; walk_ins: number };
+    .get(event.id)) as { present: number; late: number; walk_ins: number };
   const yes = (
-    db()
+    (await db()
       .prepare(
         "SELECT COUNT(*) n FROM rsvps WHERE event_id=? AND status='yes'",
       )
-      .get(event.id) as { n: number }
+      .get(event.id)) as { n: number }
   ).n;
   // A walk-in is given an rsvp row so older queries see them; it must not then
   // inflate the denominator it was never part of.
@@ -706,37 +706,37 @@ export function attendanceState(u: User, eventId: string): AttendanceState {
 // Action dispatch
 // ---------------------------------------------------------------------------
 
-export function checkin(u: User, action: string, b: any) {
-  checkinInit();
+export async function checkin(u: User, action: string, b: any) {
+  (await checkinInit());
   if (action === "open")
-    return openCheckin(u, text(b.event_id, 64), {
+    return (await openCheckin(u, text(b.event_id, 64), {
       opens: b.opens_at,
       closes: b.closes_at,
       food: b.food === undefined ? undefined : b.food === true,
       grace: b.grace_minutes === undefined ? undefined : Number(b.grace_minutes),
-    });
+    }));
   if (action === "code") {
-    officer(u);
-    const event = item(text(b.event_id, 64), "event");
-    windowFor(event.id);
-    return { code: currentCode(event.id), rotates_every_seconds: WINDOW_MS / 1000 };
+    (await officer(u));
+    const event = (await item(text(b.event_id, 64), "event"));
+    (await windowFor(event.id));
+    return { code: (await currentCode(event.id)), rotates_every_seconds: WINDOW_MS / 1000 };
   }
   if (action === "check_in")
-    return checkIn(u, { eventId: text(b.event_id, 64), code: String(b.code || "") });
+    return (await checkIn(u, { eventId: text(b.event_id, 64), code: String(b.code || "") }));
   if (action === "officer_check_in")
-    return officerCheckIn(u, {
+    return (await officerCheckIn(u, {
       eventId: text(b.event_id, 64),
       userId: text(b.user_id, 64),
-    });
+    }));
   if (action === "left_early")
-    return markLeftEarly(u, {
+    return (await markLeftEarly(u, {
       eventId: text(b.event_id, 64),
       userId: text(b.user_id, 64),
       note: typeof b.note === "string" ? b.note : "",
-    });
+    }));
   if (action === "clear_flag")
-    return clearFlag(u, { userId: text(b.user_id, 64), reason: text(b.reason, 500) });
-  if (action === "flag") return { flag: flagFor(u, text(b.user_id, 64)) };
-  if (action === "state") return attendanceState(u, text(b.event_id, 64));
+    return (await clearFlag(u, { userId: text(b.user_id, 64), reason: text(b.reason, 500) }));
+  if (action === "flag") return { flag: (await flagFor(u, text(b.user_id, 64))) };
+  if (action === "state") return (await attendanceState(u, text(b.event_id, 64)));
   fail("Unknown check-in action.", 404);
 }

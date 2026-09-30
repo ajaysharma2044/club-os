@@ -106,9 +106,9 @@ const STATE_TTL_MS = 10 * 60_000;
 const REFRESH_MARGIN_MS = 60_000;
 
 let ready = false;
-export function integrationsInit() {
+export async function integrationsInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 -- One in-flight authorization. The state is stored hashed, exactly as sessions
 -- are in db.ts: a leaked table must not let anyone complete a flow. The row is
 -- DELETED on consumption, which is what makes replay impossible rather than
@@ -148,20 +148,20 @@ CREATE TABLE IF NOT EXISTS integration_tokens(
   key_fingerprint TEXT NOT NULL DEFAULT '',
   -- last time the provider confirmed this connection actually works
   last_verified_at TEXT NOT NULL DEFAULT '');
-`);
+`));
   // Additive migration for databases created before these columns existed.
-  const cols = db()
+  const cols = (await db()
     .prepare("PRAGMA table_info(integration_tokens)")
-    .all() as { name: string }[];
+    .all()) as { name: string }[];
   const has = (n: string) => cols.some((c) => c.name === n);
   if (!has("key_fingerprint"))
-    db().exec(
+    (await db().exec(
       "ALTER TABLE integration_tokens ADD COLUMN key_fingerprint TEXT NOT NULL DEFAULT ''",
-    );
+    ));
   if (!has("last_verified_at"))
-    db().exec(
+    (await db().exec(
       "ALTER TABLE integration_tokens ADD COLUMN last_verified_at TEXT NOT NULL DEFAULT ''",
-    );
+    ));
   ready = true;
 }
 
@@ -324,20 +324,20 @@ export type Authorization = { url: string; state: string };
  * the flow when they come back. Nothing here contacts the provider: that is the
  * browser's job, which is the whole point of the redirect dance.
  */
-export function beginAuthorization(
+export async function beginAuthorization(
   u: User,
   integrationId: string,
   redirectUri: string,
-): Authorization {
-  integrationsInit();
+): Promise<Authorization> {
+  (await integrationsInit());
   const i = findIntegration(integrationId);
   if (!i) fail("Unknown integration.", 404);
   if (i!.auth !== "oauth2")
     fail(`${i!.name} does not use OAuth. See its setup steps instead.`);
   // An LMS connection is one member's own academic data and only that member can
   // grant it; every other integration is club property and is an officer act.
-  if (i!.category === "lms") member(u);
-  else officer(u);
+  if (i!.category === "lms") (await member(u));
+  else (await officer(u));
   // Refuse before redirecting rather than after consent: sending someone through
   // a provider's consent screen and then failing to keep the result is the most
   // expensive possible moment to discover a missing key.
@@ -350,10 +350,10 @@ export function beginAuthorization(
   const state = base64url(randomBytes(32));
   const verifier = createVerifier();
   const now = Date.now();
-  db()
+  (await db()
     .prepare("DELETE FROM integration_oauth_states WHERE expires_at<?")
-    .run(now);
-  db()
+    .run(now));
+  (await db()
     .prepare(
       "INSERT INTO integration_oauth_states(state_hash,integration_id,redirect_uri,verifier,started_by,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",
     )
@@ -365,7 +365,7 @@ export function beginAuthorization(
       u.id,
       timestamp(),
       now + STATE_TTL_MS,
-    );
+    ));
 
   const p = new URLSearchParams({
     response_type: "code",
@@ -378,7 +378,7 @@ export function beginAuthorization(
   const scopes = scopeStrings(i!);
   if (scopes.length) p.set("scope", scopes.join(" "));
   for (const [k, v] of Object.entries(i!.authorizeParams || {})) p.set(k, v);
-  audit(u, "integration.authorize", i!.id, { scopes });
+  (await audit(u, "integration.authorize", i!.id, { scopes }));
   return { url: `${resolveEndpoint(i!.authorizeUrl!)}?${p.toString()}`, state };
 }
 
@@ -399,14 +399,14 @@ export type PendingState = {
  * precise attack state exists to stop. A replay is either a double-clicked
  * browser or a captured callback and we cannot tell which, so both lose.
  */
-export function consumeState(state: string): PendingState {
-  integrationsInit();
+export async function consumeState(state: string): Promise<PendingState> {
+  (await integrationsInit());
   const key = hash(state);
-  const row = db()
+  const row = (await db()
     .prepare(
       "SELECT integration_id,redirect_uri,verifier,started_by,expires_at FROM integration_oauth_states WHERE state_hash=?",
     )
-    .get(key) as
+    .get(key)) as
     | {
         integration_id: string;
         redirect_uri: string;
@@ -417,9 +417,9 @@ export function consumeState(state: string): PendingState {
     | undefined;
   const claimed =
     Number(
-      db()
+      (await db()
         .prepare("DELETE FROM integration_oauth_states WHERE state_hash=?")
-        .run(key).changes,
+        .run(key)).changes,
     ) === 1;
   if (!row || !claimed)
     fail("This sign-in link has already been used or was not started here.", 400);
@@ -528,8 +528,8 @@ export async function exchangeCode(
   },
   f: HttpFetch = defaultFetch,
 ): Promise<ConnectionSummary> {
-  integrationsInit();
-  const pending = consumeState(input.state);
+  (await integrationsInit());
+  const pending = (await consumeState(input.state));
   const i = findIntegration(pending.integrationId);
   if (!i) fail("Unknown integration.", 404);
   const creds = clientCredentials(i!);
@@ -558,7 +558,7 @@ export async function exchangeCode(
     // nothing. The sign-in becomes a Club OS session; the provider credential
     // has no further purpose and therefore no business existing on this disk.
     input.onIdentityToken?.({ accessToken, scope: grantedScopes.join(" ") });
-    audit(u, "integration.identity", i!.id, { scopes: grantedScopes });
+    (await audit(u, "integration.identity", i!.id, { scopes: grantedScopes }));
     return {
       integrationId: i!.id,
       accountLabel: input.accountLabel || "",
@@ -570,20 +570,20 @@ export async function exchangeCode(
     };
   }
 
-  return storeToken(u, i!.id, {
+  return (await storeToken(u, i!.id, {
     accessToken,
     refreshToken: body.refresh_token || "",
     expiresInSeconds: body.expires_in,
     grantedScopes,
     accountLabel: input.accountLabel || "",
-  });
+  }));
 }
 
 /**
  * Write a connection. Refuses without a key and refuses for identity providers;
  * both refusals are the file header's reasoning made executable.
  */
-export function storeToken(
+export async function storeToken(
   u: User,
   integrationId: string,
   t: {
@@ -593,8 +593,8 @@ export function storeToken(
     grantedScopes?: string[];
     accountLabel?: string;
   },
-): ConnectionSummary {
-  integrationsInit();
+): Promise<ConnectionSummary> {
+  (await integrationsInit());
   const i = findIntegration(integrationId);
   if (!i) fail("Unknown integration.", 404);
   if (!persistsToken(i!))
@@ -610,7 +610,7 @@ export function storeToken(
     ? new Date(Date.now() + t.expiresInSeconds * 1000).toISOString()
     : "";
   const scopes = (t.grantedScopes || scopeStrings(i!)).join(" ");
-  db()
+  (await db()
     .prepare(
       `INSERT INTO integration_tokens(integration_id,account_label,scopes,access_enc,refresh_enc,expires_at,connected_by,connected_at,key_fingerprint,last_verified_at)
        VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -636,14 +636,14 @@ export function storeToken(
       now,
       keyFingerprint(),
       now,
-    );
+    ));
   // The audit row records that a connection happened and under which scopes.
   // It does not record the token, and no audit row ever may.
-  audit(u, "integration.connected", i!.id, {
+  (await audit(u, "integration.connected", i!.id, {
     scopes: scopes.split(" ").filter(Boolean),
     expires_at: expiresAt,
     account_label: t.accountLabel || "",
-  });
+  }));
   return {
     integrationId: i!.id,
     accountLabel: t.accountLabel || "",
@@ -674,12 +674,12 @@ export type TokenRow = {
  * which reads only the metadata. Nothing that renders or serialises may call it
  * — that is what `connectionSummary` is for.
  */
-export function tokenRow(integrationId: string): TokenRow | null {
-  integrationsInit();
+export async function tokenRow(integrationId: string): Promise<TokenRow | null> {
+  (await integrationsInit());
   return (
-    (db()
+    ((await db()
       .prepare("SELECT * FROM integration_tokens WHERE integration_id=?")
-      .get(integrationId) as TokenRow | undefined) || null
+      .get(integrationId)) as TokenRow | undefined) || null
   );
 }
 
@@ -695,8 +695,8 @@ export function isUnreadable(row: TokenRow): boolean {
  * Not exported through any route, never serialised, never logged. Returns null
  * rather than throwing so a caller can degrade into an honest status.
  */
-export function accessTokenFor(integrationId: string): string | null {
-  const row = tokenRow(integrationId);
+export async function accessTokenFor(integrationId: string): Promise<string | null> {
+  const row = (await tokenRow(integrationId));
   if (!row) return null;
   if (row.expires_at && Date.parse(row.expires_at) - REFRESH_MARGIN_MS <= Date.now())
     return null; // expired: the caller must refresh first
@@ -704,8 +704,8 @@ export function accessTokenFor(integrationId: string): string | null {
 }
 
 /** Metadata only. This is the shape that is safe to send anywhere. */
-export function connectionSummary(integrationId: string): ConnectionSummary | null {
-  const row = tokenRow(integrationId);
+export async function connectionSummary(integrationId: string): Promise<ConnectionSummary | null> {
+  const row = (await tokenRow(integrationId));
   if (!row) return null;
   return {
     integrationId: row.integration_id,
@@ -729,10 +729,10 @@ export async function refreshConnection(
   integrationId: string,
   f: HttpFetch = defaultFetch,
 ): Promise<ConnectionSummary> {
-  integrationsInit();
+  (await integrationsInit());
   const i = findIntegration(integrationId);
   if (!i) fail("Unknown integration.", 404);
-  const row = tokenRow(integrationId);
+  const row = (await tokenRow(integrationId));
   if (!row) fail(`${i!.name} is not connected.`, 409);
   const refresh = row!.refresh_enc ? decrypt(row!.refresh_enc) : null;
   if (!refresh)
@@ -758,7 +758,7 @@ export async function refreshConnection(
   const expiresAt = body.expires_in
     ? new Date(Date.now() + body.expires_in * 1000).toISOString()
     : "";
-  db()
+  (await db()
     .prepare(
       "UPDATE integration_tokens SET access_enc=?,refresh_enc=?,expires_at=?,refreshed_at=?,key_fingerprint=?,last_verified_at=? WHERE integration_id=?",
     )
@@ -770,9 +770,9 @@ export async function refreshConnection(
       keyFingerprint(),
       now,
       integrationId,
-    );
-  audit(u, "integration.refreshed", integrationId, { expires_at: expiresAt });
-  return connectionSummary(integrationId)!;
+    ));
+  (await audit(u, "integration.refreshed", integrationId, { expires_at: expiresAt }));
+  return (await connectionSummary(integrationId))!;
 }
 
 /**
@@ -791,20 +791,20 @@ export async function revokeConnection(
   integrationId: string,
   f: HttpFetch = defaultFetch,
 ): Promise<{ cleared: boolean; providerNotified: boolean }> {
-  integrationsInit();
+  (await integrationsInit());
   const i = findIntegration(integrationId);
   if (!i) fail("Unknown integration.", 404);
-  if (i!.category === "lms") member(u);
-  else officer(u);
-  const row = tokenRow(integrationId);
+  if (i!.category === "lms") (await member(u));
+  else (await officer(u));
+  const row = (await tokenRow(integrationId));
   const token = row ? decrypt(row.access_enc) : null;
   const cleared =
     Number(
-      db()
+      (await db()
         .prepare("DELETE FROM integration_tokens WHERE integration_id=?")
-        .run(integrationId).changes,
+        .run(integrationId)).changes,
     ) > 0;
-  audit(u, "integration.revoked", integrationId, { had_token: Boolean(row) });
+  (await audit(u, "integration.revoked", integrationId, { had_token: Boolean(row) }));
 
   let providerNotified = false;
   if (token && i!.revokeUrl) {

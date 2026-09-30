@@ -65,21 +65,21 @@ const eq = (a, b, msg) => {
   checks++;
 };
 
-demandInit();
-vendorsInit();
+(await demandInit());
+(await vendorsInit());
 
 // --- fixtures ---------------------------------------------------------------
-const user = (name, role) => {
+const user = async (name, role) => {
   const id = randomUUID();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO users(id,name,email,password,role,interests,shared) VALUES (?,?,?,?,?,'',0)",
     )
-    .run(id, name, `${id}@example.test`, "x:unusable", role);
+    .run(id, name, `${id}@example.test`, "x:unusable", role));
   return { id, name, email: `${id}@example.test`, role, interests: "", shared: 0 };
 };
-const pres = user("Priya, President", "officer");
-const treasurer = user("Tomas, Treasurer", "officer");
+const pres = (await user("Priya, President", "officer"));
+const treasurer = (await user("Tomas, Treasurer", "officer"));
 
 /** n identical comparable events, so the only thing that varies is how many. */
 const rep = (n, rsvps, attended) => Array.from({ length: n }, () => ({ rsvps, attended }));
@@ -260,27 +260,27 @@ checks += 2;
 // 5. Storage: the club decides, and a decision is never overwritten.
 // ===========================================================================
 
-const ids = recordInferredNeeds(pres, inferred);
+const ids = (await recordInferredNeeds(pres, inferred));
 eq(ids.length, inferred.length, "every inferred need is stored");
-for (const row of needsForEvent(CONFERENCE.id))
+for (const row of (await needsForEvent(CONFERENCE.id)))
   ok(row.status === "inferred", `${row.category} is stored as inferred`);
 
-const cateringRow = needsForEvent(CONFERENCE.id).find((n) => n.category === "catering");
-const merchRow = needsForEvent(CONFERENCE.id).find((n) => n.category === "merchandise");
-const printRow = needsForEvent(CONFERENCE.id).find((n) => n.category === "printing");
+const cateringRow = (await needsForEvent(CONFERENCE.id)).find((n) => n.category === "catering");
+const merchRow = (await needsForEvent(CONFERENCE.id)).find((n) => n.category === "merchandise");
+const printRow = (await needsForEvent(CONFERENCE.id)).find((n) => n.category === "printing");
 
-const confirmedCatering = confirmNeed(treasurer, cateringRow.id, { notes: "Ordering through Dining" });
+const confirmedCatering = (await confirmNeed(treasurer, cateringRow.id, { notes: "Ordering through Dining" }));
 eq(confirmedCatering.status, "club_confirmed", "a club confirming is the only way this changes");
 eq(confirmedCatering.confirmedBy, treasurer.id, "and the confirmation carries a person's name");
 ok(confirmedCatering.confirmedAt !== null, "and the moment they did it");
 
 // "Club control" means a person with authority, not any caller with a handle.
-const rank = user("Mira, Member", "member");
-assert.throws(() => confirmNeed(rank, printRow.id), /Officer access required/);
-assert.throws(() => declineNeed(rank, printRow.id), /Officer access required/);
-assert.throws(() => recordInferredNeeds(rank, inferred), /Officer access required/);
+const rank = (await user("Mira, Member", "member"));
+(await assert.rejects(async () => (await confirmNeed(rank, printRow.id)), /Officer access required/));
+(await assert.rejects(async () => (await declineNeed(rank, printRow.id)), /Officer access required/));
+(await assert.rejects(async () => (await recordInferredNeeds(rank, inferred)), /Officer access required/));
 checks += 3;
-eq(need(printRow.id).status, "inferred", "and the refused confirmation changed nothing");
+eq((await need(printRow.id)).status, "inferred", "and the refused confirmation changed nothing");
 
 // Merchandise is sized off an attach rate nobody has measured, and the method
 // says so rather than borrowing catering's credibility.
@@ -290,15 +290,15 @@ eq(
   "a guess scaled by an assumption is labelled as one, not as a predictive quantile",
 );
 
-const declinedMerch = declineNeed(treasurer, merchRow.id, "No merch this year");
+const declinedMerch = (await declineNeed(treasurer, merchRow.id, "No merch this year"));
 eq(declinedMerch.status, "declined", "a club declining is recorded, not deleted");
 ok(declinedMerch.confirmedAt === null, "declining clears any confirmation");
 
 // Re-run the inference with a DIFFERENT forecast. The still-inferred row moves;
 // the confirmed and declined rows do not. This is the clause that stops a "no"
 // decaying back into a suggestion every time the forecast refreshes.
-recordInferredNeeds(pres, thinNeeds);
-const after = new Map(needsForEvent(CONFERENCE.id).map((n) => [n.category, n]));
+(await recordInferredNeeds(pres, thinNeeds));
+const after = new Map((await needsForEvent(CONFERENCE.id)).map((n) => [n.category, n]));
 eq(after.get("catering").status, "club_confirmed", "re-inference does not un-confirm a need");
 eq(after.get("merchandise").status, "declined", "re-inference does not resurrect a declined need");
 eq(
@@ -318,12 +318,12 @@ eq(
 eq(after.get("printing").id, printRow.id, "refreshing a need keeps its identity");
 
 eq(
-  confirmedNeeds().every((n) => n.status === "club_confirmed"),
+  (await confirmedNeeds()).every((n) => n.status === "club_confirmed"),
   true,
   "confirmedNeeds() can only ever return confirmed rows",
 );
 eq(
-  needsForClub("cornell-ec", { status: "declined" }).map((n) => n.category),
+  (await needsForClub("cornell-ec", { status: "declined" })).map((n) => n.category),
   ["merchandise"],
   "declines are queryable, which is how we find out the inference was wrong",
 );
@@ -332,7 +332,7 @@ eq(
 // 6. Factors.
 // ===========================================================================
 
-const clubNeeds = needsForClub("cornell-ec");
+const clubNeeds = (await needsForClub("cornell-ec"));
 const scale = computeFactor(eventEconomicScaleFactor, "cornell-ec", { needs: clubNeeds }, "2026-02-10T00:00:00Z");
 eq(scale.status, "ok", "the economic scale factor computes");
 ok(scale.value > 0 && scale.value <= 1, `and is an index in (0,1]: ${scale.value}`);
@@ -373,21 +373,21 @@ ok(
 // 7. Vendors: recommendations carry reasons, and only for confirmed needs.
 // ===========================================================================
 
-const alpha = addVendor(pres, { name: "Alpha Catering", category: "catering", institutionId: "cornell" });
-const beta = addVendor(pres, { name: "Beta Catering", category: "catering", institutionId: "cornell" });
-const ceres = addVendor(pres, { name: "Ceres Catering", category: "catering" }); // no campus stated
-const delta = addVendor(pres, { name: "Delta Catering", category: "catering", institutionId: "otherU" });
-const echo = addVendor(pres, { name: "Echo Catering", category: "catering", institutionId: "cornell" });
-const flint = addVendor(pres, { name: "Flint Catering", category: "catering", institutionId: "cornell" });
-addVendor(pres, { name: "Gale Printing", category: "printing", institutionId: "cornell" });
-deactivateVendor(pres, echo);
+const alpha = (await addVendor(pres, { name: "Alpha Catering", category: "catering", institutionId: "cornell" }));
+const beta = (await addVendor(pres, { name: "Beta Catering", category: "catering", institutionId: "cornell" }));
+const ceres = (await addVendor(pres, { name: "Ceres Catering", category: "catering" })); // no campus stated
+const delta = (await addVendor(pres, { name: "Delta Catering", category: "catering", institutionId: "otherU" }));
+const echo = (await addVendor(pres, { name: "Echo Catering", category: "catering", institutionId: "cornell" }));
+const flint = (await addVendor(pres, { name: "Flint Catering", category: "catering", institutionId: "cornell" }));
+(await addVendor(pres, { name: "Gale Printing", category: "printing", institutionId: "cornell" }));
+(await deactivateVendor(pres, echo));
 
-recordEngagement(pres, { vendorId: alpha, clubId: "cornell-ec", status: "completed", amountCents: 120000 });
-recordEngagement(pres, { vendorId: alpha, clubId: "cornell-ec", status: "completed", amountCents: 90000 });
-recordEngagement(pres, { vendorId: flint, clubId: "another-club", status: "fell_through" });
+(await recordEngagement(pres, { vendorId: alpha, clubId: "cornell-ec", status: "completed", amountCents: 120000 }));
+(await recordEngagement(pres, { vendorId: alpha, clubId: "cornell-ec", status: "completed", amountCents: 90000 }));
+(await recordEngagement(pres, { vendorId: flint, clubId: "another-club", status: "fell_through" }));
 
-const confirmedCateringNeed = need(cateringRow.id);
-const recs = recommendVendors(confirmedCateringNeed);
+const confirmedCateringNeed = (await need(cateringRow.id));
+const recs = (await recommendVendors(confirmedCateringNeed));
 ok(recs.length >= 3, `a confirmed need gets a shortlist: ${recs.length}`);
 for (const r of recs) {
   ok(r.reasons.length >= 1, `${r.vendor.name} carries at least one reason`);
@@ -429,7 +429,7 @@ ok(
   "a vendor with no history says so",
 );
 eq(
-  JSON.stringify(recommendVendors(confirmedCateringNeed)),
+  JSON.stringify((await recommendVendors(confirmedCateringNeed))),
   JSON.stringify(recs),
   "recommendation is deterministic: same inputs, same order, every time",
 );
@@ -440,8 +440,8 @@ eq(
 );
 
 // A declined need gets nothing, and says why.
-const declinedNeed = need(merchRow.id);
-eq(recommendVendors(declinedNeed), [], "a declined need produces no vendor recommendations");
+const declinedNeed = (await need(merchRow.id));
+eq((await recommendVendors(declinedNeed)), [], "a declined need produces no vendor recommendations");
 eq(mayRecommendFor(declinedNeed).ok, false, "and the refusal is explicit");
 ok(
   /do not need this/i.test(mayRecommendFor(declinedNeed).reason),
@@ -450,14 +450,14 @@ ok(
 
 // An inferred need gets nothing either: only a club confirming turns a guess
 // into a marketplace opportunity.
-const stillInferred = need(printRow.id);
+const stillInferred = (await need(printRow.id));
 eq(stillInferred.status, "inferred", "printing is still our guess");
-eq(recommendVendors(stillInferred), [], "an inferred need produces no vendor recommendations");
+eq((await recommendVendors(stillInferred)), [], "an inferred need produces no vendor recommendations");
 ok(
   /still our inference/i.test(mayRecommendFor(stillInferred).reason),
   "and the reason says whose guess it is",
 );
-ok(listVendors({ category: "catering" }).length === 5, "the deactivated vendor is out of the list too");
+ok((await listVendors({ category: "catering" })).length === 5, "the deactivated vendor is out of the list too");
 
 // ===========================================================================
 // 8. Group purchasing finds real overlaps and invents none.
@@ -566,10 +566,10 @@ eq(chained[0].clubs, ["club-a", "club-b"], "…containing only the clubs that sh
 
 // The DB path works too: confirmed rows from two clubs combine.
 const otherClubNeeds = inferNeeds({ ...CONFERENCE, id: "evt-b", clubId: "club-b" }, rich, "2026-02-01T00:00:00Z");
-const otherIds = recordInferredNeeds(pres, otherClubNeeds);
-const otherCatering = needsForEvent("evt-b").find((n) => n.category === "catering");
-confirmNeed(pres, otherCatering.id);
-const fromDb = confirmedNeeds({ category: "catering" }).map((n) => ({
+const otherIds = (await recordInferredNeeds(pres, otherClubNeeds));
+const otherCatering = (await needsForEvent("evt-b")).find((n) => n.category === "catering");
+(await confirmNeed(pres, otherCatering.id));
+const fromDb = (await confirmedNeeds({ category: "catering" })).map((n) => ({
   ...n,
   window: win(MAR_5, MAR_6),
 }));

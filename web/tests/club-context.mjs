@@ -33,7 +33,7 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 
 // ============================================================== the happy path
 {
-  const ctx = assembleContext("cec", TUE_7PM, { courses, events, weather });
+  const ctx = (await assembleContext("cec", TUE_7PM, { courses, events, weather }));
   ok(ctx.club.id === "cornell-ec", "the club resolves to its organization_id");
   ok(ctx.institutionId === "cornell", "and to its institution");
   ok(ctx.term === "FA26", `and the term covering the moment, got ${ctx.term}`);
@@ -57,7 +57,7 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 {
   // No roster, no forecast. The factors that depend on them must refuse and
   // say so — not report a clear hour and fair weather.
-  const partial = assembleContext("cec", TUE_7PM, { events });
+  const partial = (await assembleContext("cec", TUE_7PM, { events }));
   ok(partial.heatmap === null, "with no courses there is no heatmap");
   ok(partial.gaps.length >= 2, `gaps are reported, got ${partial.gaps.length}`);
   ok(
@@ -81,7 +81,7 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 
 // ================================== an unconfigured moment is not a normal week
 {
-  const summer = assembleContext("cec", "2027-07-04T18:00:00Z", { courses, events, weather });
+  const summer = (await assembleContext("cec", "2027-07-04T18:00:00Z", { courses, events, weather }));
   ok(summer.term === null, "no configured term covers July");
   ok(summer.state === null, "so there is no campus state");
   ok(
@@ -98,7 +98,7 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 {
   let threw = false;
   try {
-    assembleContext("not-a-club", TUE_7PM, {});
+    (await assembleContext("not-a-club", TUE_7PM, {}));
   } catch {
     threw = true;
   }
@@ -107,27 +107,27 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 
 // ======================================================= factors are PERSISTED
 {
-  const hist = factorHistory("competing_event_pressure", "campus", "cornell");
+  const hist = (await factorHistory("competing_event_pressure", "campus", "cornell"));
   ok(hist.length > 0, "assembling persisted the factor values");
   ok(hist.every((h) => h.modelVersion === "1.0.0"), "with their model version");
 
-  const read = factorsAsOf({
+  const read = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: "2026-09-16T00:00:00Z",
     use: "planning",
     registry: CONTEXT_FACTORS,
-  });
+  }));
   ok(read.factors.length > 0, "and they read back through the use gate");
 
   // The sponsor gate still bites, even on assembled context.
-  const sponsor = factorsAsOf({
+  const sponsor = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: "2026-09-16T00:00:00Z",
     use: "sponsor_ranking",
     registry: CONTEXT_FACTORS,
-  });
+  }));
   ok(
     sponsor.factors.length < read.factors.length,
     `a sponsor read sees fewer factors than a planning read: ${sponsor.factors.length} < ${read.factors.length}`,
@@ -141,9 +141,9 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 
 // ================================= BACKTEST MODE writes nothing to the store
 {
-  const before = factorHistory("competing_event_pressure", "campus", "cornell").length;
-  assembleContext("cec", "2026-09-20T23:00:00Z", { courses, events, weather }, { persist: false });
-  const after = factorHistory("competing_event_pressure", "campus", "cornell").length;
+  const before = (await factorHistory("competing_event_pressure", "campus", "cornell")).length;
+  (await assembleContext("cec", "2026-09-20T23:00:00Z", { courses, events, weather }, { persist: false }));
+  const after = (await factorHistory("competing_event_pressure", "campus", "cornell")).length;
   ok(
     after === before,
     "replaying history with persist:false writes nothing — a backtest must not pollute the store",
@@ -153,7 +153,7 @@ const TUE_11AM = "2026-09-15T15:00:00Z";
 // ========================== the officer's question, across candidate slots
 {
   const slots = [TUE_11AM, TUE_7PM, "2026-09-19T14:00:00Z"]; // Tue 11am, Tue 7pm, Sat 10am
-  const across = contextAcrossSlots("cec", slots, { courses, events, weather }, { persist: false });
+  const across = (await contextAcrossSlots("cec", slots, { courses, events, weather }, { persist: false }));
   ok(across.length === 3, "three slots, three contexts");
 
   const val = (c, id) => c.factors.find((f) => f.factor === id)?.value;

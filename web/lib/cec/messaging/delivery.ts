@@ -73,34 +73,34 @@ const LEVELS: PrefLevel[] = ["all", "mentions", "none"];
 const DEFAULTS = { dm: "all", groups: "all", channels: "mentions" } as const;
 
 let ready = false;
-export function deliveryInit() {
+export async function deliveryInit() {
   if (ready) return;
-  messagingInit();
-  db().exec(`
+  (await messagingInit());
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS notification_prefs(
   user_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   dm TEXT NOT NULL DEFAULT 'all',
   groups TEXT NOT NULL DEFAULT 'all',
   channels TEXT NOT NULL DEFAULT 'mentions',
   updated_at TEXT NOT NULL);
-`);
+`));
   ready = true;
 }
 
-export function notificationPrefs(userId: string): Prefs {
-  deliveryInit();
-  const row = db()
+export async function notificationPrefs(userId: string): Promise<Prefs> {
+  (await deliveryInit());
+  const row = (await db()
     .prepare("SELECT * FROM notification_prefs WHERE user_id=?")
-    .get(userId) as Prefs | undefined;
+    .get(userId)) as Prefs | undefined;
   return row || { user_id: userId, ...DEFAULTS, updated_at: "" };
 }
 
-export function setNotificationPrefs(
+export async function setNotificationPrefs(
   u: User,
   patch: { dm?: string; groups?: string; channels?: string },
-): Prefs {
-  deliveryInit();
-  const current = notificationPrefs(u.id);
+): Promise<Prefs> {
+  (await deliveryInit());
+  const current = (await notificationPrefs(u.id));
   const pick = (v: unknown, fallback: PrefLevel): PrefLevel => {
     if (v === undefined) return fallback;
     if (typeof v !== "string" || !LEVELS.includes(v as PrefLevel))
@@ -112,13 +112,13 @@ export function setNotificationPrefs(
     groups: pick(patch.groups, current.groups),
     channels: pick(patch.channels, current.channels),
   };
-  db()
+  (await db()
     .prepare(
       `INSERT INTO notification_prefs(user_id,dm,groups,channels,updated_at) VALUES (?,?,?,?,?)
        ON CONFLICT(user_id) DO UPDATE SET dm=excluded.dm,groups=excluded.groups,channels=excluded.channels,updated_at=excluded.updated_at`,
     )
-    .run(u.id, next.dm, next.groups, next.channels, timestamp());
-  return notificationPrefs(u.id);
+    .run(u.id, next.dm, next.groups, next.channels, timestamp()));
+  return (await notificationPrefs(u.id));
 }
 
 // An @handle: leading @ that is not part of an email address or a longer word,
@@ -137,12 +137,12 @@ function handleKey(s: string): string {
  * rather than to a guess. Notifying the wrong Maya is worse than notifying
  * neither, because the writer believes they reached someone and did not.
  */
-export function resolveMentions(
+export async function resolveMentions(
   conversationId: string,
   body: string,
   exclude?: string,
-): string[] {
-  const roster = memberRoster(conversationId);
+): Promise<string[]> {
+  const roster = (await memberRoster(conversationId));
   const index = new Map<string, string | null>();
   const add = (key: string, userId: string) => {
     if (!key) return;
@@ -171,53 +171,53 @@ export function resolveMentions(
  * conversation cap is what actually bounds the thing being prevented — one
  * person flooding one room.
  */
-export function send(
+export async function send(
   u: User,
   conversationId: string,
   body: string,
   replyTo?: string | null,
-): { message: Message; mentions: string[] } {
-  deliveryInit();
-  throttle(`messaging:send:${text(conversationId, 64)}:${u.id}`, SEND_LIMIT);
-  const message = postMessage(u, conversationId, body, replyTo);
-  const mentions = resolveMentions(conversationId, message.body, u.id);
+): Promise<{ message: Message; mentions: string[] }> {
+  (await deliveryInit());
+  (await throttle(`messaging:send:${text(conversationId, 64)}:${u.id}`, SEND_LIMIT));
+  const message = (await postMessage(u, conversationId, body, replyTo));
+  const mentions = (await resolveMentions(conversationId, message.body, u.id));
   const now = timestamp();
   const insert = db().prepare(
     "INSERT INTO message_mentions(message_id,conversation_id,user_id,created_at) VALUES (?,?,?,?) ON CONFLICT DO NOTHING",
   );
   for (const target of mentions)
-    insert.run(message.id, conversationId, target, now);
+    (await insert.run(message.id, conversationId, target, now));
   return { message, mentions };
 }
 
-export function mentionsOf(u: User, messageId: string): string[] {
-  deliveryInit();
-  const m = messageRow(messageId);
+export async function mentionsOf(u: User, messageId: string): Promise<string[]> {
+  (await deliveryInit());
+  const m = (await messageRow(messageId));
   if (!m) fail("Message not found.", 404);
-  requireMember(u, m.conversation_id);
+  (await requireMember(u, m.conversation_id));
   return (
-    db()
+    (await db()
       .prepare(
         "SELECT user_id FROM message_mentions WHERE message_id=? ORDER BY user_id",
       )
-      .all(messageId) as { user_id: string }[]
+      .all(messageId)) as { user_id: string }[]
   ).map((r) => r.user_id);
 }
 
-function mentionUnread(
+async function mentionUnread(
   conversationId: string,
   userId: string,
   lastReadAt: string | null,
-): number {
+): Promise<number> {
   return (
-    db()
+    (await db()
       .prepare(
         `SELECT COUNT(*) n FROM message_mentions mm
            JOIN conversation_messages m ON m.id=mm.message_id
           WHERE mm.conversation_id=? AND mm.user_id=? AND m.author_id<>?
             AND m.deleted_at IS NULL AND (? IS NULL OR m.created_at > ?)`,
       )
-      .get(conversationId, userId, userId, lastReadAt, lastReadAt) as {
+      .get(conversationId, userId, userId, lastReadAt, lastReadAt)) as {
       n: number;
     }
   ).n;
@@ -252,18 +252,18 @@ export type Inbox = {
  * conversation still reports both; muting suppresses delivery, not the truth
  * on the screen.
  */
-export function inboxSummary(u: User): Inbox {
-  deliveryInit();
+export async function inboxSummary(u: User): Promise<Inbox> {
+  (await deliveryInit());
   const latest = db().prepare(
     "SELECT * FROM conversation_messages WHERE conversation_id=? ORDER BY seq DESC LIMIT 1",
   );
   const entries: InboxEntry[] = [];
-  for (const c of conversationsFor(u)) {
+  for (const c of (await conversationsFor(u))) {
     if (c.archived_at) continue;
-    const last = latest.get(c.id) as Message | undefined;
-    const unread = unreadFor(c.id, u.id, c.last_read_at);
-    const mentions = mentionUnread(c.id, u.id, c.last_read_at);
-    const roster = memberRoster(c.id);
+    const last = (await latest.get(c.id)) as Message | undefined;
+    const unread = (await unreadFor(c.id, u.id, c.last_read_at));
+    const mentions = (await mentionUnread(c.id, u.id, c.last_read_at));
+    const roster = (await memberRoster(c.id));
     // A DM has no title of its own; the other person is the title.
     const title =
       c.kind === "dm"
@@ -337,21 +337,21 @@ export type DeliveryPlan = {
  * read, and it returns routing metadata rather than content. Do not expose it
  * through the API surface.
  */
-export function deliveryPlan(messageId: string): DeliveryPlan | null {
-  deliveryInit();
-  const m = messageRow(messageId);
+export async function deliveryPlan(messageId: string): Promise<DeliveryPlan | null> {
+  (await deliveryInit());
+  const m = (await messageRow(messageId));
   if (!m || m.deleted_at) return null;
-  const conversation = db()
+  const conversation = (await db()
     .prepare("SELECT id,kind FROM conversations WHERE id=?")
-    .get(m.conversation_id) as
+    .get(m.conversation_id)) as
     | { id: string; kind: ConversationKind }
     | undefined;
   if (!conversation) return null;
   const mentioned = new Set(
     (
-      db()
+      (await db()
         .prepare("SELECT user_id FROM message_mentions WHERE message_id=?")
-        .all(messageId) as { user_id: string }[]
+        .all(messageId)) as { user_id: string }[]
     ).map((r) => r.user_id),
   );
   const field: Record<ConversationKind, keyof Prefs> = {
@@ -360,12 +360,12 @@ export function deliveryPlan(messageId: string): DeliveryPlan | null {
     channel: "channels",
   };
   const targets: DeliveryTarget[] = [];
-  for (const person of memberRoster(m.conversation_id)) {
+  for (const person of (await memberRoster(m.conversation_id))) {
     if (person.user_id === m.author_id) continue;
     // A mute is a decision the member made about this room. It outranks a
     // mention: being named is not a licence to get past someone's off switch.
     if (person.muted === 1) continue;
-    const level = notificationPrefs(person.user_id)[
+    const level = (await notificationPrefs(person.user_id))[
       field[conversation.kind]
     ] as PrefLevel;
     if (level === "none") continue;

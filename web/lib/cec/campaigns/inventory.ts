@@ -348,9 +348,9 @@ export const EMPTY_HISTORY: ExecutionHistory = {
 
 let ready = false;
 
-export function inventoryInit() {
+export async function inventoryInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS activation_inventory(
   id TEXT PRIMARY KEY,
   club_id TEXT NOT NULL,
@@ -389,21 +389,21 @@ CREATE TABLE IF NOT EXISTS club_sponsorship_policy(
   approval_required INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL);
-`);
+`));
   // Additive migration for databases created before the weekly and sector caps
   // existed. Same idiom as interviews.ts: add the column, keep the old rows.
-  const cols = db()
+  const cols = (await db()
     .prepare("PRAGMA table_info(club_sponsorship_policy)")
-    .all() as { name: string }[];
+    .all()) as { name: string }[];
   const have = new Set(cols.map((c) => c.name));
   if (!have.has("max_activations_per_week"))
-    db().exec(
+    (await db().exec(
       "ALTER TABLE club_sponsorship_policy ADD COLUMN max_activations_per_week INTEGER NOT NULL DEFAULT 1",
-    );
+    ));
   if (!have.has("max_per_sector_per_month"))
-    db().exec(
+    (await db().exec(
       "ALTER TABLE club_sponsorship_policy ADD COLUMN max_per_sector_per_month INTEGER NOT NULL DEFAULT 1",
-    );
+    ));
   ready = true;
 }
 
@@ -448,11 +448,11 @@ function parseWindows(raw: unknown): { start: string; end: string }[] {
  * any. Never throws: an unconfigured club is a club with strict defaults, not
  * an error, because eligibility must be able to answer for every club.
  */
-export function clubPolicy(clubId: string): ClubSponsorshipPolicy {
-  inventoryInit();
-  const row = db()
+export async function clubPolicy(clubId: string): Promise<ClubSponsorshipPolicy> {
+  (await inventoryInit());
+  const row = (await db()
     .prepare("SELECT * FROM club_sponsorship_policy WHERE club_id=?")
-    .get(clubId) as Record<string, unknown> | undefined;
+    .get(clubId)) as Record<string, unknown> | undefined;
   if (!row) return defaultPolicy(clubId);
   return {
     clubId,
@@ -475,14 +475,14 @@ export function clubPolicy(clubId: string): ClubSponsorshipPolicy {
  * not be able to widen a club's own limits. If this is ever called from a
  * sponsor-facing route, the route is the bug.
  */
-export function setClubPolicy(
+export async function setClubPolicy(
   u: User,
   clubId: string,
   patch: Partial<Omit<ClubSponsorshipPolicy, "clubId" | "updatedAt" | "updatedBy">>,
-): ClubSponsorshipPolicy {
-  officer(u);
-  inventoryInit();
-  const current = clubPolicy(clubId);
+): Promise<ClubSponsorshipPolicy> {
+  (await officer(u));
+  (await inventoryInit());
+  const current = (await clubPolicy(clubId));
   const next: ClubSponsorshipPolicy = {
     ...current,
     ...patch,
@@ -500,7 +500,7 @@ export function setClubPolicy(
     if (!Number.isFinite(v) || v < 0)
       fail(`The maximum activations ${label} must be zero or more.`, 422);
 
-  db()
+  (await db()
     .prepare(
       `INSERT INTO club_sponsorship_policy(club_id,excluded_categories,preferred_categories,minimum_sponsorship_value,max_activations_per_month,max_activations_per_week,max_per_sector_per_month,member_data_sharing,approval_required,updated_at,updated_by)
        VALUES(?,?,?,?,?,?,?,?,?,?,?)
@@ -528,11 +528,11 @@ export function setClubPolicy(
       next.approvalRequired ? 1 : 0,
       next.updatedAt,
       next.updatedBy,
-    );
-  audit(u, "campaign.policy.set", clubId, {
+    ));
+  (await audit(u, "campaign.policy.set", clubId, {
     excluded: next.excludedCategories.length,
     max_per_month: next.maxActivationsPerMonth,
-  });
+  }));
   return next;
 }
 
@@ -588,9 +588,9 @@ export type DeclareInventoryInput = {
  * goes straight into a sponsor's expected value and would be the first thing
  * the marketplace learned to inflate.
  */
-export function declareInventory(u: User, input: DeclareInventoryInput): ActivationInventory {
-  officer(u);
-  inventoryInit();
+export async function declareInventory(u: User, input: DeclareInventoryInput): Promise<ActivationInventory> {
+  (await officer(u));
+  (await inventoryInit());
   if (!ACTIVATION_TYPES.includes(input.activationType))
     fail(`Unknown activation type "${input.activationType}".`, 422);
   const capacity = Math.max(0, Math.floor(Number(input.capacity) || 0));
@@ -599,9 +599,9 @@ export function declareInventory(u: User, input: DeclareInventoryInput): Activat
     Math.max(0, Math.floor(Number(input.estimatedReach ?? capacity) || 0)),
   );
   const now = timestamp();
-  const existing = db()
+  const existing = (await db()
     .prepare("SELECT * FROM activation_inventory WHERE club_id=? AND activation_type=?")
-    .get(input.clubId, input.activationType) as Record<string, unknown> | undefined;
+    .get(input.clubId, input.activationType)) as Record<string, unknown> | undefined;
 
   const history: ExecutionHistory = {
     ...EMPTY_HISTORY,
@@ -629,7 +629,7 @@ export function declareInventory(u: User, input: DeclareInventoryInput): Activat
     updated_at: now,
   };
 
-  db()
+  (await db()
     .prepare(
       `INSERT INTO activation_inventory(id,club_id,activation_type,audience,capacity,estimated_reach,historical_execution,available_dates,location,category_restrictions,minimum_budget,maximum_frequency,club_preferences,approval_required,status,created_at,updated_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -663,37 +663,37 @@ export function declareInventory(u: User, input: DeclareInventoryInput): Activat
       row.status,
       row.created_at,
       row.updated_at,
-    );
-  audit(u, "campaign.inventory.declare", row.id, {
+    ));
+  (await audit(u, "campaign.inventory.declare", row.id, {
     club: row.club_id,
     activation: row.activation_type,
-  });
+  }));
   return hydrate(row as unknown as Record<string, unknown>);
 }
 
 /** Open inventory for a club. Paused and withdrawn rows are not supply. */
-export function inventoryFor(
+export async function inventoryFor(
   clubId: string,
   opts: { includeClosed?: boolean } = {},
-): ActivationInventory[] {
-  inventoryInit();
+): Promise<ActivationInventory[]> {
+  (await inventoryInit());
   const rows = opts.includeClosed
-    ? db()
+    ? (await db()
         .prepare("SELECT * FROM activation_inventory WHERE club_id=? ORDER BY activation_type")
-        .all(clubId)
-    : db()
+        .all(clubId))
+    : (await db()
         .prepare(
           "SELECT * FROM activation_inventory WHERE club_id=? AND status='open' ORDER BY activation_type",
         )
-        .all(clubId);
+        .all(clubId));
   return (rows as Record<string, unknown>[]).map(hydrate);
 }
 
-export function inventoryRow(inventoryId: string): ActivationInventory | null {
-  inventoryInit();
-  const r = db()
+export async function inventoryRow(inventoryId: string): Promise<ActivationInventory | null> {
+  (await inventoryInit());
+  const r = (await db()
     .prepare("SELECT * FROM activation_inventory WHERE id=?")
-    .get(inventoryId) as Record<string, unknown> | undefined;
+    .get(inventoryId)) as Record<string, unknown> | undefined;
   return r ? hydrate(r) : null;
 }
 
@@ -704,14 +704,14 @@ export function inventoryRow(inventoryId: string): ActivationInventory | null {
  * system observes outcomes, and letting a club overwrite its own execution
  * record would make the one honest input to the model the most flattering one.
  */
-export function recordExecution(
+export async function recordExecution(
   inventoryId: string,
   event: "offered" | "accepted" | "occurred" | "cancelled",
   at: string,
   attendance?: number,
-): ExecutionHistory | null {
-  inventoryInit();
-  const row = inventoryRow(inventoryId);
+): Promise<ExecutionHistory | null> {
+  (await inventoryInit());
+  const row = (await inventoryRow(inventoryId));
   if (!row) return null;
   const h = { ...row.historicalExecution };
   h[event] = (h[event] ?? 0) + 1;
@@ -724,9 +724,9 @@ export function recordExecution(
       h.medianAttendance =
         h.medianAttendance === null ? attendance : (h.medianAttendance + attendance) / 2;
   }
-  db()
+  (await db()
     .prepare("UPDATE activation_inventory SET historical_execution=?, updated_at=? WHERE id=?")
-    .run(JSON.stringify(h), timestamp(), inventoryId);
+    .run(JSON.stringify(h), timestamp(), inventoryId));
   return h;
 }
 

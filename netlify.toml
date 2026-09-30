@@ -1,10 +1,7 @@
-# Netlify hosts the MARKETING frontend only.
-#
-# The club app cannot run here: the backend keeps its record in a single SQLite
-# file and Netlify gives every function invocation a fresh, empty filesystem,
-# so web/lib/cec/db.ts refuses to open and /api/cec/* returns a 503 explaining
-# why. That is deliberate — see DEPLOY.md. Do not "fix" it with
-# CEC_ALLOW_EPHEMERAL=1, which only makes the data loss silent.
+# Operational routes require CEC_STORAGE=postgres, DATABASE_URL and verified TLS
+# configuration (DATABASE_SSL_CA_PEM). Apply migrations before deploying.
+# SQLite remains intentionally blocked on ephemeral serverless storage.
+# Python analytics requires a separate durable worker; see docs/33-postgres-migration.md.
 
 [build]
   # Every other path in this block is relative to `base`, so `publish` is

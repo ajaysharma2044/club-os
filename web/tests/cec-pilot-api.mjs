@@ -31,7 +31,7 @@ async function memberships(cookie=officer){return (await req('memberships/state'
 async function change(id,action,cookie=officer,status=200,extra={}){
   const rows=await memberships(cookie), target=rows.find(m=>m.user_id===id);
   const actor=(await req('state',null,cookie)).data.user.id;
-  return req('memberships/change',{user_id:id,action,version:target.version,actor_version:rows.find(m=>m.user_id===actor).version,password,...extra},cookie,status);
+  return (await req('memberships/change',{user_id:id,action,version:target.version,actor_version:rows.find(m=>m.user_id===actor).version,password,...extra},cookie,status));
 }
 await change(officerId,'remove',officer,409);
 await change(officerId,'demote',officer,409);
@@ -73,7 +73,7 @@ const race=await Promise.all(['race-a','race-b'].map(async email=>{
  const r=await fetch(origin+'/api/cec/invite/claim',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({code:single,name:'Race fixture',email:email+'@example.test',password})});return r.status;
 }));assert.deepEqual(race.sort(),[200,409]);checks++;
 const d=new DatabaseSync(process.env.CEC_DATABASE);
-assert.equal(d.prepare("SELECT COUNT(*) n FROM memberships WHERE organization_id='cornell-ec' AND role='officer' AND status='active'").get().n,1);checks++;
-assert.ok(d.prepare("SELECT COUNT(*) n FROM audit WHERE action='membership.transfer'").get().n);checks++;
+assert.equal((await d.prepare("SELECT COUNT(*) n FROM memberships WHERE organization_id='cornell-ec' AND role='officer' AND status='active'").get()).n,1);checks++;
+assert.ok((await d.prepare("SELECT COUNT(*) n FROM audit WHERE action='membership.transfer'").get()).n);checks++;
 d.close();
 console.log(`${checks} pilot assertions passed: secure invites, membership lifecycle, leadership transfer, and task revision/approval.`);

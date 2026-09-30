@@ -34,9 +34,9 @@ export type Response = (typeof RESPONSES)[number];
 export const OWN_CHOICE: Response[] = ["accepted", "declined", "expired"];
 
 let ready = false;
-export function opportunitiesInit() {
+export async function opportunitiesInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS opportunities(
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -52,21 +52,21 @@ CREATE TABLE IF NOT EXISTS opportunities(
   context TEXT NOT NULL DEFAULT '{}');
 CREATE INDEX IF NOT EXISTS opp_person ON opportunities(offered_to,kind,observed_at);
 CREATE UNIQUE INDEX IF NOT EXISTS opp_open ON opportunities(kind,object_type,object_id,offered_to) WHERE response='pending';
-`);
+`));
   ready = true;
 }
 
-function episodeFor(objectType: string, objectId: string): string {
-  const row = db()
+async function episodeFor(objectType: string, objectId: string): Promise<string> {
+  const row = (await db()
     .prepare(
       "SELECT episode_id FROM episode_objects WHERE object_type=? AND object_id=?",
     )
-    .get(objectType, objectId) as { episode_id: string } | undefined;
+    .get(objectType, objectId)) as { episode_id: string } | undefined;
   return row?.episode_id || "";
 }
 
 /** Record that something was offered to someone. Idempotent while pending. */
-export function offer(
+export async function offer(
   u: User,
   o: {
     kind: OpportunityKind;
@@ -77,19 +77,19 @@ export function offer(
     context?: Record<string, unknown>;
     response?: Response; // for offers that are accepted in the same breath
   },
-): string {
-  opportunitiesInit();
+): Promise<string> {
+  (await opportunitiesInit());
   if (!OPPORTUNITY_KINDS.includes(o.kind)) fail("Unknown opportunity kind.");
-  const existing = db()
+  const existing = (await db()
     .prepare(
       "SELECT id FROM opportunities WHERE kind=? AND object_type=? AND object_id=? AND offered_to=? AND response='pending'",
     )
-    .get(o.kind, o.objectType, o.objectId, o.to) as { id: string } | undefined;
+    .get(o.kind, o.objectType, o.objectId, o.to)) as { id: string } | undefined;
   if (existing) return existing.id;
   const key = id();
   const now = timestamp();
   const response = o.response || "pending";
-  db()
+  (await db()
     .prepare(
       "INSERT INTO opportunities(id,kind,object_type,object_id,offered_to,offered_by,episode_id,offered_at,observed_at,response,responded_at,context) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     )
@@ -100,44 +100,44 @@ export function offer(
       o.objectId,
       o.to,
       u.id,
-      o.episode ?? episodeFor(o.objectType, o.objectId),
+      o.episode ?? (await episodeFor(o.objectType, o.objectId)),
       now,
       now,
       response,
       response === "pending" ? null : now,
       JSON.stringify(o.context || {}),
-    );
-  emit(u, "commitment_offer", o.to, key, {
+    ));
+  (await emit(u, "commitment_offer", o.to, key, {
     status: response === "pending" ? "offered" : response,
     offer_kind: o.kind,
-  });
+  }));
   return key;
 }
 
 /** Record the response to a pending offer. No-op if there is none. */
-export function respond(
+export async function respond(
   u: User,
   r: { objectType: string; objectId: string; to: string; response: Response; kind?: OpportunityKind },
-): boolean {
-  opportunitiesInit();
+): Promise<boolean> {
+  (await opportunitiesInit());
   if (!RESPONSES.includes(r.response) || r.response === "pending")
     fail("Unknown response.");
-  const row = db()
+  const row = (await db()
     .prepare(
       `SELECT id,kind FROM opportunities WHERE object_type=? AND object_id=? AND offered_to=? AND response='pending'${r.kind ? " AND kind=?" : ""} ORDER BY offered_at DESC LIMIT 1`,
     )
-    .get(...([r.objectType, r.objectId, r.to, ...(r.kind ? [r.kind] : [])] as any[])) as
+    .get(...([r.objectType, r.objectId, r.to, ...(r.kind ? [r.kind] : [])] as any[]))) as
     | { id: string; kind: string }
     | undefined;
   if (!row) return false;
   const now = timestamp();
-  db()
+  (await db()
     .prepare("UPDATE opportunities SET response=?,responded_at=? WHERE id=?")
-    .run(r.response, now, row.id);
-  emit(u, "commitment_offer", r.to, row.id, {
+    .run(r.response, now, row.id));
+  (await emit(u, "commitment_offer", r.to, row.id, {
     status: r.response,
     offer_kind: row.kind,
-  });
+  }));
   return true;
 }
 
@@ -145,26 +145,26 @@ export function respond(
  * Offers nobody answered. Silence is a response, and a systematically
  * different one from a decline — which is exactly why it gets its own state.
  */
-export function expireStale(u: User, days = 14): number {
-  opportunitiesInit();
+export async function expireStale(u: User, days = 14): Promise<number> {
+  (await opportunitiesInit());
   const cutoff = new Date(Date.now() - days * 86400e3).toISOString();
-  const rows = db()
+  const rows = (await db()
     .prepare(
       "SELECT id,offered_to,kind FROM opportunities WHERE response='pending' AND offered_at<?",
     )
-    .all(cutoff) as { id: string; offered_to: string; kind: string }[];
+    .all(cutoff)) as { id: string; offered_to: string; kind: string }[];
   const now = timestamp();
   const upd = db().prepare(
     "UPDATE opportunities SET response='expired',responded_at=? WHERE id=?",
   );
   for (const r of rows) {
-    upd.run(now, r.id);
-    emit(u, "commitment_offer", r.offered_to, r.id, {
+    (await upd.run(now, r.id));
+    (await emit(u, "commitment_offer", r.offered_to, r.id, {
       status: "expired",
       offer_kind: r.kind,
-    });
+    }));
   }
-  if (rows.length) audit(u, "opportunity.expire", "batch", { count: rows.length });
+  if (rows.length) (await audit(u, "opportunity.expire", "batch", { count: rows.length }));
   return rows.length;
 }
 
@@ -184,13 +184,13 @@ export type TakeRate = {
 };
 
 /** Per-kind take rates for a person as of a point in time (observed_at). */
-export function takeRates(userId: string, asOf?: string): TakeRate[] {
-  opportunitiesInit();
-  const rows = db()
+export async function takeRates(userId: string, asOf?: string): Promise<TakeRate[]> {
+  (await opportunitiesInit());
+  const rows = (await db()
     .prepare(
       `SELECT kind,response FROM opportunities WHERE offered_to=?${asOf ? " AND observed_at<=?" : ""}`,
     )
-    .all(...([userId, ...(asOf ? [asOf] : [])] as any[])) as {
+    .all(...([userId, ...(asOf ? [asOf] : [])] as any[]))) as {
     kind: string;
     response: Response;
   }[];
@@ -226,46 +226,46 @@ export function takeRates(userId: string, asOf?: string): TakeRate[] {
   return [...by.values()];
 }
 
-export function opportunityState(u: User) {
-  officer(u);
-  opportunitiesInit();
-  const totals = db()
+export async function opportunityState(u: User) {
+  (await officer(u));
+  (await opportunitiesInit());
+  const totals = (await db()
     .prepare(
       "SELECT kind,response,COUNT(*) n FROM opportunities GROUP BY kind,response",
     )
-    .all() as { kind: string; response: string; n: number }[];
-  const stale = db()
+    .all()) as { kind: string; response: string; n: number }[];
+  const stale = (await db()
     .prepare(
       "SELECT COUNT(*) n FROM opportunities WHERE response='pending' AND offered_at<?",
     )
-    .get(new Date(Date.now() - 14 * 86400e3).toISOString()) as { n: number };
+    .get(new Date(Date.now() - 14 * 86400e3).toISOString())) as { n: number };
   return { totals, stale_pending: stale.n, kinds: OPPORTUNITY_KINDS };
 }
 
-export function opportunities(u: User, action: string, b: any) {
-  officer(u);
+export async function opportunities(u: User, action: string, b: any) {
+  (await officer(u));
   if (action === "offer") {
-    const key = offer(u, {
+    const key = (await offer(u, {
       kind: text(b.kind, 32) as OpportunityKind,
       objectType: text(b.object_type, 32),
       objectId: text(b.object_id, 64),
       to: text(b.to, 64),
       context: typeof b.context === "object" && b.context ? b.context : {},
-    });
-    audit(u, "opportunity.offer", key, { kind: b.kind, to: b.to });
+    }));
+    (await audit(u, "opportunity.offer", key, { kind: b.kind, to: b.to }));
     return { id: key };
   }
   if (action === "respond") {
-    const done = respond(u, {
+    const done = (await respond(u, {
       objectType: text(b.object_type, 32),
       objectId: text(b.object_id, 64),
       to: text(b.to, 64),
       response: text(b.response, 16) as Response,
       kind: b.kind ? (text(b.kind, 32) as OpportunityKind) : undefined,
-    });
-    audit(u, "opportunity.respond", text(b.object_id, 64), { response: b.response });
+    }));
+    (await audit(u, "opportunity.respond", text(b.object_id, 64), { response: b.response }));
     return { ok: done };
   }
-  if (action === "expire") return { expired: expireStale(u, Number(b.days) || 14) };
+  if (action === "expire") return { expired: (await expireStale(u, Number(b.days) || 14)) };
   fail("Unknown opportunity action.", 404);
 }

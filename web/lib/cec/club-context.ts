@@ -1,3 +1,4 @@
+import { asyncMap } from "./async";
 // Assembling the whole context for one club at one moment.
 //
 // This is the call a planner, a UI or a backtest makes. Everything below it is
@@ -78,12 +79,12 @@ export type ClubContext = {
  * history does not pollute the store with rows stamped as if we had known
  * things at the time.
  */
-export function assembleContext(
+export async function assembleContext(
   clubIdOrSlug: string,
   at: string,
   inputs: ContextInputs = {},
   opts: { persist?: boolean } = {},
-): ClubContext {
+): Promise<ClubContext> {
   const c = club(clubIdOrSlug);
   if (!c) throw new Error(`Unknown club "${clubIdOrSlug}".`);
   const inst = institution(c.institutionId);
@@ -105,18 +106,18 @@ export function assembleContext(
   const factors: FactorValue[] = [];
   const gaps: { factor: string; reason: string }[] = [];
 
-  const run = <I>(def: (typeof CONTEXT_FACTORS)[number], input: I) => {
+  const run = async <I>(def: (typeof CONTEXT_FACTORS)[number], input: I) => {
     const v = computeFactor(def as any, c.institutionId, input, at);
     factors.push(v);
     if (v.value === null) gaps.push({ factor: v.factor, reason: v.reading });
-    if (persist) writeFactorValue(v, { occurredAt: at, observedAt: at });
+    if (persist) (await writeFactorValue(v, { occurredAt: at, observedAt: at }));
     return v;
   };
 
   // Regime first: the academic factor needs it, and it carries the baseline
   // pressure already priced in so the two cannot double-count.
   const regime = term
-    ? run(regimeTurnoutPrior, { calendar: term.calendar, at })
+    ? (await run(regimeTurnoutPrior, { calendar: term.calendar, at }))
     : null;
   if (!term)
     gaps.push({
@@ -125,25 +126,25 @@ export function assembleContext(
     });
 
   if (term) {
-    run(assessmentPressure, { calendar: term.calendar, at });
-    run(academicTurnoutFactor, {
+    (await run(assessmentPressure, { calendar: term.calendar, at }));
+    (await run(academicTurnoutFactor, {
       regime: (regime?.basis?.regime as any) ?? "normal_term",
       calendar: term.calendar,
       at,
       heatmap,
       offsetHours,
-    });
+    }));
   }
-  if (heatmap) run(classConflictIntensity, { heatmap, at, offsetHours });
+  if (heatmap) (await run(classConflictIntensity, { heatmap, at, offsetHours }));
   else
     gaps.push({
       factor: "class_conflict_intensity",
       reason: "No course roster supplied for this moment, so class conflict is unknown rather than clear.",
     });
 
-  run(competingEventPressure, { events, at, excludeId: inputs.excludeEventId });
+  (await run(competingEventPressure, { events, at, excludeId: inputs.excludeEventId }));
   if (inputs.weather?.length)
-    run(weatherTurnoutFactor, { hours: inputs.weather, at, outdoors: inputs.outdoors });
+    (await run(weatherTurnoutFactor, { hours: inputs.weather, at, outdoors: inputs.outdoors }));
   else
     gaps.push({
       factor: "weather_turnout_factor",
@@ -199,11 +200,11 @@ export function rosterFor(clubIdOrSlug: string, at: string, available: string[])
  * weigh weather completely differently — and that judgement belongs with the
  * planner that knows the event type, not here.
  */
-export function contextAcrossSlots(
+export async function contextAcrossSlots(
   clubIdOrSlug: string,
   slots: string[],
   inputs: ContextInputs = {},
   opts: { persist?: boolean } = {},
-): ClubContext[] {
-  return slots.map((at) => assembleContext(clubIdOrSlug, at, inputs, opts));
+): Promise<ClubContext[]> {
+  return (await asyncMap(slots, async (at) => (await assembleContext(clubIdOrSlug, at, inputs, opts))));
 }

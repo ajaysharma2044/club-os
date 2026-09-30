@@ -633,9 +633,9 @@ export function cateringOrder(forecast: Forecast, costRatio: CostRatio): FoodOrd
 // ================================================================== storage
 
 let ready = false;
-export function demandInit() {
+export async function demandInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS economic_needs(
   id TEXT PRIMARY KEY,
   club_id TEXT NOT NULL,
@@ -659,14 +659,14 @@ CREATE TABLE IF NOT EXISTS economic_needs(
   UNIQUE(club_id,event_id,category));
 CREATE INDEX IF NOT EXISTS econ_need_club ON economic_needs(club_id,status,category);
 CREATE INDEX IF NOT EXISTS econ_need_event ON economic_needs(event_id);
-`);
+`));
   // Additive migration for databases created before unit/method existed. Both
   // are descriptive, so an old row reads as an empty string rather than a lie.
-  const cols = db().prepare("PRAGMA table_info(economic_needs)").all() as { name: string }[];
+  const cols = (await db().prepare("PRAGMA table_info(economic_needs)").all()) as { name: string }[];
   if (!cols.some((c) => c.name === "unit"))
-    db().exec("ALTER TABLE economic_needs ADD COLUMN unit TEXT NOT NULL DEFAULT ''");
+    (await db().exec("ALTER TABLE economic_needs ADD COLUMN unit TEXT NOT NULL DEFAULT ''"));
   if (!cols.some((c) => c.name === "method"))
-    db().exec("ALTER TABLE economic_needs ADD COLUMN method TEXT NOT NULL DEFAULT ''");
+    (await db().exec("ALTER TABLE economic_needs ADD COLUMN method TEXT NOT NULL DEFAULT ''"));
   ready = true;
 }
 
@@ -721,9 +721,9 @@ function toNeed(r: NeedRow): PotentialEconomicNeed {
  * next forecast refresh, and the club would have to keep saying no to the same
  * row until it stopped reading them.
  */
-export function recordInferredNeeds(u: User, needs: PotentialEconomicNeed[]): string[] {
-  officer(u);
-  demandInit();
+export async function recordInferredNeeds(u: User, needs: PotentialEconomicNeed[]): Promise<string[]> {
+  (await officer(u));
+  (await demandInit());
   const insert = db().prepare(
     `INSERT INTO economic_needs(id,club_id,event_id,category,status,quantity_low,quantity_high,unit,method,confidence,basis,inferred_at,notes)
      VALUES (?,?,?,?,'inferred',?,?,?,?,?,?,?,'')
@@ -743,7 +743,7 @@ export function recordInferredNeeds(u: User, needs: PotentialEconomicNeed[]): st
   const ids: string[] = [];
   for (const n of needs) {
     if (!NEED_CATEGORIES.includes(n.category)) fail(`Unknown need category "${n.category}".`);
-    insert.run(
+    (await insert.run(
       id(),
       n.clubId,
       n.eventId,
@@ -755,18 +755,18 @@ export function recordInferredNeeds(u: User, needs: PotentialEconomicNeed[]): st
       n.confidence,
       n.basis,
       n.inferredAt || timestamp(),
-    );
-    const row = find.get(n.clubId, n.eventId, n.category) as { id: string } | undefined;
+    ));
+    const row = (await find.get(n.clubId, n.eventId, n.category)) as { id: string } | undefined;
     if (row) ids.push(row.id);
   }
   if (ids.length)
-    audit(u, "economic_need.infer", ids[0], { count: ids.length, event_id: needs[0]?.eventId });
+    (await audit(u, "economic_need.infer", ids[0], { count: ids.length, event_id: needs[0]?.eventId }));
   return ids;
 }
 
-export function need(needId: string): PotentialEconomicNeed {
-  demandInit();
-  const row = db().prepare("SELECT * FROM economic_needs WHERE id=?").get(needId) as
+export async function need(needId: string): Promise<PotentialEconomicNeed> {
+  (await demandInit());
+  const row = (await db().prepare("SELECT * FROM economic_needs WHERE id=?").get(needId)) as
     | NeedRow
     | undefined;
   if (!row) fail("Need not found.", 404);
@@ -778,14 +778,14 @@ export function need(needId: string): PotentialEconomicNeed {
  * opportunity, and it takes a User because somebody has to be accountable for
  * it by name.
  */
-export function confirmNeed(
+export async function confirmNeed(
   u: User,
   needId: string,
   o: { notes?: string; quantityLow?: number; quantityHigh?: number } = {},
-): PotentialEconomicNeed {
-  officer(u);
-  demandInit();
-  const current = need(needId);
+): Promise<PotentialEconomicNeed> {
+  (await officer(u));
+  (await demandInit());
+  const current = (await need(needId));
   const now = timestamp();
   // The club may correct the quantity while confirming — it knows things the
   // forecast does not, and a confirmation the club cannot edit is a rubber
@@ -795,14 +795,14 @@ export function confirmNeed(
     ? Number(o.quantityHigh)
     : current.quantityHigh;
   if (high < low) fail("The upper quantity must not be below the lower one.");
-  db()
+  (await db()
     .prepare(
       `UPDATE economic_needs SET status='club_confirmed',confirmed_at=?,confirmed_by=?,declined_at=NULL,
        quantity_low=?,quantity_high=?,notes=? WHERE id=?`,
     )
-    .run(now, u.id, low, high, String(o.notes || current.notes || "").slice(0, 2000), needId);
-  audit(u, "economic_need.confirm", needId, { category: current.category });
-  return need(needId);
+    .run(now, u.id, low, high, String(o.notes || current.notes || "").slice(0, 2000), needId));
+  (await audit(u, "economic_need.confirm", needId, { category: current.category }));
+  return (await need(needId));
 }
 
 /**
@@ -811,40 +811,40 @@ export function confirmNeed(
  * `needConfirmationRateFactor` below), and a deleted row would be re-inferred
  * next week as though the club had never answered.
  */
-export function declineNeed(u: User, needId: string, notes = ""): PotentialEconomicNeed {
-  officer(u);
-  demandInit();
-  const current = need(needId);
-  db()
+export async function declineNeed(u: User, needId: string, notes = ""): Promise<PotentialEconomicNeed> {
+  (await officer(u));
+  (await demandInit());
+  const current = (await need(needId));
+  (await db()
     .prepare(
       `UPDATE economic_needs SET status='declined',declined_at=?,confirmed_at=NULL,confirmed_by=NULL,notes=? WHERE id=?`,
     )
-    .run(timestamp(), String(notes || current.notes || "").slice(0, 2000), needId);
-  audit(u, "economic_need.decline", needId, { category: current.category });
-  return need(needId);
+    .run(timestamp(), String(notes || current.notes || "").slice(0, 2000), needId));
+  (await audit(u, "economic_need.decline", needId, { category: current.category }));
+  return (await need(needId));
 }
 
-export function needsForEvent(eventId: string): PotentialEconomicNeed[] {
-  demandInit();
+export async function needsForEvent(eventId: string): Promise<PotentialEconomicNeed[]> {
+  (await demandInit());
   return (
-    db()
+    (await db()
       .prepare("SELECT * FROM economic_needs WHERE event_id=? ORDER BY category")
-      .all(eventId) as NeedRow[]
+      .all(eventId)) as NeedRow[]
   ).map(toNeed);
 }
 
-export function needsForClub(
+export async function needsForClub(
   clubId: string,
   o: { status?: NeedStatus } = {},
-): PotentialEconomicNeed[] {
-  demandInit();
+): Promise<PotentialEconomicNeed[]> {
+  (await demandInit());
   const rows = o.status
-    ? db()
+    ? (await db()
         .prepare("SELECT * FROM economic_needs WHERE club_id=? AND status=? ORDER BY category")
-        .all(clubId, o.status)
-    : db()
+        .all(clubId, o.status))
+    : (await db()
         .prepare("SELECT * FROM economic_needs WHERE club_id=? ORDER BY category")
-        .all(clubId);
+        .all(clubId));
   return (rows as NeedRow[]).map(toNeed);
 }
 
@@ -852,17 +852,17 @@ export function needsForClub(
  * Every need a club has actually said yes to, across clubs. The input to group
  * purchasing — and note that it can only ever return 'club_confirmed' rows.
  */
-export function confirmedNeeds(o: { category?: NeedCategory } = {}): PotentialEconomicNeed[] {
-  demandInit();
+export async function confirmedNeeds(o: { category?: NeedCategory } = {}): Promise<PotentialEconomicNeed[]> {
+  (await demandInit());
   const rows = o.category
-    ? db()
+    ? (await db()
         .prepare(
           "SELECT * FROM economic_needs WHERE status='club_confirmed' AND category=? ORDER BY club_id",
         )
-        .all(o.category)
-    : db()
+        .all(o.category))
+    : (await db()
         .prepare("SELECT * FROM economic_needs WHERE status='club_confirmed' ORDER BY club_id")
-        .all();
+        .all());
   return (rows as NeedRow[]).map(toNeed);
 }
 

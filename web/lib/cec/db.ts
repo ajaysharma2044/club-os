@@ -1,3 +1,4 @@
+import { postgresDb, postgresSavepoint, usesPostgres } from "./postgres/runtime";
 import { migrateOrganizations, migrateMembershipControls, migrateEmail, installCECGuards } from "./migrations";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
@@ -86,6 +87,7 @@ function refuseEphemeralStorage(file: string) {
 
 let connection: DatabaseSync;
 export function db() {
+  if (usesPostgres()) return postgresDb as unknown as DatabaseSync;
   if (connection) return connection;
   const file =
     process.env.CEC_DATABASE || resolve(process.cwd(), ".data/cec.sqlite");
@@ -122,17 +124,18 @@ export function db() {
   } catch (error) { connection.close(); connection = undefined as any; throw error; }
 }
 let transactionDepth = 0;
-export function tx<T>(f: () => T): T {
+export async function tx<T>(f: () => T | Promise<T>): Promise<T> {
+  if (usesPostgres()) return postgresSavepoint(f);
   const d = db(), depth = transactionDepth++;
   const savepoint = `cec_nested_${depth}`;
   try {
-    d.exec(depth ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
+    (await d.exec(depth ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE"));
     try {
-      const value = f();
-      d.exec(depth ? `RELEASE ${savepoint}` : "COMMIT");
+      const value = await f();
+      (await d.exec(depth ? `RELEASE ${savepoint}` : "COMMIT"));
       return value;
     } catch (error) {
-      d.exec(depth ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+      (await d.exec(depth ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK"));
       throw error;
     }
   } finally { transactionDepth--; }
@@ -191,58 +194,58 @@ export function verify(value: string, stored: string) {
     return false;
   }
 }
-export function user(token: string | undefined): User | null {
+export async function user(token: string | undefined): Promise<User | null> {
   if (!token) return null;
   return (
-    (db()
+    ((await db()
       .prepare(
         "SELECT u.id,u.name,u.email,u.role,u.interests,u.shared FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>? AND u.role IN ('applicant','member','officer')",
       )
-      .get(hash(token), Date.now()) as User) || null
+      .get(hash(token), Date.now())) as User) || null
   );
 }
-export function session(userId: string) {
+export async function session(userId: string) {
   const token = randomBytes(32).toString("hex");
-  db()
+  (await db()
     .prepare("INSERT INTO sessions VALUES (?,?,?)")
-    .run(hash(token), userId, Date.now() + 7 * 86400000);
+    .run(hash(token), userId, Date.now() + 7 * 86400000));
   return token;
 }
-export function clubRole(userId: string): string | undefined {
-  return (db().prepare("SELECT role FROM users WHERE id=? AND role IN ('applicant','member','officer')").get(userId) as any)?.role;
+export async function clubRole(userId: string): Promise<string | undefined> {
+  return ((await db().prepare("SELECT role FROM users WHERE id=? AND role IN ('applicant','member','officer')").get(userId)) as any)?.role;
 }
-export function officer(u: User) {
-  if (clubRole(u.id) !== "officer") fail("Officer access required.", 403);
+export async function officer(u: User) {
+  if ((await clubRole(u.id)) !== "officer") fail("Officer access required.", 403);
 }
-export function member(u: User) {
-  if (!["officer", "member"].includes(clubRole(u.id) || "")) fail("Club membership required.", 403);
+export async function member(u: User) {
+  if (!["officer", "member"].includes((await clubRole(u.id)) || "")) fail("Club membership required.", 403);
 }
-export function throttle(key: string, max = 15) {
+export async function throttle(key: string, max = 15) {
   const d = db();
   const now = Date.now();
-  d.prepare("DELETE FROM ratelimits WHERE reset<?").run(now);
-  const row = d.prepare("SELECT * FROM ratelimits WHERE key=?").get(key) as any;
+  (await d.prepare("DELETE FROM ratelimits WHERE reset<?").run(now));
+  const row = (await d.prepare("SELECT * FROM ratelimits WHERE key=?").get(key)) as any;
   if (row && row.hits >= max)
     fail("Too many attempts. Try again in 15 minutes.", 429);
-  d.prepare(
-    "INSERT INTO ratelimits VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1",
-  ).run(key, now + 900000);
+  (await d.prepare(
+    "INSERT INTO ratelimits VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET hits=ratelimits.hits+1",
+  ).run(key, now + 900000));
 }
-export function audit(
+export async function audit(
   u: User,
   action: string,
   object: string,
   details: Record<string, unknown> = {},
 ) {
   const key = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO audit(id,actor,action,object_id,at,details) VALUES (?,?,?,?,?,?)",
     )
-    .run(key, u.id, action, object, timestamp(), JSON.stringify(details));
+    .run(key, u.id, action, object, timestamp(), JSON.stringify(details)));
   return key;
 }
-export function emit(
+export async function emit(
   u: User,
   kind: string,
   subject: string,
@@ -261,29 +264,29 @@ export function emit(
     occurred_at: timestamp(),
     payload,
   };
-  db()
+  (await db()
     .prepare("INSERT INTO outbox(id,body) VALUES (?,?)")
-    .run(key, JSON.stringify({ ...body, _actor: u.id }));
+    .run(key, JSON.stringify({ ...body, _actor: u.id })));
 }
-export function items(kind?: string): Item[] {
+export async function items(kind?: string): Promise<Item[]> {
   const rows = kind
-    ? db()
+    ? (await db()
         .prepare("SELECT * FROM items WHERE kind=? ORDER BY created_at DESC")
-        .all(kind)
-    : db().prepare("SELECT * FROM items ORDER BY created_at DESC").all();
+        .all(kind))
+    : (await db().prepare("SELECT * FROM items ORDER BY created_at DESC").all());
   return rows.map((r: any) => ({ ...r, data: JSON.parse(r.data) }));
 }
-export function item(key: string, kind?: string): Item {
-  const row = db().prepare("SELECT * FROM items WHERE id=?").get(key) as any;
+export async function item(key: string, kind?: string): Promise<Item> {
+  const row = (await db().prepare("SELECT * FROM items WHERE id=?").get(key)) as any;
   if (!row || (kind && row.kind !== kind)) fail("Record not found.", 404);
   return { ...row, data: JSON.parse(row.data) };
 }
-export function entity(
+export async function entity(
   u: User,
   kind: string,
   input: Record<string, any>,
   previous?: Item,
-): Record<string, any> {
+): Promise<Record<string, any>> {
   const title = text(input.title, 160);
   const base = { title };
   switch (kind) {
@@ -319,12 +322,12 @@ export function entity(
         fail("Invalid task status.");
       const assignee = text(input.assignee);
       if (
-        !db()
+        !(await db()
           .prepare("SELECT 1 FROM users WHERE id=? AND role IN ('member','officer')")
-          .get(assignee)
+          .get(assignee))
       )
         fail("Select a member.");
-      if (input.project_id) item(input.project_id, "project");
+      if (input.project_id) (await item(input.project_id, "project"));
       return {
         ...base,
         status: input.status,
@@ -372,7 +375,7 @@ export function entity(
       };
     case "deal": {
       const contact_id = text(input.contact_id);
-      item(contact_id, "contact");
+      (await item(contact_id, "contact"));
       return {
         ...base,
         contact_id,
@@ -422,9 +425,9 @@ export function entity(
       }));
       if (
         previous &&
-        db()
+        (await db()
           .prepare("SELECT 1 FROM responses WHERE form_id=?")
-          .get(previous.id) &&
+          .get(previous.id)) &&
         JSON.stringify(fields) !== JSON.stringify(previous.data.fields)
       )
         fail(
@@ -454,43 +457,43 @@ function cents(v: any) {
     fail("Enter a nonnegative amount with at most two decimals.");
   return Math.round(Number(v) * 100);
 }
-export function createItem(
+export async function createItem(
   u: User,
   kind: string,
   data: Record<string, any>,
   key = id(),
 ) {
   const at = timestamp();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO items(id,kind,owner,data,created_at,updated_at) VALUES (?,?,?,?,?,?)",
     )
-    .run(key, kind, u.id, JSON.stringify(data), at, at);
-  return item(key);
+    .run(key, kind, u.id, JSON.stringify(data), at, at));
+  return (await item(key));
 }
-export function publishRecord(u: User, r: Item) {
+export async function publishRecord(u: User, r: Item) {
   if (r.kind === "event")
-    emit(u, "event", "cornell-ec", r.id, {
+    (await emit(u, "event", "cornell-ec", r.id, {
       title: r.data.title,
       status: r.data.status,
       starts_at: r.data.starts_at,
-    });
+    }));
   if (r.kind === "task")
-    emit(u, "task", r.data.assignee, r.id, {
+    (await emit(u, "task", r.data.assignee, r.id, {
       title: r.data.title,
       status: r.data.status,
       due_at: r.data.due_at,
-    });
+    }));
   if (r.kind === "deal")
-    emit(u, "opportunity", "cornell-ec", r.id, {
+    (await emit(u, "opportunity", "cornell-ec", r.id, {
       title: r.data.title,
       status: r.data.stage,
-    });
+    }));
   if (r.kind === "meeting" && r.data.decision)
-    emit(u, "decision", "cornell-ec", r.id, {
+    (await emit(u, "decision", "cornell-ec", r.id, {
       title: r.data.decision.slice(0, 1000),
       status: "confirmed",
-    });
+    }));
   if (r.kind === "doc")
-    emit(u, "artifact", u.id, r.id, { status: "submitted", url: r.data.url });
+    (await emit(u, "artifact", u.id, r.id, { status: "submitted", url: r.data.url }));
 }

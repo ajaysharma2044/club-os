@@ -84,8 +84,8 @@ export type PlanningReadiness = {
  * Surfaced as its own call so an officer can find out WHY a recommendation is
  * thin without having to request one and read the caveats.
  */
-export function planningReadiness(u: User, at?: string): PlanningReadiness {
-  member(u);
+export async function planningReadiness(u: User, at?: string): Promise<PlanningReadiness> {
+  (await member(u));
   const c = club("cec");
   if (!c) fail("Club is not configured.", 500);
   const when = at || timestamp();
@@ -93,9 +93,9 @@ export function planningReadiness(u: User, at?: string): PlanningReadiness {
   const term = calendarAt(c.institutionId, when);
   const missing: PlanningReadiness["missing"] = [];
 
-  const terms = storedTerms(c.institutionId);
+  const terms = (await storedTerms(c.institutionId));
   const code = rosterAt(when, terms);
-  const snap = code ? rosterSnapshot(c.institutionId, code, when) : null;
+  const snap = code ? (await rosterSnapshot(c.institutionId, code, when)) : null;
 
   if (!term)
     missing.push({
@@ -114,7 +114,7 @@ export function planningReadiness(u: User, at?: string): PlanningReadiness {
 
   let campusEvents = 0;
   try {
-    campusEvents = campusEventsAsOf(c.institutionId, when).length;
+    campusEvents = (await campusEventsAsOf(c.institutionId, when)).length;
   } catch {
     campusEvents = 0;
   }
@@ -149,8 +149,8 @@ export type SlotAdviceResult = SlotRecommendation & {
  * and it produces a recommendation an officer will act on. A member asking
  * about their own availability is a different question with a different answer.
  */
-export function slotAdvice(u: User, b: any): SlotAdviceResult {
-  officer(u);
+export async function slotAdvice(u: User, b: any): Promise<SlotAdviceResult> {
+  (await officer(u));
   const c = club("cec");
   if (!c) fail("Club is not configured.", 500);
   const inst = institution(c.institutionId)!;
@@ -165,7 +165,7 @@ export function slotAdvice(u: User, b: any): SlotAdviceResult {
       fail(`"${s}" is not a time this system can read.`, 422);
 
   const asOf = b?.as_of ? String(b.as_of) : timestamp();
-  const readiness = planningReadiness(u, candidates[0]);
+  const readiness = (await planningReadiness(u, candidates[0]));
 
   // Assemble whatever the club actually has. Anything absent stays absent.
   const term = calendarAt(c.institutionId, candidates[0]);
@@ -175,16 +175,16 @@ export function slotAdvice(u: User, b: any): SlotAdviceResult {
       422,
     );
 
-  const terms = storedTerms(c.institutionId);
+  const terms = (await storedTerms(c.institutionId));
   const code = rosterAt(candidates[0], terms);
-  const snap = code ? rosterSnapshot(c.institutionId, code, asOf) : null;
+  const snap = code ? (await rosterSnapshot(c.institutionId, code, asOf)) : null;
   // Restrict to the departments this club draws from. Averaging over the whole
   // catalogue washes out the signal that matters.
   const heatmap = snap ? meetingHeatmap(snap.courses, { subjects: c.drawsFrom }) : null;
 
   let campusEvents: CampusEvent[] = [];
   try {
-    campusEvents = toCampusEvents(campusEventsAsOf(c.institutionId, asOf));
+    campusEvents = toCampusEvents((await campusEventsAsOf(c.institutionId, asOf)));
   } catch {
     campusEvents = [];
   }
@@ -193,11 +193,11 @@ export function slotAdvice(u: User, b: any): SlotAdviceResult {
   // nobody has yet opened a sign-in window does not have it. Calling the init
   // is the codebase's idiom for this (scheduling.ts calls evidenceInit() for
   // the same reason); assuming the table exists throws on a fresh install.
-  checkinInit();
+  (await checkinInit());
 
   // Comparable past events, for the conversion posterior: RSVPs against the
   // attendance we actually recorded. Only closed events with both numbers.
-  const comparables = db()
+  const comparables = (await db()
     .prepare(
       `SELECT i.id,
               (SELECT COUNT(*) FROM rsvps r WHERE r.event_id=i.id AND r.status='yes') rsvps,
@@ -206,7 +206,7 @@ export function slotAdvice(u: User, b: any): SlotAdviceResult {
        WHERE i.kind='event' AND i.created_at <= ?
        ORDER BY i.created_at DESC LIMIT 40`,
     )
-    .all(asOf) as { rsvps: number; attended: number }[];
+    .all(asOf)) as { rsvps: number; attended: number }[];
   const usable = comparables.filter((r) => r.rsvps > 0 && r.attended <= r.rsvps);
 
   const context: SchedulingContext = {
@@ -238,10 +238,10 @@ export function slotAdvice(u: User, b: any): SlotAdviceResult {
 // ==================================================================== router
 
 export async function planning(u: User, action: string, b: any): Promise<any> {
-  if (action === "readiness") return planningReadiness(u, b?.at ? String(b.at) : undefined);
-  if (action === "slots") return slotAdvice(u, b);
+  if (action === "readiness") return (await planningReadiness(u, b?.at ? String(b.at) : undefined));
+  if (action === "slots") return (await slotAdvice(u, b));
   if (action === "roster") {
-    officer(u);
+    (await officer(u));
     const { ingestCornellRoster } = await import("../context/roster");
     const c = club("cec")!;
     const subjects: string[] = Array.isArray(b?.subjects) && b.subjects.length
@@ -250,9 +250,9 @@ export async function planning(u: User, action: string, b: any): Promise<any> {
     return ingestCornellRoster(u, text(b?.term, 8), subjects);
   }
   if (action === "roster/summary") {
-    member(u);
+    (await member(u));
     const c = club("cec")!;
-    return { institution: c.institutionId, terms: rosterSummary(c.institutionId) };
+    return { institution: c.institutionId, terms: (await rosterSummary(c.institutionId)) };
   }
   fail("Unknown planning action.", 404);
 }

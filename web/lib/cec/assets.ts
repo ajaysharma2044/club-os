@@ -97,9 +97,9 @@ const CURRENT_ROLES = "('officer','member')";
 const MONTH_MS = 30.436875 * 86400e3; // mean Gregorian month
 
 let ready = false;
-export function assetsInit() {
+export async function assetsInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS assets(
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS asset_access(
   granted_by TEXT NOT NULL,
   PRIMARY KEY(asset_id,user_id));
 CREATE INDEX IF NOT EXISTS asset_access_user ON asset_access(user_id);
-`);
+`));
   ready = true;
 }
 
@@ -139,19 +139,19 @@ export type AssetRow = {
   updated_at: string;
 };
 
-export function asset(key: string): AssetRow {
-  assetsInit();
-  const row = db().prepare("SELECT * FROM assets WHERE id=?").get(key) as
+export async function asset(key: string): Promise<AssetRow> {
+  (await assetsInit());
+  const row = (await db().prepare("SELECT * FROM assets WHERE id=?").get(key)) as
     | AssetRow
     | undefined;
   if (!row) fail("That asset is not in the register.", 404);
   return row!;
 }
 
-function person(userId: string): { id: string; name: string; role: string } {
-  const row = db()
+async function person(userId: string): Promise<{ id: string; name: string; role: string }> {
+  const row = (await db()
     .prepare("SELECT id,name,role FROM users WHERE id=?")
-    .get(userId) as { id: string; name: string; role: string } | undefined;
+    .get(userId)) as { id: string; name: string; role: string } | undefined;
   if (!row) fail("That person is not in the directory.", 404);
   return row!;
 }
@@ -170,24 +170,24 @@ function departureKey(userId: string) {
 }
 
 /** ISO date we expect this person to leave, or "" if nobody has recorded one. */
-export function departureOf(userId: string): string {
-  assetsInit();
-  const row = db()
+export async function departureOf(userId: string): Promise<string> {
+  (await assetsInit());
+  const row = (await db()
     .prepare("SELECT value FROM settings WHERE key=?")
-    .get(departureKey(userId)) as { value: string } | undefined;
+    .get(departureKey(userId))) as { value: string } | undefined;
   return row?.value || "";
 }
 
-export function setDeparture(u: User, userId: string, when: string): string {
-  assetsInit();
-  person(userId);
+export async function setDeparture(u: User, userId: string, when: string): Promise<string> {
+  (await assetsInit());
+  (await person(userId));
   const at = date(when);
-  db()
+  (await db()
     .prepare(
       "INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     )
-    .run(departureKey(userId), at);
-  audit(u, "asset.departure", userId, { expected_departure: at });
+    .run(departureKey(userId), at));
+  (await audit(u, "asset.departure", userId, { expected_departure: at }));
   return at;
 }
 
@@ -205,7 +205,7 @@ export function monthsUntil(iso: string, from = Date.now()): number {
  * of it, and a register that says otherwise is describing a club that does not
  * exist.
  */
-export function registerAsset(
+export async function registerAsset(
   u: User,
   a: {
     kind: AssetKind;
@@ -215,18 +215,18 @@ export function registerAsset(
     roleKey?: string;
     notes?: string;
   },
-): string {
-  assetsInit();
+): Promise<string> {
+  (await assetsInit());
   if (!ASSET_KINDS.includes(a.kind)) fail("Unknown asset kind.");
   const name = text(a.name, 160);
   if (
-    db().prepare("SELECT id FROM assets WHERE kind=? AND name=?").get(a.kind, name)
+    (await db().prepare("SELECT id FROM assets WHERE kind=? AND name=?").get(a.kind, name))
   )
     fail("That asset is already in the register.");
-  const holder = a.holder ? person(a.holder).id : null;
+  const holder = a.holder ? (await person(a.holder)).id : null;
   const key = id();
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO assets(id,kind,name,location,holder_id,role_key,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
     )
@@ -240,71 +240,71 @@ export function registerAsset(
       String(a.notes || "").slice(0, 2000),
       now,
       now,
-    );
-  audit(u, "asset.register", key, {
+    ));
+  (await audit(u, "asset.register", key, {
     kind: a.kind,
     name,
     role_key: a.roleKey || "",
     holder: holder || "",
-  });
+  }));
   if (holder) {
-    putAccess(u, key, holder, "owner");
-    emit(u, "commitment_offer", holder, key, {
+    (await putAccess(u, key, holder, "owner"));
+    (await emit(u, "commitment_offer", holder, key, {
       status: "accepted",
       offer_kind: "ownership",
-    });
+    }));
   }
   return key;
 }
 
 /** The write half of a grant: row plus audit, no emission. */
-function putAccess(
+async function putAccess(
   u: User,
   assetId: string,
   userId: string,
   level: AccessLevel,
-): string {
-  const prev = db()
+): Promise<string> {
+  const prev = (await db()
     .prepare("SELECT level FROM asset_access WHERE asset_id=? AND user_id=?")
-    .get(assetId, userId) as { level: string } | undefined;
-  db()
+    .get(assetId, userId)) as { level: string } | undefined;
+  (await db()
     .prepare(
       `INSERT INTO asset_access(asset_id,user_id,level,granted_at,granted_by) VALUES (?,?,?,?,?)
        ON CONFLICT(asset_id,user_id) DO UPDATE SET level=excluded.level,granted_at=excluded.granted_at,granted_by=excluded.granted_by`,
     )
-    .run(assetId, userId, level, timestamp(), u.id);
-  audit(u, "asset.access.grant", assetId, {
+    .run(assetId, userId, level, timestamp(), u.id));
+  (await audit(u, "asset.access.grant", assetId, {
     user_id: userId,
     level,
     previous: prev?.level || "",
-  });
+  }));
   return prev?.level || "";
 }
 
-export function grantAccess(
+export async function grantAccess(
   u: User,
   assetId: string,
   userId: string,
   level: AccessLevel,
-): boolean {
-  assetsInit();
-  asset(assetId);
+): Promise<boolean> {
+  (await assetsInit());
+  (await asset(assetId));
   if (!ACCESS_LEVELS.includes(level)) fail("Unknown access level.");
-  person(userId);
-  const previous = putAccess(u, assetId, userId, level);
+  (await person(userId));
+  const previous = (await putAccess(u, assetId, userId, level));
   const was = CONTINUITY_LEVELS.includes(previous as AccessLevel);
   const now = CONTINUITY_LEVELS.includes(level);
   if (now && !was)
-    emit(u, "commitment_offer", userId, assetId, {
+    (await emit(u, "commitment_offer", userId, assetId, {
       status: "accepted",
       offer_kind: "ownership",
-    });
+    }));
   // A demotion ends the commitment as surely as a revocation does.
   if (was && !now)
-    emit(u, "commitment_offer", userId, assetId, {
+    (await emit(u, "commitment_offer", userId, assetId, {
       status: "withdrawn",
       offer_kind: "ownership",
-    });
+    }));
   return previous !== level;
 }
 
@@ -318,22 +318,22 @@ export function grantAccess(
  * recorded as the holder of a domain they can no longer open, and that state
  * — bus factor zero with a live holder — is exactly the alarm worth raising.
  */
-export function revokeAccess(u: User, assetId: string, userId: string): boolean {
-  assetsInit();
-  asset(assetId);
-  const row = db()
+export async function revokeAccess(u: User, assetId: string, userId: string): Promise<boolean> {
+  (await assetsInit());
+  (await asset(assetId));
+  const row = (await db()
     .prepare("SELECT level FROM asset_access WHERE asset_id=? AND user_id=?")
-    .get(assetId, userId) as { level: string } | undefined;
+    .get(assetId, userId)) as { level: string } | undefined;
   if (!row) return false;
-  db()
+  (await db()
     .prepare("DELETE FROM asset_access WHERE asset_id=? AND user_id=?")
-    .run(assetId, userId);
-  audit(u, "asset.access.revoke", assetId, { user_id: userId, level: row.level });
+    .run(assetId, userId));
+  (await audit(u, "asset.access.revoke", assetId, { user_id: userId, level: row.level }));
   if (CONTINUITY_LEVELS.includes(row.level as AccessLevel))
-    emit(u, "commitment_offer", userId, assetId, {
+    (await emit(u, "commitment_offer", userId, assetId, {
       status: "withdrawn",
       offer_kind: "ownership",
-    });
+    }));
   return true;
 }
 
@@ -344,29 +344,29 @@ export function revokeAccess(u: User, assetId: string, userId: string): boolean 
  * claims you did is worse than one that admits the truth. Revoking is a
  * separate, explicit act performed once it has actually happened.
  */
-export function reassign(u: User, assetId: string, toUserId: string): boolean {
-  assetsInit();
-  const a = asset(assetId);
-  const to = person(toUserId).id;
+export async function reassign(u: User, assetId: string, toUserId: string): Promise<boolean> {
+  (await assetsInit());
+  const a = (await asset(assetId));
+  const to = (await person(toUserId)).id;
   if (a.holder_id === to) return false;
-  db()
+  (await db()
     .prepare("UPDATE assets SET holder_id=?,updated_at=? WHERE id=?")
-    .run(to, timestamp(), assetId);
-  putAccess(u, assetId, to, "owner");
-  audit(u, "asset.reassign", assetId, {
+    .run(to, timestamp(), assetId));
+  (await putAccess(u, assetId, to, "owner"));
+  (await audit(u, "asset.reassign", assetId, {
     from: a.holder_id || "",
     to,
     role_key: a.role_key,
-  });
+  }));
   if (a.holder_id)
-    emit(u, "commitment_offer", a.holder_id, assetId, {
+    (await emit(u, "commitment_offer", a.holder_id, assetId, {
       status: "reassigned",
       offer_kind: "ownership",
-    });
-  emit(u, "commitment_offer", to, assetId, {
+    }));
+  (await emit(u, "commitment_offer", to, assetId, {
     status: "accepted",
     offer_kind: "handoff",
-  });
+  }));
   return true;
 }
 
@@ -379,14 +379,14 @@ export function reassign(u: User, assetId: string, toUserId: string): boolean {
  * the club is a single graduation away from zero. Both are alarms; zero is the
  * fire.
  */
-export function busFactor(assetId: string): number {
-  assetsInit();
-  const row = db()
+export async function busFactor(assetId: string): Promise<number> {
+  (await assetsInit());
+  const row = (await db()
     .prepare(
       `SELECT COUNT(*) n FROM asset_access x JOIN users u ON u.id=x.user_id
        WHERE x.asset_id=? AND x.level IN ('owner','admin') AND u.role IN ${CURRENT_ROLES}`,
     )
-    .get(assetId) as { n: number };
+    .get(assetId)) as { n: number };
   return row.n;
 }
 
@@ -416,26 +416,26 @@ export type OrphanRow = {
  * the transition flow" (docs/14 §5) — so it is built to be read top-down and
  * every row carries its own sentence.
  */
-export function orphanRisk(asOf = Date.now()): OrphanRow[] {
-  assetsInit();
-  const rows = db()
+export async function orphanRisk(asOf = Date.now()): Promise<OrphanRow[]> {
+  (await assetsInit());
+  const rows = (await db()
     .prepare(
       `SELECT a.*, u.name holder_name, u.role holder_role
        FROM assets a LEFT JOIN users u ON u.id=a.holder_id`,
     )
-    .all() as (AssetRow & { holder_name: string | null; holder_role: string | null })[];
+    .all()) as (AssetRow & { holder_name: string | null; holder_role: string | null })[];
   const counts = new Map<string, number>();
-  for (const c of db()
+  for (const c of (await db()
     .prepare(
       `SELECT x.asset_id, COUNT(*) n FROM asset_access x JOIN users u ON u.id=x.user_id
        WHERE x.level IN ('owner','admin') AND u.role IN ${CURRENT_ROLES} GROUP BY x.asset_id`,
     )
-    .all() as { asset_id: string; n: number }[])
+    .all()) as { asset_id: string; n: number }[])
     counts.set(c.asset_id, c.n);
   const departures = new Map<string, string>();
-  for (const d of db()
+  for (const d of (await db()
     .prepare("SELECT key,value FROM settings WHERE key LIKE 'continuity.departure:%'")
-    .all() as { key: string; value: string }[])
+    .all()) as { key: string; value: string }[])
     departures.set(d.key.slice("continuity.departure:".length), d.value);
 
   const out = rows.map((r): OrphanRow => {
@@ -498,15 +498,15 @@ export type AccessRow = {
 };
 
 /** Who can get into one asset. The answer to "who has access", as a list. */
-export function accessList(assetId: string): AccessRow[] {
-  assetsInit();
-  const rows = db()
+export async function accessList(assetId: string): Promise<AccessRow[]> {
+  (await assetsInit());
+  const rows = (await db()
     .prepare(
       `SELECT x.user_id,x.level,x.granted_at,x.granted_by,u.name,u.role
        FROM asset_access x JOIN users u ON u.id=x.user_id WHERE x.asset_id=?
        ORDER BY CASE x.level WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'editor' THEN 2 ELSE 3 END, u.name`,
     )
-    .all(assetId) as Omit<AccessRow, "current">[];
+    .all(assetId)) as Omit<AccessRow, "current">[];
   return rows.map((r) => ({
     ...r,
     current: r.role === "officer" || r.role === "member",
@@ -514,16 +514,16 @@ export function accessList(assetId: string): AccessRow[] {
 }
 
 /** What one member can get into, and what they are on the hook for. */
-export function myAccess(u: User) {
-  member(u);
-  assetsInit();
-  const rows = db()
+export async function myAccess(u: User) {
+  (await member(u));
+  (await assetsInit());
+  const rows = (await db()
     .prepare(
       `SELECT a.id,a.kind,a.name,a.location,a.role_key,x.level,(a.holder_id=?) holds
        FROM assets a JOIN asset_access x ON x.asset_id=a.id
        WHERE x.user_id=? ORDER BY a.kind,a.name`,
     )
-    .all(u.id, u.id) as any[];
+    .all(u.id, u.id)) as any[];
   return {
     assets: rows.map((r) => ({ ...r, holds: !!r.holds })),
   };
@@ -534,13 +534,13 @@ export function myAccess(u: User) {
  * ordering — enough to answer "what do we own, who has it, and what do we lose
  * in May" without asking anyone.
  */
-export function assetState(u: User) {
-  officer(u);
-  assetsInit();
-  const counts = db()
+export async function assetState(u: User) {
+  (await officer(u));
+  (await assetsInit());
+  const counts = (await db()
     .prepare("SELECT kind,COUNT(*) n FROM assets GROUP BY kind ORDER BY kind")
-    .all() as { kind: string; n: number }[];
-  const risk = orphanRisk();
+    .all()) as { kind: string; n: number }[];
+  const risk = (await orphanRisk());
   return {
     total: risk.length,
     counts,
@@ -556,36 +556,36 @@ export function assetState(u: User) {
   };
 }
 
-export function assets(u: User, action: string, b: any) {
-  officer(u);
-  assetsInit();
+export async function assets(u: User, action: string, b: any) {
+  (await officer(u));
+  (await assetsInit());
   if (action === "register") {
-    const key = registerAsset(u, {
+    const key = (await registerAsset(u, {
       kind: text(b.kind, 32) as AssetKind,
       name: text(b.name, 160),
       location: typeof b.location === "string" ? b.location : "",
       holder: b.holder ? text(b.holder, 64) : undefined,
       roleKey: typeof b.role_key === "string" ? b.role_key : "",
       notes: typeof b.notes === "string" ? b.notes : "",
-    });
+    }));
     return { id: key };
   }
   if (action === "grant")
     return {
-      ok: grantAccess(
+      ok: (await grantAccess(
         u,
         text(b.asset_id, 64),
         text(b.user_id, 64),
         text(b.level, 16) as AccessLevel,
-      ),
+      )),
     };
   if (action === "revoke")
-    return { ok: revokeAccess(u, text(b.asset_id, 64), text(b.user_id, 64)) };
+    return { ok: (await revokeAccess(u, text(b.asset_id, 64), text(b.user_id, 64))) };
   if (action === "reassign")
-    return { ok: reassign(u, text(b.asset_id, 64), text(b.to, 64)) };
+    return { ok: (await reassign(u, text(b.asset_id, 64), text(b.to, 64))) };
   if (action === "departure")
     return {
-      expected_departure: setDeparture(u, text(b.user_id, 64), text(b.at, 40)),
+      expected_departure: (await setDeparture(u, text(b.user_id, 64), text(b.at, 40))),
     };
   fail("Unknown asset action.", 404);
 }

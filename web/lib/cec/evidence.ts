@@ -46,8 +46,8 @@ export const BLOCKERS = [
   "other",
 ];
 
-export function evidenceInit() {
-  db().exec(`
+export async function evidenceInit() {
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS episodes(id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,owner TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,goal TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'active',source_type TEXT NOT NULL,source_id TEXT NOT NULL,created_at TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,UNIQUE(source_type,source_id));
 CREATE TABLE IF NOT EXISTS episode_objects(object_type TEXT NOT NULL,object_id TEXT NOT NULL,episode_id TEXT NOT NULL REFERENCES episodes(id),PRIMARY KEY(object_type,object_id));
 CREATE TABLE IF NOT EXISTS activity_events(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT UNIQUE NOT NULL,source_key TEXT UNIQUE NOT NULL,organization_id TEXT NOT NULL,episode_id TEXT NOT NULL REFERENCES episodes(id),actor_id TEXT NOT NULL REFERENCES accounts(id),subject_id TEXT NOT NULL REFERENCES accounts(id),action_family TEXT NOT NULL,event_type TEXT NOT NULL,object_type TEXT NOT NULL,object_id TEXT NOT NULL,occurred_at TEXT NOT NULL,observed_at TEXT NOT NULL,source TEXT NOT NULL,source_ref TEXT NOT NULL,evidence_level TEXT NOT NULL,visibility TEXT NOT NULL,policy TEXT NOT NULL,context TEXT NOT NULL);
@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS work_blockers(id TEXT PRIMARY KEY,episode_id TEXT NOT
 CREATE UNIQUE INDEX IF NOT EXISTS blocker_open ON work_blockers(task_id) WHERE resolved_at IS NULL;
 CREATE TRIGGER IF NOT EXISTS activity_no_update BEFORE UPDATE ON activity_events BEGIN SELECT RAISE(ABORT,'append only; add a correction'); END;
 CREATE TRIGGER IF NOT EXISTS activity_no_delete BEFORE DELETE ON activity_events BEGIN SELECT RAISE(ABORT,'append only; use a governed erasure migration'); END;
-`);
+`));
 }
-export function ensureEpisode(
+export async function ensureEpisode(
   u: User,
   type: string,
   sourceId: string,
@@ -68,25 +68,25 @@ export function ensureEpisode(
   goal = "",
   owner = u.id,
 ) {
-  evidenceInit();
-  const prior = db()
+  (await evidenceInit());
+  const prior = (await db()
     .prepare(
       "SELECT episode_id FROM episode_objects WHERE object_type=? AND object_id=?",
     )
-    .get(type, sourceId) as any;
+    .get(type, sourceId)) as any;
   if (prior) return prior.episode_id as string;
   const eid = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO episodes(id,organization_id,owner,title,goal,source_type,source_id,created_at) VALUES(?,?,?,?,?,?,?,?)",
     )
-    .run(eid, ORG, owner, title, goal, type, sourceId, timestamp());
-  db()
+    .run(eid, ORG, owner, title, goal, type, sourceId, timestamp()));
+  (await db()
     .prepare("INSERT INTO episode_objects VALUES(?,?,?)")
-    .run(type, sourceId, eid);
+    .run(type, sourceId, eid));
   return eid;
 }
-export function recordEvidence(
+export async function recordEvidence(
   u: User,
   e: {
     episode: string;
@@ -136,7 +136,7 @@ export function recordEvidence(
   // record that no point-in-time query can ever return correctly.
   if (occurredAt > observedAt)
     fail("Evidence cannot occur after it was observed.", 422);
-  db()
+  (await db()
     .prepare(
       "INSERT OR IGNORE INTO activity_events(id,source_key,organization_id,episode_id,actor_id,subject_id,action_family,event_type,object_type,object_id,occurred_at,observed_at,source,source_ref,evidence_level,visibility,policy,context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
@@ -159,32 +159,32 @@ export function recordEvidence(
       e.visibility || "club_internal",
       e.policy || POLICY,
       JSON.stringify(e.context || {}),
-    );
+    ));
 }
-function taskEpisode(u: User, r: Item) {
-  evidenceInit();
-  const prior = db()
+async function taskEpisode(u: User, r: Item) {
+  (await evidenceInit());
+  const prior = (await db()
     .prepare(
       "SELECT episode_id FROM episode_objects WHERE object_type='task' AND object_id=?",
     )
-    .get(r.id) as any;
+    .get(r.id)) as any;
   if (prior) return prior.episode_id as string;
   if (!r.data.project_id)
-    return ensureEpisode(u, "task", r.id, r.data.title, r.data.origin, r.owner);
-  const project = item(r.data.project_id, "project");
-  const eid = ensureEpisode(
+    return (await ensureEpisode(u, "task", r.id, r.data.title, r.data.origin, r.owner));
+  const project = (await item(r.data.project_id, "project"));
+  const eid = (await ensureEpisode(
     u,
     "project",
     project.id,
     project.data.title,
     project.data.description,
     project.owner,
-  );
-  db().prepare("INSERT INTO episode_objects VALUES('task',?,?)").run(r.id, eid);
+  ));
+  (await db().prepare("INSERT INTO episode_objects VALUES('task',?,?)").run(r.id, eid));
   return eid;
 }
 // Called inside the operational transaction. No historical actions are guessed or backfilled.
-export function captureItem(
+export async function captureItem(
   u: User,
   r: Item,
   sourceKey: string,
@@ -193,16 +193,16 @@ export function captureItem(
   if (!["task", "project", "event", "meeting"].includes(r.kind)) return;
   const episode =
     r.kind === "task"
-      ? taskEpisode(u, r)
-      : ensureEpisode(
+      ? (await taskEpisode(u, r))
+      : (await ensureEpisode(
           u,
           r.kind,
           r.id,
           r.data.title,
           r.data.description || r.data.agenda || "",
           r.owner,
-        );
-  recordEvidence(u, {
+        ));
+  (await recordEvidence(u, {
     episode,
     sourceKey,
     subject: r.kind === "task" ? r.data.assignee : r.owner,
@@ -240,10 +240,10 @@ export function captureItem(
           }
         : {}),
     },
-  });
+  }));
 }
-export function captureTask(u: User, r: Item, from: string, sourceKey: string) {
-  const episode = taskEpisode(u, r),
+export async function captureTask(u: User, r: Item, from: string, sourceKey: string) {
+  const episode = (await taskEpisode(u, r)),
     status = r.data.status;
   const family: Family =
     status === "accepted"
@@ -255,7 +255,7 @@ export function captureTask(u: User, r: Item, from: string, sourceKey: string) {
         : status === "completed"
           ? "REVIEW"
           : "OUTCOME";
-  recordEvidence(u, {
+  (await recordEvidence(u, {
     episode,
     sourceKey,
     subject: r.data.assignee,
@@ -284,9 +284,9 @@ export function captureTask(u: User, r: Item, from: string, sourceKey: string) {
         (status === "accepted" && from === "submitted")) && r.data.work_history?.length
         ? { work_record: r.data.work_history.at(-1) } : {}),
     },
-  });
+  }));
 }
-export function capturePresence(
+export async function capturePresence(
   u: User,
   eventId: string,
   subject: string,
@@ -294,16 +294,16 @@ export function capturePresence(
   attendance: boolean,
   sourceKey: string,
 ) {
-  const event = item(eventId, "event"),
-    episode = ensureEpisode(
+  const event = (await item(eventId, "event")),
+    episode = (await ensureEpisode(
       u,
       "event",
       event.id,
       event.data.title,
       event.data.description,
       event.owner,
-    );
-  recordEvidence(u, {
+    ));
+  (await recordEvidence(u, {
     episode,
     subject,
     sourceKey,
@@ -319,31 +319,31 @@ export function capturePresence(
       status,
       meaning: attendance ? "officer_recorded_attendance" : "registration_only",
     },
-  });
+  }));
 }
-function episodeById(eid: string) {
-  const e = db()
+async function episodeById(eid: string) {
+  const e = (await db()
     .prepare("SELECT * FROM episodes WHERE id=? AND organization_id=?")
-    .get(eid, ORG) as any;
+    .get(eid, ORG)) as any;
   if (!e) fail("Episode not found.", 404);
   return e;
 }
-function taskAuthority(u: User, r: Item) {
-  if (r.data.assignee !== u.id) officer(u);
+async function taskAuthority(u: User, r: Item) {
+  if (r.data.assignee !== u.id) (await officer(u));
 }
-export function evidenceAction(u: User, action: string, b: any) {
-  member(u);
-  evidenceInit();
-  return tx(() => {
+export async function evidenceAction(u: User, action: string, b: any) {
+  (await member(u));
+  (await evidenceInit());
+  return (await tx(async () => {
     if (action === "snapshot") {
       const asOf = b.as_of ? date(b.as_of) : timestamp();
       if (asOf > timestamp()) fail("Snapshot time cannot be in the future.");
       const events = (
-        db()
+        (await db()
           .prepare(
             "SELECT * FROM activity_events WHERE organization_id=? AND occurred_at<=? AND observed_at<=? ORDER BY seq",
           )
-          .all(ORG, asOf, asOf) as any[]
+          .all(ORG, asOf, asOf)) as any[]
       ).map((e) => ({ ...e, context: JSON.parse(e.context) }));
       const features = personalFeatures(events, u.id, asOf);
       const inputHash = hash(
@@ -351,14 +351,14 @@ export function evidenceAction(u: User, action: string, b: any) {
           events.filter((e) => features.source_event_ids.includes(e.id)),
         ),
       );
-      const prior = db()
+      const prior = (await db()
         .prepare(
           "SELECT * FROM evidence_snapshots WHERE user_id=? AND as_of=? AND policy=? AND evidence_hash=?",
         )
-        .get(u.id, asOf, features.policy, inputHash) as any;
+        .get(u.id, asOf, features.policy, inputHash)) as any;
       if (prior) return { ...prior, features: JSON.parse(prior.features) };
       const sid = id();
-      db()
+      (await db()
         .prepare("INSERT INTO evidence_snapshots VALUES(?,?,?,?,?,?,?)")
         .run(
           sid,
@@ -368,7 +368,7 @@ export function evidenceAction(u: User, action: string, b: any) {
           features.policy,
           inputHash,
           JSON.stringify(features),
-        );
+        ));
       return {
         id: sid,
         user_id: u.id,
@@ -380,18 +380,18 @@ export function evidenceAction(u: User, action: string, b: any) {
       };
     }
     if (action === "block") {
-      const r = item(text(b.task_id), "task");
-      taskAuthority(u, r);
+      const r = (await item(text(b.task_id), "task"));
+      (await taskAuthority(u, r));
       if (!["accepted", "submitted"].includes(r.data.status))
         fail("Accept the task before reporting a blocker.");
       if (!BLOCKERS.includes(b.category)) fail("Choose a blocker category.");
       const note = text(b.note, 1000),
-        episode = taskEpisode(u, r);
-      const old = db()
+        episode = (await taskEpisode(u, r));
+      const old = (await db()
         .prepare(
           "SELECT * FROM work_blockers WHERE task_id=? AND resolved_at IS NULL",
         )
-        .get(r.id) as any;
+        .get(r.id)) as any;
       if (old) {
         if (
           old.category === b.category &&
@@ -402,12 +402,12 @@ export function evidenceAction(u: User, action: string, b: any) {
         fail("Resolve the existing blocker first.", 409);
       }
       const bid = id();
-      db()
+      (await db()
         .prepare(
           "INSERT INTO work_blockers(id,episode_id,task_id,reporter,category,note,created_at) VALUES(?,?,?,?,?,?,?)",
         )
-        .run(bid, episode, r.id, u.id, b.category, note, timestamp());
-      recordEvidence(u, {
+        .run(bid, episode, r.id, u.id, b.category, note, timestamp()));
+      (await recordEvidence(u, {
         episode,
         subject: r.data.assignee,
         family: "ESCALATE",
@@ -416,25 +416,25 @@ export function evidenceAction(u: User, action: string, b: any) {
         object: bid,
         level: "self_reported",
         context: { task_id: r.id, category: b.category, note },
-      });
+      }));
       return { id: bid };
     }
     if (action === "resolve") {
-      const bkr = db()
+      const bkr = (await db()
         .prepare("SELECT * FROM work_blockers WHERE id=?")
-        .get(text(b.blocker_id)) as any;
+        .get(text(b.blocker_id))) as any;
       if (!bkr) fail("Blocker not found.", 404);
-      const r = item(bkr.task_id, "task");
-      taskAuthority(u, r);
+      const r = (await item(bkr.task_id, "task"));
+      (await taskAuthority(u, r));
       if (bkr.resolved_at) return { ok: true };
       const resolution = text(b.resolution, 1000),
         at = timestamp();
-      db()
+      (await db()
         .prepare(
           "UPDATE work_blockers SET resolved_at=?,resolver=?,resolution=? WHERE id=?",
         )
-        .run(at, u.id, resolution, bkr.id);
-      recordEvidence(u, {
+        .run(at, u.id, resolution, bkr.id));
+      (await recordEvidence(u, {
         episode: bkr.episode_id,
         subject: r.data.assignee,
         family: u.id === r.data.assignee ? "REVISE" : "HELP",
@@ -448,12 +448,12 @@ export function evidenceAction(u: User, action: string, b: any) {
           elapsed_hours:
             (Date.parse(at) - Date.parse(bkr.created_at)) / 3600000,
         },
-      });
+      }));
       return { ok: true };
     }
     if (action === "outcome") {
-      const e = episodeById(text(b.episode_id));
-      if (e.owner !== u.id) officer(u);
+      const e = (await episodeById(text(b.episode_id)));
+      if (e.owner !== u.id) (await officer(u));
       if (e.version !== Number(b.version))
         fail("Episode changed. Refresh first.", 409);
       if (!["completed", "cancelled", "unsuccessful"].includes(b.status))
@@ -467,10 +467,10 @@ export function evidenceAction(u: User, action: string, b: any) {
       )
         fail("Use a finite outcome value.");
       const unit = metric === null ? "" : text(b.unit, 80);
-      db()
+      (await db()
         .prepare("UPDATE episodes SET status=?,version=version+1 WHERE id=?")
-        .run(b.status, e.id);
-      recordEvidence(u, {
+        .run(b.status, e.id));
+      (await recordEvidence(u, {
         episode: e.id,
         subject: e.owner,
         family: "OUTCOME",
@@ -486,28 +486,28 @@ export function evidenceAction(u: User, action: string, b: any) {
           version: e.version + 1,
           meaning: "reported_result_not_external_verification",
         },
-      });
+      }));
       return { ok: true };
     }
     if (action === "correct") {
-      const original = db()
+      const original = (await db()
         .prepare(
           "SELECT * FROM activity_events WHERE id=? AND organization_id=?",
         )
-        .get(text(b.event_id), ORG) as any;
+        .get(text(b.event_id), ORG)) as any;
       if (!original) fail("Evidence not found.", 404);
       if (original.actor_id !== u.id && original.subject_id !== u.id)
-        officer(u);
+        (await officer(u));
       if (original.event_type === "evidence.correction")
         fail("Add corrections to the original event.");
       const statement = text(b.statement, 2000);
-      const duplicate = db()
+      const duplicate = (await db()
         .prepare(
           "SELECT id FROM activity_events WHERE actor_id=? AND event_type='evidence.correction' AND json_extract(context,'$.corrects')=? AND json_extract(context,'$.statement')=?",
         )
-        .get(u.id, original.id, statement);
+        .get(u.id, original.id, statement));
       if (duplicate) return { ok: true };
-      recordEvidence(u, {
+      (await recordEvidence(u, {
         episode: original.episode_id,
         subject: original.subject_id,
         family: "REVISE",
@@ -520,30 +520,30 @@ export function evidenceAction(u: User, action: string, b: any) {
           statement,
           meaning: "disputed_claim_original_retained",
         },
-      });
+      }));
       return { ok: true };
     }
     fail("Not found.", 404);
-  });
+  }));
 }
-export function evidenceRead(u: User) {
-  member(u);
-  evidenceInit();
-  const episodes = db()
+export async function evidenceRead(u: User) {
+  (await member(u));
+  (await evidenceInit());
+  const episodes = (await db()
     .prepare(
       "SELECT * FROM episodes WHERE organization_id=? ORDER BY created_at DESC",
     )
-    .all(ORG);
+    .all(ORG));
   const events = (
-    db()
+    (await db()
       .prepare(
         "SELECT e.*,a.name actor_name,s.name subject_name FROM activity_events e JOIN users a ON a.id=e.actor_id JOIN users s ON s.id=e.subject_id WHERE e.organization_id=? ORDER BY e.seq",
       )
-      .all(ORG) as any[]
+      .all(ORG)) as any[]
   ).map((e) => ({ ...e, context: JSON.parse(e.context) }));
-  const blockers = db()
+  const blockers = (await db()
     .prepare("SELECT * FROM work_blockers ORDER BY created_at DESC")
-    .all() as any[];
+    .all()) as any[];
   const mine = events.filter(
     (e) => e.subject_id === u.id || e.actor_id === u.id,
   );
@@ -590,11 +590,11 @@ export function evidenceRead(u: User) {
     blockers,
     personal_timeline: mine,
     snapshots: (
-      db()
+      (await db()
         .prepare(
           "SELECT * FROM evidence_snapshots WHERE user_id=? ORDER BY computed_at DESC LIMIT 20",
         )
-        .all(u.id) as any[]
+        .all(u.id)) as any[]
     ).map((s) => ({ ...s, features: JSON.parse(s.features) })),
     features: personalFeatures(events, u.id, timestamp()),
     operations: {

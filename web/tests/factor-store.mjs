@@ -31,10 +31,10 @@ const ok = (c, m) => {
   checks++;
 };
 
-factorStoreInit();
-db()
+(await factorStoreInit());
+(await db()
   .prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)")
-  .run("officer1", "Officer", "o@example.edu", "x", "officer");
+  .run("officer1", "Officer", "o@example.edu", "x", "officer"));
 
 // Two factors with deliberately different permitted uses.
 const density = defineFactor({
@@ -86,16 +86,16 @@ const registry = [density, pressure];
 
 // ============================================================ write and read
 {
-  computeAndStore(density, "cornell", { events: 12 }, "2026-09-15T00:00:00Z");
-  computeAndStore(pressure, "cornell", { pressure: 0.4 }, "2026-09-15T00:00:00Z");
+  (await computeAndStore(density, "cornell", { events: 12 }, "2026-09-15T00:00:00Z"));
+  (await computeAndStore(pressure, "cornell", { pressure: 0.4 }, "2026-09-15T00:00:00Z"));
 
-  const planning = factorsAsOf({
+  const planning = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: "2026-09-16T00:00:00Z",
     use: "planning",
     registry,
-  });
+  }));
   ok(planning.factors.length === 2, `planning sees both, got ${planning.factors.length}`);
   ok(planning.omitted.length === 0, "and nothing is omitted");
   const d = planning.factors.find((f) => f.factor === "campus_event_density");
@@ -111,13 +111,13 @@ const registry = [density, pressure];
   // docs/11 §7: proxies are blocked AT THE FEATURE STORE, not at display.
   // A sponsor read must not receive a planning-only factor, and the store —
   // not a component — is what refuses.
-  const sponsor = factorsAsOf({
+  const sponsor = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: "2026-09-16T00:00:00Z",
     use: "sponsor_ranking",
     registry,
-  });
+  }));
   ok(sponsor.factors.length === 1, `sponsor sees only the permitted factor, got ${sponsor.factors.length}`);
   ok(
     sponsor.factors[0].factor === "campus_event_density",
@@ -140,34 +140,34 @@ const registry = [density, pressure];
 
 // ================================== POINT-IN-TIME — the backtest-honesty rule
 {
-  computeAndStore(
+  (await computeAndStore(
     density,
     "cornell",
     { events: 50 },
     "2026-10-01T00:00:00Z",
     { occurredAt: "2026-10-01T00:00:00Z", observedAt: "2026-10-01T00:00:00Z" },
-  );
+  ));
 
   // A model replaying 15 September must not see the October row.
-  const earlier = factorsAsOf({
+  const earlier = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: "2026-09-16T00:00:00Z",
     use: "planning",
     registry,
-  });
+  }));
   ok(
     earlier.factors.find((f) => f.factor === "campus_event_density").value === 12,
     "a read as of September sees the September value, not October's",
   );
 
-  const later = factorsAsOf({
+  const later = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: "2026-10-02T00:00:00Z",
     use: "planning",
     registry,
-  });
+  }));
   ok(
     later.factors.find((f) => f.factor === "campus_event_density").value === 50,
     "and a read as of October sees the later one",
@@ -175,40 +175,40 @@ const registry = [density, pressure];
 
   // The case the pair exists for: something that HAPPENED in September but was
   // only PUBLISHED to us in November must be invisible to a September replay.
-  computeAndStore(
+  (await computeAndStore(
     density,
     "backfilled",
     { events: 99 },
     "2026-09-10T00:00:00Z",
     { occurredAt: "2026-09-10T00:00:00Z", observedAt: "2026-11-20T00:00:00Z" },
-  );
-  const replay = factorsAsOf({
+  ));
+  const replay = (await factorsAsOf({
     entityType: "campus",
     entityId: "backfilled",
     asOf: "2026-09-15T00:00:00Z",
     use: "planning",
     registry,
-  });
+  }));
   ok(
     replay.factors.length === 0,
     "late-observed evidence about an earlier moment is invisible to a replay of that moment",
   );
-  const afterPublication = factorsAsOf({
+  const afterPublication = (await factorsAsOf({
     entityType: "campus",
     entityId: "backfilled",
     asOf: "2026-12-01T00:00:00Z",
     use: "planning",
     registry,
-  });
+  }));
   ok(afterPublication.factors.length === 1, "but visible once it had been published");
 
   // Observing something before it happened is incoherent and must be refused.
   let threw = false;
   try {
-    writeFactorValue(
+    (await writeFactorValue(
       computeFactor(density, "bad", { events: 1 }, "2026-09-15T00:00:00Z"),
       { occurredAt: "2026-09-15T00:00:00Z", observedAt: "2026-09-01T00:00:00Z" },
-    );
+    ));
   } catch {
     threw = true;
   }
@@ -240,11 +240,11 @@ const registry = [density, pressure];
       explain: (v) => (v === null ? "Not enough yet." : `Rate ${v}.`),
     },
   });
-  const refusal = computeAndStore(thin, "cec", { n: 2 }, "2026-09-15T00:00:00Z");
+  const refusal = (await computeAndStore(thin, "cec", { n: 2 }, "2026-09-15T00:00:00Z"));
   ok(refusal.status === "insufficient_data", "the registry refuses");
   ok(refusal.value === null, "with a null value");
 
-  const hist = factorHistory("needs_more", "club", "cec");
+  const hist = (await factorHistory("needs_more", "club", "cec"));
   ok(hist.length === 1, "and the refusal is PERSISTED as a row");
   ok(hist[0].value === null, "with a null value");
   ok(hist[0].status === "insufficient_data", "and the reason preserved");
@@ -255,31 +255,31 @@ const registry = [density, pressure];
 
   // factorAtHorizon is for training, so it must skip refusals.
   ok(
-    factorAtHorizon("needs_more", "club", "cec", "2026-12-01T00:00:00Z") === null,
+    (await factorAtHorizon("needs_more", "club", "cec", "2026-12-01T00:00:00Z")) === null,
     "a refusal is not a training row",
   );
   ok(
-    factorAtHorizon("campus_event_density", "campus", "cornell", "2026-09-20T00:00:00Z").value === 12,
+    (await factorAtHorizon("campus_event_density", "campus", "cornell", "2026-09-20T00:00:00Z")).value === 12,
     "but a real value is, at the value observable by the horizon",
   );
   ok(
-    factorAtHorizon("campus_event_density", "campus", "cornell", "2026-08-01T00:00:00Z") === null,
+    (await factorAtHorizon("campus_event_density", "campus", "cornell", "2026-08-01T00:00:00Z")) === null,
     "and nothing observable before the horizon means null, never the nearest future value",
   );
 }
 
 // =========================================================== idempotency
 {
-  const before = factorHistory("campus_event_density", "campus", "cornell").length;
-  computeAndStore(density, "cornell", { events: 12 }, "2026-09-15T00:00:00Z");
-  const after = factorHistory("campus_event_density", "campus", "cornell").length;
+  const before = (await factorHistory("campus_event_density", "campus", "cornell")).length;
+  (await computeAndStore(density, "cornell", { events: 12 }, "2026-09-15T00:00:00Z"));
+  const after = (await factorHistory("campus_event_density", "campus", "cornell")).length;
   ok(after === before, "recomputing the same factor at the same moment writes no duplicate");
 
   // A new model version writes a NEW row rather than overwriting, so a decision
   // made under the old version stays reproducible.
   const v2 = defineFactor({ ...density, version: "2.0.0" });
-  computeAndStore(v2, "cornell", { events: 14 }, "2026-09-15T00:00:00Z");
-  const hist = factorHistory("campus_event_density", "campus", "cornell");
+  (await computeAndStore(v2, "cornell", { events: 14 }, "2026-09-15T00:00:00Z"));
+  const hist = (await factorHistory("campus_event_density", "campus", "cornell"));
   ok(hist.length === after + 1, "a new model version adds a row");
   ok(
     hist.some((h) => h.modelVersion === "1.0.0") && hist.some((h) => h.modelVersion === "2.0.0"),
@@ -289,7 +289,7 @@ const registry = [density, pressure];
 
 // ============================================================== evaluation
 {
-  writeEvaluation(
+  (await writeEvaluation(
     {
       factor: "campus_event_density",
       outcome: "event_met_forecast",
@@ -302,15 +302,15 @@ const registry = [density, pressure];
       computedAt: "2026-09-15T00:00:00Z",
     },
     18,
-  );
-  const rows = latestEvaluations();
+  ));
+  const rows = (await latestEvaluations());
   ok(rows.length === 1, "an evaluation persists");
   ok(rows[0].verdict === "strong", "with its verdict");
   ok(rows[0].signAgrees === true, "and its sign agreement, round-tripped as a boolean");
   ok(rows[0].distinctSubjects === 18, "and the distinct-subject count, not just the row count");
   ok(rows[0].pairs === 120, "both are kept: 120 rows from 18 subjects");
 
-  writeEvaluation(
+  (await writeEvaluation(
     {
       factor: "campus_event_density",
       outcome: "event_met_forecast",
@@ -323,23 +323,23 @@ const registry = [density, pressure];
       computedAt: "2026-10-15T00:00:00Z",
     },
     22,
-  );
-  const latest = latestEvaluations();
+  ));
+  const latest = (await latestEvaluations());
   ok(latest.length === 1, "the latest evaluation supersedes in the view");
   ok(latest[0].verdict === "useful", "showing the newer verdict");
-  const all = db().prepare("SELECT COUNT(*) n FROM factor_evaluations").get();
+  const all = (await db().prepare("SELECT COUNT(*) n FROM factor_evaluations").get());
   ok(all.n === 2, "while both rows are retained — evaluations are append-only");
 
   // A null IC must survive the round trip as null, not as 0.
-  writeEvaluation(
+  (await writeEvaluation(
     {
       factor: "assessment_pressure", outcome: "event_met_forecast",
       pairs: 3, windows: 0, ic: null, ir: null, signAgrees: null,
       verdict: "insufficient_data", computedAt: "2026-10-15T00:00:00Z",
     },
     3,
-  );
-  const nullish = latestEvaluations().find((r) => r.factor === "assessment_pressure");
+  ));
+  const nullish = (await latestEvaluations()).find((r) => r.factor === "assessment_pressure");
   ok(nullish.ic === null, "a null IC stays null, never becomes zero");
   ok(nullish.signAgrees === null, "and an unknown sign agreement stays unknown");
 }

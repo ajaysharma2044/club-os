@@ -224,7 +224,7 @@ export type RankInput = {
   inventories?: Record<string, ActivationInventory[]>;
 };
 
-export function rankCandidates(input: RankInput): RankingResult {
+export async function rankCandidates(input: RankInput): Promise<RankingResult> {
   const { sponsor, at } = input;
   const ranked: RankedCandidate[] = [];
   const rejected: RankingResult["rejected"] = [];
@@ -232,9 +232,9 @@ export function rankCandidates(input: RankInput): RankingResult {
 
   for (const clubId of input.clubIds) {
     const identity = club(clubId);
-    const policy = input.policies?.[clubId] ?? clubPolicy(clubId);
-    const inventory = input.inventories?.[clubId] ?? inventoryFor(clubId);
-    const fatigue = fatigueCheck({ clubId, sponsor, at, policy });
+    const policy = input.policies?.[clubId] ?? (await clubPolicy(clubId));
+    const inventory = input.inventories?.[clubId] ?? (await inventoryFor(clubId));
+    const fatigue = (await fatigueCheck({ clubId, sponsor, at, policy }));
 
     const eligibility: EligibilityResult = checkEligibility({
       clubId,
@@ -256,17 +256,17 @@ export function rankCandidates(input: RankInput): RankingResult {
     // The feature-store gate. Anything a factor did not declare for
     // sponsor_ranking is withheld HERE, not filtered downstream.
     if (identity && input.contextInputs)
-      assembleContext(clubId, at, input.contextInputs, {
+      (await assembleContext(clubId, at, input.contextInputs, {
         persist: input.persistContext !== false,
-      });
+      }));
     const read = identity
-      ? factorsAsOf({
+      ? (await factorsAsOf({
           entityType: "campus",
           entityId: identity.institutionId,
           asOf: at,
           use: "sponsor_ranking",
           registry: CONTEXT_FACTORS,
-        })
+        }))
       : { factors: [] as StoredFactor[], omitted: [] as { factor: string; reason: string }[] };
     omittedFactors = read.omitted;
 

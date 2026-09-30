@@ -21,10 +21,10 @@ const ok = (c, m) => {
   assert.ok(c, m);
   checks++;
 };
-const throws = (fn, re, m) => {
+const throws = async (fn, re, m) => {
   let got = null;
   try {
-    fn();
+    await fn();
   } catch (e) {
     got = e.message;
   }
@@ -33,13 +33,13 @@ const throws = (fn, re, m) => {
   checks++;
 };
 
-rosterInit();
-db()
+(await rosterInit());
+(await db()
   .prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)")
-  .run("off1", "Officer", "o@cornell.edu", "x", "officer");
-db()
+  .run("off1", "Officer", "o@cornell.edu", "x", "officer"));
+(await db()
   .prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)")
-  .run("mem1", "Member", "m@cornell.edu", "x", "member");
+  .run("mem1", "Member", "m@cornell.edu", "x", "member"));
 const officer = { id: "off1", name: "Officer", email: "o@cornell.edu", role: "officer" };
 const memberU = { id: "mem1", name: "Member", email: "m@cornell.edu", role: "member" };
 
@@ -49,30 +49,30 @@ const courses = parseCornellRoster(
 
 // ============================================================ roster storage
 {
-  throws(
-    () => storeRoster({ institutionId: "penn", term: "FA26", courses, source: "x" }),
+  (await throws(
+    async () => (await storeRoster({ institutionId: "penn", term: "FA26", courses, source: "x" })),
     /Unknown institution/i,
     "an unconfigured institution is refused",
-  );
-  throws(
-    () => storeRoster({ institutionId: "cornell", term: "Fall 2026", courses, source: "x" }),
+  ));
+  (await throws(
+    async () => (await storeRoster({ institutionId: "cornell", term: "Fall 2026", courses, source: "x" })),
     /roster code/i,
     "a prose term name is refused; it must be a roster code",
-  );
-  throws(
-    () => storeRoster({ institutionId: "cornell", term: "FA26", courses: [], source: "x" }),
+  ));
+  (await throws(
+    async () => (await storeRoster({ institutionId: "cornell", term: "FA26", courses: [], source: "x" })),
     /empty roster/i,
     "an empty roster is refused rather than stored as a claim the campus teaches nothing",
-  );
+  ));
 
-  storeRoster({
+  (await storeRoster({
     institutionId: "cornell",
     term: "FA26",
     courses,
     source: "test",
     fetchedAt: "2026-08-20T00:00:00Z",
-  });
-  const snap = rosterSnapshot("cornell", "FA26");
+  }));
+  const snap = (await rosterSnapshot("cornell", "FA26"));
   ok(snap !== null, "the roster stores and reads back");
   ok(snap.courseCount === courses.length, `all ${courses.length} courses round-trip`);
   ok(snap.sectionCount > snap.courseCount, "sections outnumber courses");
@@ -81,36 +81,36 @@ const courses = parseCornellRoster(
 
   // A re-fetch writes a NEW row: add/drop changes the schedule, and a week-two
   // decision was made against week two's timetable.
-  storeRoster({
+  (await storeRoster({
     institutionId: "cornell",
     term: "FA26",
     courses: courses.slice(0, 50),
     source: "test",
     fetchedAt: "2026-09-10T00:00:00Z",
-  });
-  const rows = db().prepare("SELECT COUNT(*) n FROM roster_snapshots").get();
+  }));
+  const rows = (await db().prepare("SELECT COUNT(*) n FROM roster_snapshots").get());
   ok(rows.n === 2, `a re-fetch adds a row rather than overwriting, got ${rows.n}`);
 
   // POINT-IN-TIME: a replay of week two must get week two's roster.
   ok(
-    rosterSnapshot("cornell", "FA26", "2026-08-25T00:00:00Z").courseCount === courses.length,
+    (await rosterSnapshot("cornell", "FA26", "2026-08-25T00:00:00Z")).courseCount === courses.length,
     "a late-August replay gets the August roster",
   );
   ok(
-    rosterSnapshot("cornell", "FA26", "2026-09-15T00:00:00Z").courseCount === 50,
+    (await rosterSnapshot("cornell", "FA26", "2026-09-15T00:00:00Z")).courseCount === 50,
     "and a mid-September replay gets the September one",
   );
   ok(
-    rosterSnapshot("cornell", "FA26", "2026-08-01T00:00:00Z") === null,
+    (await rosterSnapshot("cornell", "FA26", "2026-08-01T00:00:00Z")) === null,
     "before anything was fetched, null rather than the earliest available",
   );
-  ok(storedTerms("cornell").includes("FA26"), "the term is listed for rosterAt() to choose among");
-  ok(rosterSnapshot("cornell", "SP19") === null, "a term we do not hold is null");
+  ok((await storedTerms("cornell")).includes("FA26"), "the term is listed for rosterAt() to choose among");
+  ok((await rosterSnapshot("cornell", "SP19")) === null, "a term we do not hold is null");
 }
 
 // ================================================== readiness reports gaps
 {
-  const r = planningReadiness(memberU, "2026-09-15T23:00:00Z");
+  const r = (await planningReadiness(memberU, "2026-09-15T23:00:00Z"));
   ok(r.term === "FA26", "readiness names the term");
   ok(r.roster !== null, "and sees the stored roster");
   ok(r.campusEvents === 0, "with no campus feed ingested");
@@ -128,7 +128,7 @@ const courses = parseCornellRoster(
     "and every gap says how to fix it",
   );
 
-  const summer = planningReadiness(memberU, "2027-07-04T18:00:00Z");
+  const summer = (await planningReadiness(memberU, "2027-07-04T18:00:00Z"));
   ok(summer.term === null, "an unconfigured moment has no term");
   ok(
     summer.missing.some((m) => m.input === "academic calendar"),
@@ -138,23 +138,23 @@ const courses = parseCornellRoster(
 
 // ==================================================== slot advice end to end
 {
-  throws(() => slotAdvice(memberU, { slots: [] }), /Officer access/i, "a member cannot ask for club-wide scheduling advice");
-  throws(() => slotAdvice(officer, { slots: [] }), /at least two/i, "one slot is not a comparison");
-  throws(
-    () => slotAdvice(officer, { slots: ["2026-09-15T23:00:00Z", "nonsense"] }),
+  (await throws(async () => (await slotAdvice(memberU, { slots: [] })), /Officer access/i, "a member cannot ask for club-wide scheduling advice"));
+  (await throws(async () => (await slotAdvice(officer, { slots: [] })), /at least two/i, "one slot is not a comparison"));
+  (await throws(
+    async () => (await slotAdvice(officer, { slots: ["2026-09-15T23:00:00Z", "nonsense"] })),
     /not a time/i,
     "an unparseable time is refused rather than silently dropped",
-  );
-  throws(
-    () => slotAdvice(officer, { slots: ["2027-07-04T18:00:00Z", "2027-07-05T18:00:00Z"] }),
+  ));
+  (await throws(
+    async () => (await slotAdvice(officer, { slots: ["2027-07-04T18:00:00Z", "2027-07-05T18:00:00Z"] })),
     /will not assume a normal week/i,
     "with no configured term the planner refuses rather than guessing",
-  );
+  ));
 
   const TUE_7PM = "2026-09-15T23:00:00Z";
   const TUE_11AM = "2026-09-15T15:00:00Z";
   const SAT_10AM = "2026-09-19T14:00:00Z";
-  const advice = slotAdvice(officer, { slots: [TUE_11AM, TUE_7PM, SAT_10AM], rsvps: 60 });
+  const advice = (await slotAdvice(officer, { slots: [TUE_11AM, TUE_7PM, SAT_10AM], rsvps: 60 }));
 
   ok(advice.ranked.length === 3, "three candidates come back ranked");
   ok(advice.recommended !== null, "with a recommendation");
@@ -205,12 +205,12 @@ const courses = parseCornellRoster(
   const { campusEventsInit, recordCampusEvent } = await import(
     "../lib/cec/context/campus-events.ts"
   );
-  campusEventsInit();
+  (await campusEventsInit());
   const TUE_7PM = "2026-09-15T23:00:00Z";
   let added = 0;
   for (let i = 0; i < 6; i++) {
     try {
-      recordCampusEvent({
+      (await recordCampusEvent({
         institution_id: "cornell",
         canonical_type: "speaker_event",
         title: `Competing talk ${i}`,
@@ -219,7 +219,7 @@ const courses = parseCornellRoster(
         observed_at: "2026-09-01T00:00:00Z",
         source_id: "cornell",
         external_record_id: `evt-${i}`,
-      });
+      }));
       added++;
     } catch {
       // Signature differences are tolerated; the assertion below is what counts.
@@ -227,10 +227,10 @@ const courses = parseCornellRoster(
   }
 
   if (added > 0) {
-    const advice = slotAdvice(officer, {
+    const advice = (await slotAdvice(officer, {
       slots: [TUE_7PM, "2026-09-19T14:00:00Z"],
       rsvps: 60,
-    });
+    }));
     const tue = advice.ranked.find((s) => s.at === TUE_7PM);
     ok(
       tue.competing > 0,
@@ -242,7 +242,7 @@ const courses = parseCornellRoster(
 
   // Whatever happened above, the adapter must never invent a start time.
   ok(
-    typeof slotAdvice(officer, { slots: ["2026-09-15T23:00:00Z", "2026-09-19T14:00:00Z"] })
+    typeof (await slotAdvice(officer, { slots: ["2026-09-15T23:00:00Z", "2026-09-19T14:00:00Z"] }))
       .ranked[0].competing === "number",
     "competing is always a number, never undefined",
   );

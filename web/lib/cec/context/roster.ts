@@ -26,9 +26,9 @@ import { institution } from "../institutions";
 
 let ready = false;
 
-export function rosterInit() {
+export async function rosterInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS roster_snapshots(
   id TEXT PRIMARY KEY,
   institution_id TEXT NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS roster_snapshots(
   -- the schedule, and a decision made in week two was made against week two's.
   UNIQUE(institution_id,term,fetched_at));
 CREATE INDEX IF NOT EXISTS roster_lookup ON roster_snapshots(institution_id,term,observed_at);
-`);
+`));
   ready = true;
 }
 
@@ -66,14 +66,14 @@ export type RosterSnapshot = {
 };
 
 /** Store a parsed roster. Returns the row id. */
-export function storeRoster(input: {
+export async function storeRoster(input: {
   institutionId: string;
   term: string;
   courses: Course[];
   source: string;
   fetchedAt?: string;
-}): string {
-  rosterInit();
+}): Promise<string> {
+  (await rosterInit());
   if (!institution(input.institutionId))
     fail(`Unknown institution "${input.institutionId}".`, 422);
   if (!/^(WI|SP|SU|FA)\d{2}$/.test(input.term))
@@ -84,7 +84,7 @@ export function storeRoster(input: {
   const rowId = id();
   const sections = input.courses.reduce((a, c) => a + c.sections.length, 0);
   const subjects = [...new Set(input.courses.map((c) => c.subject))].sort();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO roster_snapshots(id,institution_id,term,courses,course_count,section_count,subjects,source,parser_version,fetched_at,observed_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?)
@@ -102,7 +102,7 @@ export function storeRoster(input: {
       ROSTER_PARSER_VERSION,
       at,
       at,
-    );
+    ));
   return rowId;
 }
 
@@ -126,45 +126,45 @@ const hydrate = (r: any): RosterSnapshot => ({
  * week-two schedule rather than the post-add/drop one. Omitting `asOf` gets the
  * latest, which is what a live planner wants.
  */
-export function rosterSnapshot(
+export async function rosterSnapshot(
   institutionId: string,
   term: string,
   asOf?: string,
-): RosterSnapshot | null {
-  rosterInit();
+): Promise<RosterSnapshot | null> {
+  (await rosterInit());
   const row = asOf
-    ? db()
+    ? (await db()
         .prepare(
           "SELECT * FROM roster_snapshots WHERE institution_id=? AND term=? AND observed_at<=? ORDER BY observed_at DESC LIMIT 1",
         )
-        .get(institutionId, term, asOf)
-    : db()
+        .get(institutionId, term, asOf))
+    : (await db()
         .prepare(
           "SELECT * FROM roster_snapshots WHERE institution_id=? AND term=? ORDER BY observed_at DESC LIMIT 1",
         )
-        .get(institutionId, term);
+        .get(institutionId, term));
   return row ? hydrate(row) : null;
 }
 
 /** Which terms we actually hold, for rosterAt() to choose among. */
-export function storedTerms(institutionId: string): string[] {
-  rosterInit();
-  const rows = db()
+export async function storedTerms(institutionId: string): Promise<string[]> {
+  (await rosterInit());
+  const rows = (await db()
     .prepare(
       "SELECT DISTINCT term FROM roster_snapshots WHERE institution_id=? ORDER BY term",
     )
-    .all(institutionId) as { term: string }[];
+    .all(institutionId)) as { term: string }[];
   return rows.map((r) => r.term);
 }
 
-export function rosterSummary(institutionId: string) {
-  rosterInit();
-  return db()
+export async function rosterSummary(institutionId: string) {
+  (await rosterInit());
+  return (await db()
     .prepare(
       `SELECT term, MAX(observed_at) observed_at, course_count, section_count, source
        FROM roster_snapshots WHERE institution_id=? GROUP BY term ORDER BY term`,
     )
-    .all(institutionId);
+    .all(institutionId));
 }
 
 // ================================================================== ingestion
@@ -187,8 +187,8 @@ export async function ingestCornellRoster(
   subjects: string[],
   opts: { timeoutMs?: number } = {},
 ): Promise<{ term: string; courses: number; sections: number; subjects: string[] }> {
-  officer(u);
-  rosterInit();
+  (await officer(u));
+  (await rosterInit());
   const inst = institution("cornell");
   if (!inst?.rosterApi) fail("Cornell has no configured roster API.", 500);
   if (!/^(WI|SP|SU|FA)\d{2}$/.test(term)) fail(`"${term}" is not a roster code like FA26.`, 422);
@@ -212,12 +212,12 @@ export async function ingestCornellRoster(
   if (!courses.length)
     fail(`The roster returned no classes for ${term} in ${wanted.join(", ")}.`, 502);
 
-  storeRoster({
+  (await storeRoster({
     institutionId: "cornell",
     term,
     courses,
     source: `${inst.rosterApi}/search/classes.json`,
-  });
+  }));
   return {
     term,
     courses: courses.length,

@@ -1,36 +1,44 @@
 # Deploying Club OS
 
-Read the first section before choosing a host. It is the whole decision.
+## Choose the storage mode
 
----
+The operational API supports Supabase PostgreSQL (`CEC_STORAGE=postgres`) and local
+SQLite (`CEC_STORAGE=sqlite`). Supabase keeps records durable across serverless instances
+and deployments. SQLite requires a persistent volume and still refuses ephemeral hosts.
 
-## The constraint
-
-The entire backend is **one SQLite file** written with `node:sqlite`. That choice buys
-a lot — no external database, no connection pool, transactional writes, and a record
-you can copy, inspect and hand to a club as a single file.
-
-It costs exactly one thing: **the process needs a disk that survives.**
-
-On a serverless host every invocation gets a fresh, empty filesystem. The database is
-created empty on each cold start, writes vanish when the instance recycles, and two
-concurrent requests can be looking at two different databases. Nothing errors. A member
-signs up, sees a confirmation, and is simply gone.
-
-`web/lib/cec/db.ts` refuses to open on those hosts rather than lose data quietly, and
-returns a `503` with a human-readable reason — not a `500`, because "please try again"
-would be false.
-
-| Host | Marketing site | The actual product |
+| Host | Supabase operational API | SQLite operational API |
 |---|---|---|
-| **Fly.io / Railway / Render / any VPS** | works | **works** |
-| **Vercel / Netlify / Lambda** | works | **refuses to start — no persistent disk** |
+| Node container / VPS | Supported | Requires persistent disk |
+| Netlify / Vercel | Supported with server environment configured | Refuses ephemeral storage |
 
----
+The Python analytics engine still needs a separate durable worker/store. Moving the
+operational database does not provision hosted analytics. Email stays disabled until
+its worker and sender are configured deliberately.
 
-## Recommended: the production compose stack
+## Supabase on Netlify or Vercel
 
-Zero code changes. [`compose.production.yaml`](compose.production.yaml) already runs the
+Follow [the Supabase runbook](docs/33-postgres-migration.md) for exact variables,
+verified TLS, explicit migrations, data transfer, workers and recovery.
+
+1. Apply the committed SQL migrations and import existing data before enabling writes.
+2. Configure server-only `CEC_STORAGE=postgres`, `DATABASE_URL`,
+   `DATABASE_SSL_CA_PEM`, and the exact deployment `CEC_ORIGIN`.
+3. Preserve existing application encryption/signing secrets. Keep `CEC_EMAIL_MODE=disabled`.
+4. Deploy the updated Next.js code. Netlify uses the repository's `netlify.toml`;
+   Vercel's Root Directory is `web`.
+5. Verify `/api/cec/health` reports `storage: "postgres"`, then verify `/api/cec/state`
+   and authenticated workflows.
+
+Do not put database credentials in NEXT_PUBLIC_ variables. A local certificate file
+path is not available on the host: configure the full certificate PEM there. Do not
+use `CEC_ALLOW_EPHEMERAL=1` to bypass a missing database setting.
+
+The local cutover is recorded in [task 013](docs/tasks/013-hosted-database.md).
+Code and local environment changes do not update the live Netlify deployment by themselves.
+
+## SQLite: the production compose stack
+
+For the SQLite storage mode, [`compose.production.yaml`](compose.production.yaml) already runs the
 whole thing — `web`, a background `worker`, an `email` sender, scheduled `backups`, an
 `offsite` copy, a `monitor`, and a Caddy `proxy` for TLS — with the record on a named
 `data` volume mounted at `/data` and healthchecks on the app.
@@ -73,60 +81,15 @@ it is the club's record, and it is one file:
 
 ---
 
-## Vercel and Netlify
-
-You can deploy the **marketing frontend** to either. Only two server files reach the
-database (`app/api/cec/[...path]/route.ts` and `app/cec/[[...section]]/page.tsx`);
-everything else is client-rendered. So the public pages render normally and the club
-app reports, honestly, that it is not available on that host.
-
-That is a legitimate setup — marketing on Vercel, the app on a container host behind a
-subdomain — and it is how most products with a stateful backend are arranged.
-
-**Vercel:**
-
-```bash
-npx vercel login          # interactive: opens a browser
-npx vercel link           # set Root Directory to: web
-npx vercel --prod
-```
-
-Set Root Directory to `web` when importing, or the build will not find the Next.js app.
-
-**Do not** set `CEC_ALLOW_EPHEMERAL=1` to get past the guard on a real deployment. That
-override exists for a throwaway demo where losing every record is the expected and
-understood outcome. On anything a member might sign up to, it is a way of losing their
-data without telling them.
-
----
-
-## If you specifically want the app on Vercel
-
-That requires replacing SQLite with a hosted Postgres (Neon, Supabase, Vercel Postgres).
-
-It is a real migration, not a config change. Measured on the current codebase:
-
-- **461** `db()` call sites across **32** files
-- **504** synchronous `.get()` / `.all()` / `.run()` calls
-- **401** exported functions, of which only **9** are currently `async`
-
-`node:sqlite`'s `DatabaseSync` is synchronous; every Postgres client is not. So the
-migration is not "swap the driver" — it is converting ~500 call sites to `await` and
-cascading `async` through nearly 400 functions and all of their callers, plus rewriting
-75 `CREATE TABLE` statements and the `PRAGMA`-based migrations.
-
-That is worth doing when the product needs horizontal scale. It is not worth doing to
-satisfy a hosting preference, and a container host gives you the same result today for
-roughly the cost of a coffee per month.
-
----
-
 ## Verifying a deployment
 
 ```bash
-curl -s https://<your-host>/api/cec/state | head -c 200
+curl --fail https://<your-host>/api/cec/health
+curl --fail https://<your-host>/api/cec/state
 ```
 
-- A JSON body with club state → working.
-- `503` with *"Club OS is not available on …"* → the host has no persistent disk. Expected on Vercel/Netlify; move the app to a container host.
-- `500` *"Unable to complete this request"* → a genuine fault. Check logs.
+Health should identify the selected provider, and state should return club JSON.
+A 503 can indicate unavailable storage or missing hosted configuration; inspect the
+server logs without exposing credentials. Test sign-in and a permitted record workflow
+as well. Use the Supabase recovery process for PostgreSQL; SQLite volume backups cannot
+restore a remote database.

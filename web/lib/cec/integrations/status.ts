@@ -1,3 +1,4 @@
+import { asyncMap } from "../async";
 // What is actually connected, said out loud.
 //
 // README-CEC.md makes one promise about this screen: "The interface says 'not
@@ -114,10 +115,10 @@ function checkKey(integrationId: string) {
 
 type CheckStamp = { at: string; ok: boolean; detail: string };
 
-function lastCheck(integrationId: string): CheckStamp | null {
-  const row = db()
+async function lastCheck(integrationId: string): Promise<CheckStamp | null> {
+  const row = (await db()
     .prepare("SELECT value FROM settings WHERE key=?")
-    .get(checkKey(integrationId)) as { value: string } | undefined;
+    .get(checkKey(integrationId))) as { value: string } | undefined;
   if (!row) return null;
   try {
     const parsed = JSON.parse(row.value) as CheckStamp;
@@ -132,25 +133,25 @@ function lastCheck(integrationId: string): CheckStamp | null {
  * pass a short human detail — "sent test message", "401 invalid_api_key" — and
  * must never pass a response body, because a response body can carry a token.
  */
-export function recordCheck(
+export async function recordCheck(
   u: User,
   integrationId: string,
   ok: boolean,
   detail = "",
-): CheckStamp {
-  integrationsInit();
+): Promise<CheckStamp> {
+  (await integrationsInit());
   if (!findIntegration(integrationId)) fail("Unknown integration.", 404);
   const stamp: CheckStamp = {
     at: timestamp(),
     ok,
     detail: String(detail).slice(0, 200),
   };
-  db()
+  (await db()
     .prepare(
       "INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
     )
-    .run(checkKey(integrationId), JSON.stringify(stamp));
-  audit(u, "integration.checked", integrationId, { ok, detail: stamp.detail });
+    .run(checkKey(integrationId), JSON.stringify(stamp)));
+  (await audit(u, "integration.checked", integrationId, { ok, detail: stamp.detail }));
   return stamp;
 }
 
@@ -172,10 +173,10 @@ function presentFor(i: Integration): string[] {
  * Read it as a ladder: each rung can only ever move an integration further away
  * from "connected". There is no branch that promotes.
  */
-export function statusOf(integrationId: string): IntegrationStatus {
+export async function statusOf(integrationId: string): Promise<IntegrationStatus> {
   const i = findIntegration(integrationId);
   if (!i) fail("Unknown integration.", 404);
-  integrationsInit();
+  (await integrationsInit());
   const now = timestamp();
   const missingEnv = missingFor(i!);
   const configured = missingEnv.length === 0;
@@ -224,7 +225,7 @@ export function statusOf(integrationId: string): IntegrationStatus {
   }
 
   if (persistsToken(i!)) {
-    const row = tokenRow(i!.id);
+    const row = (await tokenRow(i!.id));
     if (!row) {
       summary = `Configured but not connected. The credentials for ${i!.name} are on the server, and nobody has completed the consent screen yet.`;
       nextStep = `An officer opens ${i!.name} on this screen and presses Connect, then approves the listed scopes.`;
@@ -256,7 +257,7 @@ export function statusOf(integrationId: string): IntegrationStatus {
   } else {
     // Key-based, webhook-based and SAML integrations: no token to inspect, so
     // the only evidence that anything works is a recorded successful call.
-    const check = lastCheck(i!.id);
+    const check = (await lastCheck(i!.id));
     if (!check || !check.ok) {
       summary = `Configured but not connected. The settings for ${i!.name} are present${check ? `, and the last check failed (${check.detail || "no detail"})` : ", and no successful call to the provider has been recorded"}. A key in a file is not proof that the provider accepts it.`;
       nextStep = `Run a test call to ${i!.name}; it will record the result here.`;
@@ -298,9 +299,9 @@ export function statusOf(integrationId: string): IntegrationStatus {
 }
 
 /** Every integration in the registry, in registry order. */
-export function integrationStatus(): IntegrationStatus[] {
-  integrationsInit();
-  return INTEGRATIONS.map((i) => statusOf(i.id));
+export async function integrationStatus(): Promise<IntegrationStatus[]> {
+  (await integrationsInit());
+  return (await asyncMap(INTEGRATIONS, async (i) => (await statusOf(i.id))));
 }
 
 /**
@@ -308,15 +309,15 @@ export function integrationStatus(): IntegrationStatus[] {
  * live, so the number can never flatter the system: an expired token and an
  * unreadable row both count against it.
  */
-export function integrationSummary(): {
+export async function integrationSummary(): Promise<{
   total: number;
   connected: number;
   configuredNotConnected: number;
   notConfigured: number;
   notConnected: number;
   statement: string;
-} {
-  const all = integrationStatus();
+}> {
+  const all = (await integrationStatus());
   const connected = all.filter((s) => s.connected);
   const notConfigured = all.filter((s) => s.state === "not_configured");
   const configuredNotConnected = all.filter(
@@ -378,10 +379,10 @@ export type SetupInstructions = {
  * see whether somebody configured a consent screen, and pretending it can is
  * the same class of lie as a fabricated connected badge.
  */
-export function setupInstructions(integrationId: string): SetupInstructions {
+export async function setupInstructions(integrationId: string): Promise<SetupInstructions> {
   const i = findIntegration(integrationId);
   if (!i) fail("Unknown integration.", 404);
-  const s = statusOf(i!.id);
+  const s = (await statusOf(i!.id));
   const present = new Set(s.presentEnv);
   return {
     id: i!.id,
@@ -422,19 +423,19 @@ export function setupInstructions(integrationId: string): SetupInstructions {
  * action in this router that can put a token in a response body, and adding one
  * would break the tests in tests/integrations.mjs on purpose.
  */
-export function integrations(u: User, action: string, b: any) {
-  officer(u);
-  integrationsInit();
+export async function integrations(u: User, action: string, b: any) {
+  (await officer(u));
+  (await integrationsInit());
   if (action === "status")
-    return { summary: integrationSummary(), integrations: integrationStatus() };
+    return { summary: (await integrationSummary()), integrations: (await integrationStatus()) };
   if (action === "setup")
-    return setupInstructions(String(b?.id || "").slice(0, 64));
+    return (await setupInstructions(String(b?.id || "").slice(0, 64)));
   if (action === "check")
-    return recordCheck(
+    return (await recordCheck(
       u,
       String(b?.id || "").slice(0, 64),
       b?.ok === true,
       String(b?.detail || "").slice(0, 200),
-    );
+    ));
   fail("Unknown integration action.", 404);
 }

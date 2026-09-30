@@ -7,7 +7,7 @@ const dir = mkdtempSync(join(tmpdir(), "cec-sig-"));
 const secret = randomBytes(32).toString("hex");
 const port = "3111";
 const origin = "http://localhost:" + port;
-const env = { ...process.env, CEC_DATABASE: join(dir, "cec.sqlite"), CEC_BOOTSTRAP_TOKEN: secret,
+const env = { ...process.env, CEC_STORAGE: "sqlite", CEC_DATABASE: join(dir, "cec.sqlite"), CEC_BOOTSTRAP_TOKEN: secret,
   CEC_ORIGIN: origin, CEC_TEST_ORIGIN: origin, NEXT_TELEMETRY_DISABLED: "1", CEC_DIST_DIR: ".next-sig", WATCHPACK_POLLING: "1000" };
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--port", port], { env, stdio: ["ignore","pipe","pipe"] });
 let logs = ""; server.stdout.on("data", b => logs += b); server.stderr.on("data", b => logs += b);

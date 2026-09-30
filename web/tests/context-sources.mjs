@@ -69,10 +69,10 @@ const ok = (c, m) => {
   assert.ok(c, m);
   checks++;
 };
-const throws = (fn, re, m) => {
+const throws = async (fn, re, m) => {
   let got = null;
   try {
-    fn();
+    await fn();
   } catch (e) {
     got = e.message;
   }
@@ -81,13 +81,13 @@ const throws = (fn, re, m) => {
   checks++;
 };
 
-sourcesInit();
-campusEventsInit();
+(await sourcesInit());
+(await campusEventsInit());
 
 // ===================================================== 1. source registration
 
 {
-  const cornell = sourcesFor("cornell");
+  const cornell = (await sourcesFor("cornell"));
   ok(cornell.length === 1, `Cornell is seeded as exactly one row, got ${cornell.length}`);
   ok(cornell[0].source_id === "cornell_localist", "the seeded id names the institution and the platform");
   ok(cornell[0].institution_id === "cornell", "institution is a column, not an assumption");
@@ -95,13 +95,13 @@ campusEventsInit();
   ok(cornell[0].permission_checked_at === "2026-09-11", "and the date that basis was reviewed");
   ok(cornell[0].active === 1, "seeded sources are active");
 
-  sourcesInit();
-  ok(sourcesFor("cornell").length === 1, "re-running init does not duplicate the seed");
+  (await sourcesInit());
+  ok((await sourcesFor("cornell")).length === 1, "re-running init does not duplicate the seed");
 }
 
 {
   // A second institution proves nothing here is Cornell-shaped.
-  registerSource({
+  (await registerSource({
     sourceId: "testu_livewhale",
     institutionId: "testu",
     name: "Test University",
@@ -110,8 +110,8 @@ campusEventsInit();
     permissionBasis: "robots_allowed",
     trustLevel: "published",
     permissionCheckedAt: "2026-09-11",
-  });
-  registerSource({
+  }));
+  (await registerSource({
     sourceId: "testu_registrar",
     institutionId: "testu",
     name: "Test University Registrar",
@@ -120,12 +120,12 @@ campusEventsInit();
     permissionBasis: "unreviewed",
     trustLevel: "authoritative",
     crawlFrequency: "termly",
-  });
-  ok(sourcesFor("testu").length === 2, "a second institution registers independently");
-  ok(sourcesFor("cornell").length === 1, "and does not leak into Cornell's list");
-  ok(institutions().includes("testu") && institutions().includes("cornell"), "both institutions are enumerable");
+  }));
+  ok((await sourcesFor("testu")).length === 2, "a second institution registers independently");
+  ok((await sourcesFor("cornell")).length === 1, "and does not leak into Cornell's list");
+  ok((await institutions()).includes("testu") && (await institutions()).includes("cornell"), "both institutions are enumerable");
 
-  const updated = registerSource({
+  const updated = (await registerSource({
     sourceId: "testu_livewhale",
     institutionId: "testu",
     name: "Test University Events",
@@ -133,36 +133,36 @@ campusEventsInit();
     baseUrl: "https://events.testu.edu",
     permissionBasis: "robots_allowed",
     parserVersion: "1.1.0",
-  });
+  }));
   ok(updated.name === "Test University Events", "re-registering updates in place");
-  ok(sourcesFor("testu").length === 2, "and does not add a row");
+  ok((await sourcesFor("testu")).length === 2, "and does not add a row");
   ok(updated.parser_version === "1.1.0", "the parser version is carried on the source, not in code");
 }
 
-throws(
-  () => registerSource({ sourceId: "Bad-Id", institutionId: "testu", name: "x", sourceType: "html", baseUrl: "https://x.edu" }),
+(await throws(
+  async () => (await registerSource({ sourceId: "Bad-Id", institutionId: "testu", name: "x", sourceType: "html", baseUrl: "https://x.edu" })),
   /source_id/i,
   "an id that is not lower_snake_case is refused",
-);
-throws(
-  () => registerSource({ sourceId: "ok_id", institutionId: "testu", name: "x", sourceType: "html", baseUrl: "ftp://x.edu" }),
+));
+(await throws(
+  async () => (await registerSource({ sourceId: "ok_id", institutionId: "testu", name: "x", sourceType: "html", baseUrl: "ftp://x.edu" })),
   /http/i,
   "a non-http base URL is refused",
-);
-throws(
-  () => registerSource({ sourceId: "ok_id", institutionId: "testu", name: "x", sourceType: "telepathy", baseUrl: "https://x.edu" }),
+));
+(await throws(
+  async () => (await registerSource({ sourceId: "ok_id", institutionId: "testu", name: "x", sourceType: "telepathy", baseUrl: "https://x.edu" })),
   /source_type/i,
   "an unknown source type is refused",
-);
+));
 
 {
-  const defaulted = registerSource({
+  const defaulted = (await registerSource({
     sourceId: "defaulted_source",
     institutionId: "testu",
     name: "Unreviewed by default",
     sourceType: "rss",
     baseUrl: "https://blog.testu.edu",
-  });
+  }));
   ok(defaulted.permission_basis === "unreviewed", "permission defaults to unreviewed, never to allowed");
   ok(maySource(defaulted).allowed === false, "and unreviewed is not fetchable");
 }
@@ -172,7 +172,7 @@ throws(
 {
   // Yale's Localist API returns perfectly good JSON. Yale's robots.txt says
   // Disallow: /. The endpoint responding is not permission.
-  const yale = registerSource({
+  const yale = (await registerSource({
     sourceId: "yale_localist",
     institutionId: "yale",
     name: "Yale University",
@@ -180,15 +180,15 @@ throws(
     baseUrl: "https://events.yale.edu",
     permissionBasis: "robots_disallowed",
     permissionCheckedAt: "2026-09-11",
-  });
+  }));
   const gate = maySource(yale);
   ok(gate.allowed === false, "a robots_disallowed source is never fetchable");
   ok(/not permission/i.test(gate.reason), `the refusal says why: "${gate.reason}"`);
-  ok(source("yale_localist").base_url === "https://events.yale.edu", "it is still recorded — detection is allowed, fetching is not");
-  ok(crawlableSources("yale").length === 0, "and it never appears in the crawl list");
+  ok((await source("yale_localist")).base_url === "https://events.yale.edu", "it is still recorded — detection is allowed, fetching is not");
+  ok((await crawlableSources("yale")).length === 0, "and it never appears in the crawl list");
 
   // Reactivating must not read like a way around consent.
-  registerSource({
+  (await registerSource({
     sourceId: "yale_localist",
     institutionId: "yale",
     name: "Yale University",
@@ -196,16 +196,16 @@ throws(
     baseUrl: "https://events.yale.edu",
     permissionBasis: "robots_disallowed",
     active: true,
-  });
-  ok(maySource(source("yale_localist")).allowed === false, "active=1 does not override robots_disallowed");
+  }));
+  ok(maySource((await source("yale_localist"))).allowed === false, "active=1 does not override robots_disallowed");
 
-  const refusal = mayCrawl("yale_localist");
+  const refusal = (await mayCrawl("yale_localist"));
   ok(refusal.allowed === false, "mayCrawl refuses too");
-  const runs = sourceRuns("yale_localist");
+  const runs = (await sourceRuns("yale_localist"));
   ok(runs.length === 1 && runs[0].status === "refused", "and the refusal is written to the run log");
   ok(/not permission/i.test(runs[0].error), "with the reason, so a refusal is not mistaken for a source nobody tried");
 
-  const paused = registerSource({
+  const paused = (await registerSource({
     sourceId: "paused_source",
     institutionId: "testu",
     name: "Paused feed",
@@ -213,7 +213,7 @@ throws(
     baseUrl: "https://ics.testu.edu",
     permissionBasis: "robots_allowed",
     active: false,
-  });
+  }));
   ok(maySource(paused).allowed === false, "a deactivated source is not crawled");
   ok(/deactivated/i.test(maySource(paused).reason), "and says it is paused, not that consent was refused");
 }
@@ -221,26 +221,26 @@ throws(
 // ==================================================== 3. the crawl attempt log
 
 {
-  const before = source("cornell_localist");
+  const before = (await source("cornell_localist"));
   ok(before.last_attempt_at === null, "a never-crawled source has no attempt stamp");
-  const runId = recordAttempt("cornell_localist", "2026-09-15T00:00:00.000Z");
-  ok(source("cornell_localist").last_attempt_at === "2026-09-15T00:00:00.000Z", "the attempt is stamped before the fetch, so a crash still leaves a trace");
-  ok(source("cornell_localist").last_success_at === null, "an attempt is not a success");
+  const runId = (await recordAttempt("cornell_localist", "2026-09-15T00:00:00.000Z"));
+  ok((await source("cornell_localist")).last_attempt_at === "2026-09-15T00:00:00.000Z", "the attempt is stamped before the fetch, so a crash still leaves a trace");
+  ok((await source("cornell_localist")).last_success_at === null, "an attempt is not a success");
 
-  recordSuccess(runId, { rowsSeen: 120, rowsNew: 12 }, "2026-09-15T00:00:09.000Z");
-  ok(source("cornell_localist").last_success_at === "2026-09-15T00:00:09.000Z", "success stamps the source");
-  const [run] = sourceRuns("cornell_localist");
+  (await recordSuccess(runId, { rowsSeen: 120, rowsNew: 12 }, "2026-09-15T00:00:09.000Z"));
+  ok((await source("cornell_localist")).last_success_at === "2026-09-15T00:00:09.000Z", "success stamps the source");
+  const [run] = (await sourceRuns("cornell_localist"));
   ok(run.status === "success" && run.rows_seen === 120 && run.rows_new === 12, "the run records both counts, because their ratio is the health signal");
 
-  const failing = recordAttempt("cornell_localist", "2026-09-16T00:00:00.000Z");
-  recordFailure(failing, "502 from events.cornell.edu", "2026-09-16T00:00:05.000Z");
-  ok(source("cornell_localist").last_success_at === "2026-09-15T00:00:09.000Z", "a failure does not touch last_success_at");
-  ok(sourceRuns("cornell_localist").some((r) => r.status === "error" && /502/.test(r.error)), "the error is kept verbatim");
+  const failing = (await recordAttempt("cornell_localist", "2026-09-16T00:00:00.000Z"));
+  (await recordFailure(failing, "502 from events.cornell.edu", "2026-09-16T00:00:05.000Z"));
+  ok((await source("cornell_localist")).last_success_at === "2026-09-15T00:00:09.000Z", "a failure does not touch last_success_at");
+  ok((await sourceRuns("cornell_localist")).some((r) => r.status === "error" && /502/.test(r.error)), "the error is kept verbatim");
 
-  const stale = staleSources("cornell", "2026-09-20T00:00:00.000Z");
+  const stale = (await staleSources("cornell", "2026-09-20T00:00:00.000Z"));
   ok(stale.length === 1, "five days without rows is stale for a daily feed");
   ok(/missing data, not/i.test(stale[0].reason), "and the reason says an empty feed is missing data, not a quiet campus");
-  ok(staleSources("cornell", "2026-09-15T06:00:00.000Z").length === 0, "a fresh feed is not flagged");
+  ok((await staleSources("cornell", "2026-09-15T06:00:00.000Z")).length === 0, "a fresh feed is not flagged");
 }
 
 // ====================================================== 4. classify() refuses
@@ -407,25 +407,25 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
   );
   ok(localist.length === 1 && livewhale.length === 1, "both platform parsers produced one row each");
 
-  const result = ingestContextRecords({
+  const result = (await ingestContextRecords({
     institutionId: "cornell",
     observedAt: OBSERVED,
     records: [...localist, ...livewhale].map((e) => fromCampusEvent(e)),
-  });
+  }));
   ok(result.canonicalIds.length === 1, `two source records became one canonical event, got ${result.canonicalIds.length}`);
   ok(result.created === 1 && result.linked === 1, "one row created, one record linked into it");
 
   const id = result.canonicalIds[0];
-  const links = eventSources(id);
+  const links = (await eventSources(id));
   ok(links.length === 2, "both source records are attached");
   ok(new Set(links.map((l) => l.source_id)).size === 2, "one from each feed");
   ok(links.every((l) => l.match_method && l.match_confidence > 0), "every link carries a method and a confidence");
   ok(links.some((l) => l.match_method === "seed"), "one link is the seed");
   ok(links.some((l) => l.match_method === "title_time_location"), "the other names the features that merged it");
   ok(links.every((l) => l.raw_title), "each link keeps what its source actually said");
-  ok(canonicalFor("cornell_livewhale", "77") === id, "a source record can be traced forward to its canonical event");
+  ok((await canonicalFor("cornell_livewhale", "77")) === id, "a source record can be traced forward to its canonical event");
 
-  const ev = canonicalEvent(id);
+  const ev = (await canonicalEvent(id));
   ok(ev.canonical_type === "career_fair", `the merged event is classified, got ${ev.canonical_type}`);
   ok(ev.location === "Barton Hall", "the canonical row took the representative's location");
   ok(ev.observed_at === OBSERVED, "observed_at is the crawl clock, not the writer's clock");
@@ -435,22 +435,22 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
   ok(ev.source_hash.length === 64, "a change-detection fingerprint is stored");
 
   // Idempotency, and the fact that a later crawl cannot move observed_at forward.
-  const again = ingestContextRecords({
+  const again = (await ingestContextRecords({
     institutionId: "cornell",
     observedAt: "2026-09-16T00:00:00.000Z",
     records: [...localist, ...livewhale].map((e) => fromCampusEvent(e)),
-  });
+  }));
   ok(again.canonicalIds.length === 1 && again.canonicalIds[0] === id, "re-crawling lands on the same canonical event");
   ok(again.created === 0, "and creates nothing new");
-  ok(eventSources(id).length === 2, "and adds no duplicate provenance rows");
-  ok(canonicalEvent(id).observed_at === OBSERVED, "observed_at only ever moves backwards: it is when we FIRST knew");
+  ok((await eventSources(id)).length === 2, "and adds no duplicate provenance rows");
+  ok((await canonicalEvent(id)).observed_at === OBSERVED, "observed_at only ever moves backwards: it is when we FIRST knew");
 }
 
 // ======================================= 7. genuinely different events survive
 
 {
-  const before = campusEventsAsOf("cornell", "2026-09-20T00:00:00.000Z").length;
-  ingestContextRecords({
+  const before = (await campusEventsAsOf("cornell", "2026-09-20T00:00:00.000Z")).length;
+  (await ingestContextRecords({
     institutionId: "cornell",
     observedAt: OBSERVED,
     records: [
@@ -462,11 +462,11 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
         location: "Barton Hall",
       },
     ],
-  });
-  const after = campusEventsAsOf("cornell", "2026-09-20T00:00:00.000Z");
+  }));
+  const after = (await campusEventsAsOf("cornell", "2026-09-20T00:00:00.000Z"));
   ok(after.length === before + 1, "a different event in the same room at the same hour is its own canonical row");
   const salsa = after.find((e) => /salsa/i.test(e.title));
-  ok(eventSources(salsa.id).length === 1, "and carries only its own source record");
+  ok((await eventSources(salsa.id)).length === 1, "and carries only its own source record");
   ok(salsa.canonical_type === "unknown", "an unreadable title is stored as unknown rather than guessed into a type");
 }
 
@@ -474,7 +474,7 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
 
 {
   // Test University learns about two events at very different times.
-  ingestContextRecords({
+  (await ingestContextRecords({
     institutionId: "testu",
     observedAt: "2026-09-01T00:00:00.000Z",
     records: [
@@ -486,8 +486,8 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
         location: "Kline Center",
       },
     ],
-  });
-  ingestContextRecords({
+  }));
+  (await ingestContextRecords({
     institutionId: "testu",
     observedAt: "2026-09-25T00:00:00.000Z",
     records: [
@@ -499,17 +499,17 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
         location: "Field House",
       },
     ],
-  });
+  }));
 
-  const asOfEarly = campusEventsAsOf("testu", "2026-09-10T00:00:00.000Z");
+  const asOfEarly = (await campusEventsAsOf("testu", "2026-09-10T00:00:00.000Z"));
   ok(asOfEarly.length === 1, `only the event we had already seen is visible, got ${asOfEarly.length}`);
   ok(/Employer/.test(asOfEarly[0].title), "and it is the right one");
 
-  const asOfLate = campusEventsAsOf("testu", "2026-09-30T00:00:00.000Z");
+  const asOfLate = (await campusEventsAsOf("testu", "2026-09-30T00:00:00.000Z"));
   ok(asOfLate.length === 2, "both are visible once both have been observed");
 
   // The hard case: a past event we only learn about later.
-  ingestContextRecords({
+  (await ingestContextRecords({
     institutionId: "testu",
     observedAt: "2026-11-20T00:00:00.000Z",
     records: [
@@ -521,8 +521,8 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
         publishedAt: "2026-03-02T16:00:00.000Z",
       },
     ],
-  });
-  const backdated = campusEventsAsOf("testu", "2026-12-01T00:00:00.000Z").find((e) => /Provost/.test(e.title));
+  }));
+  const backdated = (await campusEventsAsOf("testu", "2026-12-01T00:00:00.000Z")).find((e) => /Provost/.test(e.title));
   ok(!!backdated, "the backdated announcement is stored");
   ok(backdated.canonical_type === "campus_policy_change", "and classified");
   ok(backdated.occurred_at === "2026-03-02T15:00:00.000Z", "occurred_at is March: it had already happened when we saw it");
@@ -530,7 +530,7 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
   ok(backdated.published_at === "2026-03-02T16:00:00.000Z", "published_at is the source's own clock, distinct from both");
   ok(backdated.occurred_at !== backdated.observed_at, "the three clocks are genuinely distinct for external data");
   ok(
-    campusEventsAsOf("testu", "2026-06-01T00:00:00.000Z").every((e) => !/Provost/.test(e.title)),
+    (await campusEventsAsOf("testu", "2026-06-01T00:00:00.000Z")).every((e) => !/Provost/.test(e.title)),
     "and a question asked in June cannot see a fact we only learned in November, even though it happened in March",
   );
 }
@@ -538,7 +538,7 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
 // ================================ 9. merging never destroys a source record
 
 {
-  const first = recordCampusEvent(
+  const first = (await recordCampusEvent(
     {
       institutionId: "mergeu",
       canonicalType: "speaker_event",
@@ -547,8 +547,8 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
       observedAt: "2026-09-01T00:00:00.000Z",
     },
     { sourceId: "m_src_a", externalRecordId: "1", matchMethod: "seed", matchConfidence: 1 },
-  );
-  const second = recordCampusEvent(
+  ));
+  const second = (await recordCampusEvent(
     {
       institutionId: "mergeu",
       canonicalType: "speaker_event",
@@ -557,19 +557,19 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
       observedAt: "2026-09-03T00:00:00.000Z",
     },
     { sourceId: "m_src_b", externalRecordId: "2", matchMethod: "seed", matchConfidence: 1 },
-  );
+  ));
   ok(first !== second, "two independently recorded rows start as two canonical events");
 
-  mergeCanonical(second, first, "title_time_location", 0.88, "2026-09-04T00:00:00.000Z");
-  ok(canonicalEvent(second) === null, "the emptied shell is gone");
-  const links = eventSources(first);
+  (await mergeCanonical(second, first, "title_time_location", 0.88, "2026-09-04T00:00:00.000Z"));
+  ok((await canonicalEvent(second)) === null, "the emptied shell is gone");
+  const links = (await eventSources(first));
   ok(links.length === 2, "but both source records survive the merge");
   ok(links.some((l) => l.source_id === "m_src_b" && l.match_confidence === 0.88), "the repointed record carries the merge's method and confidence");
   ok(
-    db().prepare("SELECT COUNT(*) n FROM campus_event_sources WHERE source_id='m_src_b'").get().n === 1,
+    (await db().prepare("SELECT COUNT(*) n FROM campus_event_sources WHERE source_id='m_src_b'").get()).n === 1,
     "no source record was deleted by the cascade",
   );
-  ok(canonicalEvent(first).observed_at === "2026-09-01T00:00:00.000Z", "the earliest observation survives the merge");
+  ok((await canonicalEvent(first)).observed_at === "2026-09-01T00:00:00.000Z", "the earliest observation survives the merge");
 }
 
 // ========================================================= 10. factors compute
@@ -591,7 +591,7 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
 
   // A night with plenty on.
   const asOf = "2026-10-01T12:00:00.000Z";
-  ingestContextRecords({
+  (await ingestContextRecords({
     institutionId: "cornell",
     observedAt: OBSERVED,
     records: [
@@ -601,9 +601,9 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
       { sourceId: "cornell_livewhale", externalId: "204", title: "Guest Speaker: Ada Rivera on Climate Finance", startAt: "2026-10-01T22:00:00.000Z", location: "Uris Hall" },
       { sourceId: "cornell_livewhale", externalId: "205", title: "Alumni Reunion Brunch", startAt: "2026-10-01T15:00:00.000Z", location: "Willard Straight" },
     ],
-  });
+  }));
 
-  const events = campusEventsAsOf("cornell", asOf);
+  const events = (await campusEventsAsOf("cornell", asOf));
   ok(events.length >= 7, `the canonical calendar has ${events.length} events as of the crawl`);
 
   const density = computeFactor(campusEventDensity, "cornell", { events }, asOf);
@@ -635,7 +635,7 @@ const OBSERVED = "2026-09-15T00:00:00.000Z";
   const missing = computeFactor(campusEventDensity, "cornell", {}, asOf);
   ok(missing.status === "missing_input", "a caller who forgets the events gets an error, not a zero");
 
-  const quiet = computeFactor(campusEventDensity, "testu", { events: campusEventsAsOf("testu", asOf) }, asOf);
+  const quiet = computeFactor(campusEventDensity, "testu", { events: (await campusEventsAsOf("testu", asOf)) }, asOf);
   ok(quiet.status === "ok" && quiet.value === 0, "a genuinely quiet night with a live feed reports zero");
 }
 

@@ -109,9 +109,9 @@ export const GROUP_MAX = 50;
 export const OPEN_LIMIT = 30;
 
 let ready = false;
-export function messagingInit() {
+export async function messagingInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS conversations(
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -156,19 +156,19 @@ CREATE TABLE IF NOT EXISTS message_mentions(
   created_at TEXT NOT NULL,
   PRIMARY KEY(message_id,user_id));
 CREATE INDEX IF NOT EXISTS mention_inbox ON message_mentions(user_id,conversation_id);
-`);
+`));
   // Additive migration, the interviews.ts idiom: a database created before
   // dedupe_key existed has no way to enforce DM idempotency, and the unique
   // index below would fail to build against it.
-  const cols = db()
+  const cols = (await db()
     .prepare("PRAGMA table_info(conversations)")
-    .all() as { name: string }[];
+    .all()) as { name: string }[];
   if (!cols.some((c) => c.name === "dedupe_key"))
-    db().exec("ALTER TABLE conversations ADD COLUMN dedupe_key TEXT");
+    (await db().exec("ALTER TABLE conversations ADD COLUMN dedupe_key TEXT"));
   // Partial, so the many NULLs that groups carry do not collide.
-  db().exec(
+  (await db().exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS conversation_dedupe ON conversations(dedupe_key) WHERE dedupe_key IS NOT NULL",
-  );
+  ));
   ready = true;
 }
 
@@ -181,27 +181,27 @@ export function dmKey(a: string, b: string): string {
   return "dm:" + [a, b].sort().join("|");
 }
 
-function byDedupe(key: string): Conversation | null {
-  return (db()
+async function byDedupe(key: string): Promise<Conversation | null> {
+  return ((await db()
     .prepare("SELECT * FROM conversations WHERE dedupe_key=?")
-    .get(key) as Conversation) || null;
+    .get(key)) as Conversation) || null;
 }
 
-function conversationRow(conversationId: string): Conversation | null {
-  return (db()
+async function conversationRow(conversationId: string): Promise<Conversation | null> {
+  return ((await db()
     .prepare("SELECT * FROM conversations WHERE id=?")
-    .get(conversationId) as Conversation) || null;
+    .get(conversationId)) as Conversation) || null;
 }
 
-function activeMembership(
+async function activeMembership(
   conversationId: string,
   userId: string,
-): Membership | null {
-  return (db()
+): Promise<Membership | null> {
+  return ((await db()
     .prepare(
       "SELECT * FROM conversation_members WHERE conversation_id=? AND user_id=? AND left_at IS NULL",
     )
-    .get(conversationId, userId) as Membership) || null;
+    .get(conversationId, userId)) as Membership) || null;
 }
 
 /**
@@ -214,40 +214,40 @@ function activeMembership(
  * conversation id is real, which for a DM is the metadata we refuse to hand
  * out. Probing ids should be uniformly uninformative.
  */
-export function requireMember(
+export async function requireMember(
   u: User,
   conversationId: string,
-): { conversation: Conversation; membership: Membership } {
-  messagingInit();
-  const conversation = conversationRow(conversationId);
+): Promise<{ conversation: Conversation; membership: Membership }> {
+  (await messagingInit());
+  const conversation = (await conversationRow(conversationId));
   const membership = conversation
-    ? activeMembership(conversationId, u.id)
+    ? (await activeMembership(conversationId, u.id))
     : null;
   if (!conversation || !membership) fail("Conversation not found.", 404);
   return { conversation, membership };
 }
 
-function joinRow(conversationId: string, userId: string, role: string) {
+async function joinRow(conversationId: string, userId: string, role: string) {
   const now = timestamp();
   // A new joiner starts with a clean unread count rather than the entire
   // backlog. They can still scroll it; they are just not told they are 400
   // messages behind on a channel they joined a second ago.
-  const watermark = latestCreatedAt(conversationId);
-  db()
+  const watermark = (await latestCreatedAt(conversationId));
+  (await db()
     .prepare(
       `INSERT INTO conversation_members(conversation_id,user_id,joined_at,left_at,last_read_at,muted,role)
        VALUES (?,?,?,NULL,?,0,?)
        ON CONFLICT(conversation_id,user_id) DO UPDATE SET left_at=NULL,joined_at=excluded.joined_at`,
     )
-    .run(conversationId, userId, now, watermark, role);
+    .run(conversationId, userId, now, watermark, role));
 }
 
-function latestCreatedAt(conversationId: string): string | null {
-  const row = db()
+async function latestCreatedAt(conversationId: string): Promise<string | null> {
+  const row = (await db()
     .prepare(
       "SELECT created_at FROM conversation_messages WHERE conversation_id=? ORDER BY seq DESC LIMIT 1",
     )
-    .get(conversationId) as { created_at: string } | undefined;
+    .get(conversationId)) as { created_at: string } | undefined;
   return row ? row.created_at : null;
 }
 
@@ -259,17 +259,17 @@ function latestCreatedAt(conversationId: string): string | null {
  * counted as already read. Bumping by a millisecond costs nothing and makes
  * the watermark exact.
  */
-function nextCreatedAt(conversationId: string): string {
+async function nextCreatedAt(conversationId: string): Promise<string> {
   const now = timestamp();
-  const last = latestCreatedAt(conversationId);
+  const last = (await latestCreatedAt(conversationId));
   if (last && last >= now) return new Date(Date.parse(last) + 1).toISOString();
   return now;
 }
 
-function eligible(userId: string): { id: string; name: string; role: string } {
-  const row = db()
+async function eligible(userId: string): Promise<{ id: string; name: string; role: string }> {
+  const row = (await db()
     .prepare("SELECT id,name,role FROM users WHERE id=?")
-    .get(userId) as { id: string; name: string; role: string } | undefined;
+    .get(userId)) as { id: string; name: string; role: string } | undefined;
   // Applicants are not in the club yet. A DM channel into the membership is
   // not part of what an application buys.
   if (!row || row.role === "applicant") fail("Member not found.", 404);
@@ -282,41 +282,41 @@ function eligible(userId: string): { id: string; name: string; role: string } {
  * optimisation, and the catch below handles the race where two requests both
  * miss it.
  */
-export function openDirect(u: User, otherId: string): Conversation {
-  messagingInit();
-  member(u);
+export async function openDirect(u: User, otherId: string): Promise<Conversation> {
+  (await messagingInit());
+  (await member(u));
   const other = text(otherId, 64);
   if (other === u.id) fail("You cannot open a direct message with yourself.");
-  eligible(other);
+  (await eligible(other));
   const key = dmKey(u.id, other);
-  const found = byDedupe(key);
+  const found = (await byDedupe(key));
   if (found) return found;
-  throttle(`messaging:open:${u.id}`, OPEN_LIMIT);
+  (await throttle(`messaging:open:${u.id}`, OPEN_LIMIT));
   const cid = id();
   try {
-    db()
+    (await db()
       .prepare(
         "INSERT INTO conversations(id,kind,title,created_by,created_at,dedupe_key) VALUES (?,'dm','',?,?,?)",
       )
-      .run(cid, u.id, timestamp(), key);
+      .run(cid, u.id, timestamp(), key));
   } catch {
-    const raced = byDedupe(key);
+    const raced = (await byDedupe(key));
     if (raced) return raced;
     throw new Error("Could not open the conversation.");
   }
-  joinRow(cid, u.id, "member");
-  joinRow(cid, other, "member");
-  return conversationRow(cid)!;
+  (await joinRow(cid, u.id, "member"));
+  (await joinRow(cid, other, "member"));
+  return (await conversationRow(cid))!;
 }
 
 /** A named thread with an explicit member list. Groups are never deduplicated. */
-export function createGroup(
+export async function createGroup(
   u: User,
   title: string,
   memberIds: string[],
-): Conversation {
-  messagingInit();
-  member(u);
+): Promise<Conversation> {
+  (await messagingInit());
+  (await member(u));
   const name = text(title, 160);
   const wanted = Array.from(
     new Set([u.id, ...(Array.isArray(memberIds) ? memberIds : [])]),
@@ -324,16 +324,16 @@ export function createGroup(
   if (wanted.length < 2) fail("A group needs at least one other person.");
   if (wanted.length > GROUP_MAX)
     fail(`A group holds at most ${GROUP_MAX} people.`);
-  for (const m of wanted) eligible(m);
-  throttle(`messaging:open:${u.id}`, OPEN_LIMIT);
+  for (const m of wanted) (await eligible(m));
+  (await throttle(`messaging:open:${u.id}`, OPEN_LIMIT));
   const cid = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO conversations(id,kind,title,created_by,created_at,dedupe_key) VALUES (?,'group',?,?,?,NULL)",
     )
-    .run(cid, name, u.id, timestamp());
-  for (const m of wanted) joinRow(cid, m, m === u.id ? "owner" : "member");
-  return conversationRow(cid)!;
+    .run(cid, name, u.id, timestamp()));
+  for (const m of wanted) (await joinRow(cid, m, m === u.id ? "owner" : "member"));
+  return (await conversationRow(cid))!;
 }
 
 /**
@@ -346,12 +346,12 @@ export function createGroup(
  * membership — an officer who wants to read a channel joins it like everybody
  * else, and that leaves a row the other members can see.
  */
-export function ensureChannel(
+export async function ensureChannel(
   u: User,
   slug: string,
   title?: string,
-): Conversation {
-  messagingInit();
+): Promise<Conversation> {
+  (await messagingInit());
   const key =
     "channel:" +
     text(slug, 60)
@@ -359,29 +359,29 @@ export function ensureChannel(
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^-+|-+$/g, "");
   if (key === "channel:") fail("Give the channel a name.");
-  const found = byDedupe(key);
+  const found = (await byDedupe(key));
   if (found) return found;
-  officer(u);
+  (await officer(u));
   const cid = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO conversations(id,kind,title,created_by,created_at,dedupe_key) VALUES (?,'channel',?,?,?,?)",
     )
-    .run(cid, text(title || slug, 160), u.id, timestamp(), key);
-  joinRow(cid, u.id, "owner");
-  return conversationRow(cid)!;
+    .run(cid, text(title || slug, 160), u.id, timestamp(), key));
+  (await joinRow(cid, u.id, "owner"));
+  return (await conversationRow(cid))!;
 }
 
-export function joinChannel(u: User, conversationId: string): Membership {
-  messagingInit();
-  member(u);
-  const c = conversationRow(conversationId);
+export async function joinChannel(u: User, conversationId: string): Promise<Membership> {
+  (await messagingInit());
+  (await member(u));
+  const c = (await conversationRow(conversationId));
   // Same uninformative answer as requireMember: a DM id probed here must not
   // come back as "that exists, you just cannot join it".
   if (!c || c.kind !== "channel") fail("Conversation not found.", 404);
   if (c.archived_at) fail("This channel is archived.");
-  joinRow(conversationId, u.id, "member");
-  return activeMembership(conversationId, u.id)!;
+  (await joinRow(conversationId, u.id, "member"));
+  return (await activeMembership(conversationId, u.id))!;
 }
 
 /**
@@ -391,30 +391,30 @@ export function joinChannel(u: User, conversationId: string): Membership {
  * to talk to each other, and silently widening the room hands a backlog to
  * someone who was never party to it.
  */
-export function addMembers(
+export async function addMembers(
   u: User,
   conversationId: string,
   memberIds: string[],
-): number {
-  const { conversation } = requireMember(u, conversationId);
+): Promise<number> {
+  const { conversation } = (await requireMember(u, conversationId));
   if (conversation.kind === "dm")
     fail("A direct message cannot take a third person. Start a group.");
   if (conversation.archived_at) fail("This conversation is archived.");
   const ids = Array.from(new Set(memberIds.map((v) => text(v, 64))));
   const current = (
-    db()
+    (await db()
       .prepare(
         "SELECT COUNT(*) n FROM conversation_members WHERE conversation_id=? AND left_at IS NULL",
       )
-      .get(conversationId) as { n: number }
+      .get(conversationId)) as { n: number }
   ).n;
   if (current + ids.length > GROUP_MAX)
     fail(`A group holds at most ${GROUP_MAX} people.`);
   let added = 0;
   for (const m of ids) {
-    eligible(m);
-    if (activeMembership(conversationId, m)) continue;
-    joinRow(conversationId, m, "member");
+    (await eligible(m));
+    if ((await activeMembership(conversationId, m))) continue;
+    (await joinRow(conversationId, m, "member"));
     added++;
   }
   return added;
@@ -425,40 +425,40 @@ export function addMembers(
  * destroy the other person's copy of the thread or leave them talking into a
  * room with nobody in it. Mute it instead.
  */
-export function leaveConversation(u: User, conversationId: string): void {
-  const { conversation } = requireMember(u, conversationId);
+export async function leaveConversation(u: User, conversationId: string): Promise<void> {
+  const { conversation } = (await requireMember(u, conversationId));
   if (conversation.kind === "dm")
     fail("A direct message cannot be left. Mute it instead.");
-  db()
+  (await db()
     .prepare(
       "UPDATE conversation_members SET left_at=? WHERE conversation_id=? AND user_id=?",
     )
-    .run(timestamp(), conversationId, u.id);
+    .run(timestamp(), conversationId, u.id));
 }
 
-export function setMuted(
+export async function setMuted(
   u: User,
   conversationId: string,
   muted: boolean,
-): void {
-  requireMember(u, conversationId);
-  db()
+): Promise<void> {
+  (await requireMember(u, conversationId));
+  (await db()
     .prepare(
       "UPDATE conversation_members SET muted=? WHERE conversation_id=? AND user_id=?",
     )
-    .run(muted ? 1 : 0, conversationId, u.id);
+    .run(muted ? 1 : 0, conversationId, u.id));
 }
 
 /** Archive a group or channel. Owner only, and never a DM: see leaveConversation. */
-export function archiveConversation(u: User, conversationId: string): void {
-  const { conversation, membership } = requireMember(u, conversationId);
+export async function archiveConversation(u: User, conversationId: string): Promise<void> {
+  const { conversation, membership } = (await requireMember(u, conversationId));
   if (conversation.kind === "dm")
     fail("A direct message cannot be archived. Mute it instead.");
   if (membership.role !== "owner")
     fail("Only the owner can archive this conversation.", 403);
-  db()
+  (await db()
     .prepare("UPDATE conversations SET archived_at=? WHERE id=?")
-    .run(timestamp(), conversationId);
+    .run(timestamp(), conversationId));
 }
 
 /**
@@ -470,22 +470,22 @@ export function archiveConversation(u: User, conversationId: string): void {
  * can actually describe. An arbitrary tree reads badly and makes "how many
  * unread in this thread" a question with several defensible answers.
  */
-export function postMessage(
+export async function postMessage(
   u: User,
   conversationId: string,
   body: string,
   replyTo?: string | null,
-): Message {
-  const { conversation } = requireMember(u, conversationId);
+): Promise<Message> {
+  const { conversation } = (await requireMember(u, conversationId));
   if (conversation.archived_at) fail("This conversation is archived.");
   const clean = text(body, BODY_MAX);
   let root: string | null = null;
   if (replyTo) {
-    const parent = db()
+    const parent = (await db()
       .prepare(
         "SELECT id,conversation_id,reply_to FROM conversation_messages WHERE id=?",
       )
-      .get(text(replyTo, 64)) as
+      .get(text(replyTo, 64))) as
       | { id: string; conversation_id: string; reply_to: string | null }
       | undefined;
     if (!parent || parent.conversation_id !== conversationId)
@@ -493,7 +493,7 @@ export function postMessage(
     root = parent.reply_to || parent.id;
   }
   const key = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO conversation_messages(id,conversation_id,author_id,body,reply_to,created_at) VALUES (?,?,?,?,?,?)",
     )
@@ -503,44 +503,44 @@ export function postMessage(
       u.id,
       clean,
       root,
-      nextCreatedAt(conversationId),
-    );
-  return messageRow(key)!;
+      (await nextCreatedAt(conversationId)),
+    ));
+  return (await messageRow(key))!;
 }
 
-export function messageRow(messageId: string): Message | null {
-  return (db()
+export async function messageRow(messageId: string): Promise<Message | null> {
+  return ((await db()
     .prepare("SELECT * FROM conversation_messages WHERE id=?")
-    .get(messageId) as Message) || null;
+    .get(messageId)) as Message) || null;
 }
 
-function requireMessage(u: User, messageId: string) {
-  messagingInit();
-  const message = messageRow(text(messageId, 64));
+async function requireMessage(u: User, messageId: string) {
+  (await messagingInit());
+  const message = (await messageRow(text(messageId, 64)));
   const membership = message
-    ? activeMembership(message.conversation_id, u.id)
+    ? (await activeMembership(message.conversation_id, u.id))
     : null;
   if (!message || !membership) fail("Message not found.", 404);
   return {
     message,
     membership,
-    conversation: conversationRow(message.conversation_id)!,
+    conversation: (await conversationRow(message.conversation_id))!,
   };
 }
 
-export function editMessage(
+export async function editMessage(
   u: User,
   messageId: string,
   body: string,
-): Message {
-  const { message } = requireMessage(u, messageId);
+): Promise<Message> {
+  const { message } = (await requireMessage(u, messageId));
   if (message.author_id !== u.id)
     fail("You can only edit your own messages.", 403);
   if (message.deleted_at) fail("That message was deleted.", 404);
-  db()
+  (await db()
     .prepare("UPDATE conversation_messages SET body=?,edited_at=? WHERE id=?")
-    .run(text(body, BODY_MAX), timestamp(), messageId);
-  return messageRow(messageId)!;
+    .run(text(body, BODY_MAX), timestamp(), messageId));
+  return (await messageRow(messageId))!;
 }
 
 /**
@@ -557,51 +557,51 @@ export function editMessage(
  * Mentions of the deleted message go with it — they were derived from text
  * that no longer exists.
  */
-export function deleteMessage(u: User, messageId: string): Message {
-  const { message, membership, conversation } = requireMessage(u, messageId);
+export async function deleteMessage(u: User, messageId: string): Promise<Message> {
+  const { message, membership, conversation } = (await requireMessage(u, messageId));
   const moderator = conversation.kind !== "dm" && membership.role === "owner";
   if (message.author_id !== u.id && !moderator)
     fail("You can only delete your own messages.", 403);
   if (message.deleted_at) return message;
-  db()
+  (await db()
     .prepare(
       "UPDATE conversation_messages SET body='',deleted_at=? WHERE id=?",
     )
-    .run(timestamp(), messageId);
-  db()
+    .run(timestamp(), messageId));
+  (await db()
     .prepare("DELETE FROM message_mentions WHERE message_id=?")
-    .run(messageId);
-  return messageRow(messageId)!;
+    .run(messageId));
+  return (await messageRow(messageId))!;
 }
 
 /** Oldest first, capped. Deleted rows come back with an empty body. */
-export function messagesIn(
+export async function messagesIn(
   u: User,
   conversationId: string,
   limit = 200,
-): Message[] {
-  requireMember(u, conversationId);
+): Promise<Message[]> {
+  (await requireMember(u, conversationId));
   const n = Math.min(Math.max(Number(limit) || 200, 1), 500);
-  const rows = db()
+  const rows = (await db()
     .prepare(
       "SELECT * FROM conversation_messages WHERE conversation_id=? ORDER BY seq DESC LIMIT ?",
     )
-    .all(conversationId, n) as Message[];
+    .all(conversationId, n)) as Message[];
   return rows.reverse();
 }
 
 /** A root message and its replies, in order. */
-export function thread(
+export async function thread(
   u: User,
   conversationId: string,
   rootId: string,
-): Message[] {
-  requireMember(u, conversationId);
-  return db()
+): Promise<Message[]> {
+  (await requireMember(u, conversationId));
+  return (await db()
     .prepare(
       "SELECT * FROM conversation_messages WHERE conversation_id=? AND (id=? OR reply_to=?) ORDER BY seq",
     )
-    .all(conversationId, rootId, rootId) as Message[];
+    .all(conversationId, rootId, rootId)) as Message[];
 }
 
 /**
@@ -609,18 +609,18 @@ export function thread(
  * caller must already have passed requireMember. delivery.ts uses it to resolve
  * mentions and to build a notification recipient list.
  */
-export function memberRoster(
+export async function memberRoster(
   conversationId: string,
-): { user_id: string; name: string; email: string; muted: number; role: string }[] {
-  messagingInit();
-  return db()
+): Promise<{ user_id: string; name: string; email: string; muted: number; role: string }[]> {
+  (await messagingInit());
+  return (await db()
     .prepare(
       `SELECT m.user_id,u.name,u.email,m.muted,m.role
          FROM conversation_members m JOIN users u ON u.id=m.user_id
         WHERE m.conversation_id=? AND m.left_at IS NULL
         ORDER BY m.joined_at`,
     )
-    .all(conversationId) as {
+    .all(conversationId)) as {
     user_id: string;
     name: string;
     email: string;
@@ -629,9 +629,9 @@ export function memberRoster(
   }[];
 }
 
-export function participants(u: User, conversationId: string) {
-  requireMember(u, conversationId);
-  return memberRoster(conversationId).map((m) => ({
+export async function participants(u: User, conversationId: string) {
+  (await requireMember(u, conversationId));
+  return (await memberRoster(conversationId)).map((m) => ({
     user_id: m.user_id,
     name: m.name,
     role: m.role,
@@ -645,24 +645,24 @@ export function participants(u: User, conversationId: string) {
  * only clears by opening a message that no longer exists is a bug the user
  * cannot resolve.
  */
-export function unreadCount(u: User, conversationId: string): number {
-  const { membership } = requireMember(u, conversationId);
-  return unreadFor(conversationId, u.id, membership.last_read_at);
+export async function unreadCount(u: User, conversationId: string): Promise<number> {
+  const { membership } = (await requireMember(u, conversationId));
+  return (await unreadFor(conversationId, u.id, membership.last_read_at));
 }
 
-export function unreadFor(
+export async function unreadFor(
   conversationId: string,
   userId: string,
   lastReadAt: string | null,
-): number {
+): Promise<number> {
   return (
-    db()
+    (await db()
       .prepare(
         `SELECT COUNT(*) n FROM conversation_messages
           WHERE conversation_id=? AND author_id<>? AND deleted_at IS NULL
             AND (? IS NULL OR created_at > ?)`,
       )
-      .get(conversationId, userId, lastReadAt, lastReadAt) as { n: number }
+      .get(conversationId, userId, lastReadAt, lastReadAt)) as { n: number }
   ).n;
 }
 
@@ -671,14 +671,14 @@ export function unreadFor(
  * wall clock. nextCreatedAt() guarantees the next message is strictly later
  * than this, so nothing posted after a read can land inside it.
  */
-export function markRead(u: User, conversationId: string): string {
-  requireMember(u, conversationId);
-  const at = latestCreatedAt(conversationId) || timestamp();
-  db()
+export async function markRead(u: User, conversationId: string): Promise<string> {
+  (await requireMember(u, conversationId));
+  const at = (await latestCreatedAt(conversationId)) || timestamp();
+  (await db()
     .prepare(
       "UPDATE conversation_members SET last_read_at=? WHERE conversation_id=? AND user_id=?",
     )
-    .run(at, conversationId, u.id);
+    .run(at, conversationId, u.id));
   return at;
 }
 
@@ -690,14 +690,14 @@ export type ConversationRow = Conversation & {
 };
 
 /** Every conversation this person is currently in. Nobody else's, ever. */
-export function conversationsFor(u: User): ConversationRow[] {
-  messagingInit();
-  return db()
+export async function conversationsFor(u: User): Promise<ConversationRow[]> {
+  (await messagingInit());
+  return (await db()
     .prepare(
       `SELECT c.*,m.last_read_at,m.muted,m.role,m.joined_at
          FROM conversations c JOIN conversation_members m ON m.conversation_id=c.id
         WHERE m.user_id=? AND m.left_at IS NULL
         ORDER BY c.created_at DESC`,
     )
-    .all(u.id) as ConversationRow[];
+    .all(u.id)) as ConversationRow[];
 }

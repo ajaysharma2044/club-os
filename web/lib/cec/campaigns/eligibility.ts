@@ -387,22 +387,22 @@ function dedupe(checks: EligibilityCheck[]): EligibilityCheck[] {
  * Load today's state and run the filters. The convenience wrapper; the pure
  * function above is what a backtest should call.
  */
-export function eligibilityFor(
+export async function eligibilityFor(
   clubId: string,
   sponsor: SponsorProfile,
   at: string,
   opts: { campusProhibited?: string[]; policy?: ClubSponsorshipPolicy } = {},
-): EligibilityResult {
+): Promise<EligibilityResult> {
   const identity = club(clubId);
-  const policy = opts.policy ?? clubPolicy(clubId);
+  const policy = opts.policy ?? (await clubPolicy(clubId));
   return checkEligibility({
     clubId,
     campusId: identity?.institutionId ?? null,
     sponsor,
     policy,
-    inventory: inventoryFor(clubId),
+    inventory: (await inventoryFor(clubId)),
     at,
-    fatigue: fatigueCheck({ clubId, sponsor, at, policy }),
+    fatigue: (await fatigueCheck({ clubId, sponsor, at, policy })),
     campusProhibited: opts.campusProhibited,
   });
 }

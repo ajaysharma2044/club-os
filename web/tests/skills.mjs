@@ -52,38 +52,38 @@ const ok = (c, m) => {
   assert.ok(c, m);
   checks++;
 };
-const throws = (f, m) => {
-  assert.throws(f, m);
+const throws = async (f, m) => {
+  await assert.rejects(async () => f(), m);
   checks++;
 };
 
-skillsInit();
-profilesInit();
+(await skillsInit());
+(await profilesInit());
 
 // --- fixtures ---------------------------------------------------------------
-const user = (name, role) => {
+const user = async (name, role) => {
   const id = randomUUID();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO users(id,name,email,password,role,interests,shared) VALUES (?,?,?,?,?,'',0)",
     )
-    .run(id, name, `${id}@example.test`, "x:unusable", role);
+    .run(id, name, `${id}@example.test`, "x:unusable", role));
   return { id, name, email: `${id}@example.test`, role, interests: "", shared: 0 };
 };
 
 const at = (iso) => `${iso}T12:00:00.000Z`;
 
-const episode = (title, owner, createdAt, status = "active", sourceType = "project") => {
+const episode = async (title, owner, createdAt, status = "active", sourceType = "project") => {
   const eid = randomUUID();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO episodes(id,organization_id,owner,title,goal,status,source_type,source_id,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
     )
-    .run(eid, "cornell-ec", owner, title, `Ship ${title}`, status, sourceType, randomUUID(), createdAt);
+    .run(eid, "cornell-ec", owner, title, `Ship ${title}`, status, sourceType, randomUUID(), createdAt));
   return eid;
 };
 
-const event = (
+const event = async (
   episodeId,
   actor,
   subject,
@@ -94,7 +94,7 @@ const event = (
   context = {},
 ) => {
   const evid = randomUUID();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO activity_events(id,source_key,organization_id,episode_id,actor_id,subject_id,action_family,event_type,object_type,object_id,occurred_at,observed_at,source,source_ref,evidence_level,visibility,policy,context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
@@ -117,16 +117,16 @@ const event = (
       "club_internal",
       "test-policy",
       JSON.stringify(context),
-    );
+    ));
   return evid;
 };
 
-const chair = user("Priya, President", "officer");
-const dana = user("Dana", "member");
-const sam = user("Sam", "member");
-const kai = user("Kai", "member");
-const rin = user("Rin", "member");
-const noor = user("Noor", "member");
+const chair = (await user("Priya, President", "officer"));
+const dana = (await user("Dana", "member"));
+const sam = (await user("Sam", "member"));
+const kai = (await user("Kai", "member"));
+const rin = (await user("Rin", "member"));
+const noor = (await user("Noor", "member"));
 
 // asOf must sit after the grants, which are stamped with the real clock.
 const NOW_ISO = new Date().toISOString();
@@ -151,66 +151,66 @@ ok(termOf(at("2025-02-10")) === "2025-SP" && termOf(at("2025-10-05")) === "2025-
 
 // ================================================ a link needs real evidence
 
-const b1 = episode("Member portal rebuild", dana.id, at("2025-02-10"));
-const b1e = event(b1, dana.id, dana.id, "EXECUTE", "task.completed", at("2025-02-10"), "counterparty_confirmed");
+const b1 = (await episode("Member portal rebuild", dana.id, at("2025-02-10")));
+const b1e = (await event(b1, dana.id, dana.id, "EXECUTE", "task.completed", at("2025-02-10"), "counterparty_confirmed"));
 
-throws(
-  () =>
-    linkEvidence(chair, {
+(await throws(
+  async () =>
+    (await linkEvidence(chair, {
       personId: dana.id,
       skillId: "backend_engineering",
       evidenceKind: "episode",
       evidenceId: randomUUID(),
       roleContext: "owner",
       reason: "made it up",
-    }),
+    })),
   /does not exist/,
-);
+));
 ok(true, "a link to an episode id that does not exist is refused");
 
-throws(
-  () =>
-    linkEvidence(chair, {
+(await throws(
+  async () =>
+    (await linkEvidence(chair, {
       personId: dana.id,
       skillId: "quantum_alchemy",
       evidenceKind: "episode",
       evidenceId: b1,
       roleContext: "owner",
       reason: "off-vocabulary",
-    }),
+    })),
   /curated list/,
-);
+));
 ok(true, "a skill outside the curated vocabulary is refused");
 
-throws(
-  () =>
-    linkEvidence(chair, {
+(await throws(
+  async () =>
+    (await linkEvidence(chair, {
       personId: sam.id,
       skillId: "backend_engineering",
       evidenceKind: "activity_event",
       evidenceId: b1e,
       roleContext: "implementer",
       reason: "borrowing someone else's work",
-    }),
+    })),
   /not about this person/,
-);
+));
 ok(true, "an event about someone else cannot be attached to a third party");
 
-throws(
-  () =>
-    linkEvidence(chair, {
+(await throws(
+  async () =>
+    (await linkEvidence(chair, {
       personId: dana.id,
       skillId: "backend_engineering",
       evidenceKind: "episode",
       evidenceId: b1,
       roleContext: "owner",
       reason: "",
-    }),
+    })),
   /required/i,
-);
+));
 ok(true, "a link with no stated reason is refused: an unarguable claim is not evidence");
 
-const firstLink = linkEvidence(chair, {
+const firstLink = (await linkEvidence(chair, {
   personId: dana.id,
   skillId: "backend_engineering",
   evidenceKind: "episode",
@@ -218,17 +218,17 @@ const firstLink = linkEvidence(chair, {
   roleContext: "owner",
   reason: "Owned the portal rebuild episode end to end, including the data model.",
   contextKey: "eng-team",
-});
-const stored = db()
+}));
+const stored = (await db()
   .prepare("SELECT * FROM evidence_skill_links WHERE id=?")
-  .get(firstLink);
+  .get(firstLink));
 ok(stored.evidence_id === b1, "the stored link points at the real episode row");
 ok(stored.reason.length > 10 && stored.model_version === "skill-evidence-v1",
   "the link carries a human-readable reason and the model version that wrote it");
 ok(stored.occurred_at === at("2025-02-10"),
   "the link copies the evidence's own clock, not the clock of whoever ran the deriver");
 
-const again = linkEvidence(chair, {
+const again = (await linkEvidence(chair, {
   personId: dana.id,
   skillId: "backend_engineering",
   evidenceKind: "episode",
@@ -236,14 +236,14 @@ const again = linkEvidence(chair, {
   roleContext: "owner",
   reason: "Owned the portal rebuild episode end to end, including the data model.",
   contextKey: "eng-team",
-});
+}));
 ok(again === firstLink, "linking the same evidence twice is idempotent");
 
 // ===================================== one episode is not a proven skill
 
-const a1 = episode("Attendance analysis", sam.id, at("2025-02-10"));
-event(a1, sam.id, sam.id, "EXECUTE", "task.completed", at("2025-02-10"), "counterparty_confirmed");
-linkEvidence(chair, {
+const a1 = (await episode("Attendance analysis", sam.id, at("2025-02-10")));
+(await event(a1, sam.id, sam.id, "EXECUTE", "task.completed", at("2025-02-10"), "counterparty_confirmed"));
+(await linkEvidence(chair, {
   personId: sam.id,
   skillId: "data_analysis",
   evidenceKind: "episode",
@@ -251,16 +251,16 @@ linkEvidence(chair, {
   roleContext: "owner",
   reason: "Cleaned two years of RSVP data and produced the no-show breakdown officers used.",
   contextKey: "data-team",
-});
+}));
 // Pile more evidence into the SAME episode. This is the case the design is
 // built against: activity volume inside one experience must not read as breadth.
-const a1b = event(a1, sam.id, sam.id, "REVISE", "task.updated", at("2025-02-12"));
-const a1c = event(a1, sam.id, sam.id, "COMPLETE", "task.submitted", at("2025-02-14"), "self_reported");
+const a1b = (await event(a1, sam.id, sam.id, "REVISE", "task.updated", at("2025-02-12")));
+const a1c = (await event(a1, sam.id, sam.id, "COMPLETE", "task.submitted", at("2025-02-14"), "self_reported"));
 for (const [e, why] of [
   [a1b, "Reworked the cohort join after the first numbers looked wrong."],
   [a1c, "Submitted the finished breakdown for review."],
 ])
-  linkEvidence(chair, {
+  (await linkEvidence(chair, {
     personId: sam.id,
     skillId: "data_analysis",
     evidenceKind: "activity_event",
@@ -268,9 +268,9 @@ for (const [e, why] of [
     roleContext: "implementer",
     reason: why,
     contextKey: "data-team",
-  });
+  }));
 
-const one = skillSummary(sam.id, "data_analysis", FULL);
+const one = (await skillSummary(sam.id, "data_analysis", FULL));
 ok(one.verdict === "single_instance", "one episode yields single_instance, not proficiency");
 ok(one.episodes === 1 && one.links.length === 3,
   "three records inside one episode are still one episode");
@@ -282,9 +282,9 @@ ok(/One experience is one experience/.test(one.reading),
 
 // ===================================== repetition across contexts is the thing
 
-const a2 = episode("Recruiting funnel review", sam.id, at("2025-10-05"));
-event(a2, sam.id, sam.id, "EXECUTE", "task.completed", at("2025-10-05"), "counterparty_confirmed");
-linkEvidence(chair, {
+const a2 = (await episode("Recruiting funnel review", sam.id, at("2025-10-05")));
+(await event(a2, sam.id, sam.id, "EXECUTE", "task.completed", at("2025-10-05"), "counterparty_confirmed"));
+(await linkEvidence(chair, {
   personId: sam.id,
   skillId: "data_analysis",
   evidenceKind: "episode",
@@ -292,15 +292,15 @@ linkEvidence(chair, {
   roleContext: "lead",
   reason: "Modelled the application funnel and found the stage where candidates dropped out.",
   contextKey: "recruiting-team",
-});
+}));
 
-const two = skillSummary(sam.id, "data_analysis", FULL);
+const two = (await skillSummary(sam.id, "data_analysis", FULL));
 ok(two.verdict === "repeated", "a second episode moves the verdict off single_instance");
 ok(two.confidence > one.confidence, "a second, separate occasion raises confidence");
 
-const a3 = episode("Sponsor conversion study", sam.id, at("2026-03-12"));
-event(a3, sam.id, sam.id, "EXECUTE", "task.completed", at("2026-03-12"), "counterparty_confirmed");
-linkEvidence(chair, {
+const a3 = (await episode("Sponsor conversion study", sam.id, at("2026-03-12")));
+(await event(a3, sam.id, sam.id, "EXECUTE", "task.completed", at("2026-03-12"), "counterparty_confirmed"));
+(await linkEvidence(chair, {
   personId: sam.id,
   skillId: "data_analysis",
   evidenceKind: "episode",
@@ -308,9 +308,9 @@ linkEvidence(chair, {
   roleContext: "owner",
   reason: "Measured which outreach sequences converted sponsors across two semesters of deals.",
   contextKey: "sponsorship-team",
-});
+}));
 
-const three = skillSummary(sam.id, "data_analysis", FULL);
+const three = (await skillSummary(sam.id, "data_analysis", FULL));
 ok(three.verdict === "consistent",
   "three episodes across three settings and three terms reads as consistent");
 ok(three.episodes === 3 && three.distinctContexts === 3 && three.distinctTerms === 3,
@@ -322,7 +322,7 @@ ok(/different settings and different semesters/.test(three.reading),
 
 // ============================================================ point in time
 
-const early = skillSummary(sam.id, "data_analysis", "2025-06-01T00:00:00.000Z");
+const early = (await skillSummary(sam.id, "data_analysis", "2025-06-01T00:00:00.000Z"));
 ok(early.episodes === 1 && early.verdict === "single_instance",
   "as of June 2025 only the first episode had happened: later evidence is excluded");
 ok(early.links.every((l) => l.occurred_at <= "2025-06-01T00:00:00.000Z"),
@@ -332,9 +332,9 @@ ok(early.confidence < three.confidence,
 
 // ================================================== retraction and disputes
 
-const d1 = episode("Demo day emcee", sam.id, at("2025-04-01"));
-const d1e = event(d1, sam.id, sam.id, "COMMUNICATE", "event.hosted", at("2025-04-01"));
-const speak = linkEvidence(chair, {
+const d1 = (await episode("Demo day emcee", sam.id, at("2025-04-01")));
+const d1e = (await event(d1, sam.id, sam.id, "COMMUNICATE", "event.hosted", at("2025-04-01")));
+const speak = (await linkEvidence(chair, {
   personId: sam.id,
   skillId: "public_speaking",
   evidenceKind: "activity_event",
@@ -342,20 +342,20 @@ const speak = linkEvidence(chair, {
   roleContext: "lead",
   reason: "Hosted demo day in front of roughly ninety people.",
   contextKey: "demo-day",
-});
-ok(skillLinks(sam.id, "public_speaking", FULL).length === 1, "the link is live");
-ok(retractLink(chair, speak, "Sam says a co-host ran the evening."), "a link can be retracted");
-ok(skillLinks(sam.id, "public_speaking", FULL).length === 0,
+}));
+ok((await skillLinks(sam.id, "public_speaking", FULL)).length === 1, "the link is live");
+ok((await retractLink(chair, speak, "Sam says a co-host ran the evening.")), "a link can be retracted");
+ok((await skillLinks(sam.id, "public_speaking", FULL)).length === 0,
   "a retracted link stops being evidence, and is kept rather than deleted");
 ok(
-  db().prepare("SELECT retracted_reason FROM evidence_skill_links WHERE id=?").get(speak)
+  (await db().prepare("SELECT retracted_reason FROM evidence_skill_links WHERE id=?").get(speak))
     .retracted_reason.length > 0,
   "the retraction itself is on the record, so the dispute is auditable",
 );
 
-const c1 = episode("Budget reconciliation", sam.id, at("2025-05-06"));
-const c1e = event(c1, sam.id, sam.id, "EXECUTE", "task.completed", at("2025-05-06"));
-linkEvidence(chair, {
+const c1 = (await episode("Budget reconciliation", sam.id, at("2025-05-06")));
+const c1e = (await event(c1, sam.id, sam.id, "EXECUTE", "task.completed", at("2025-05-06")));
+(await linkEvidence(chair, {
   personId: sam.id,
   skillId: "budgeting",
   evidenceKind: "activity_event",
@@ -363,34 +363,34 @@ linkEvidence(chair, {
   roleContext: "implementer",
   reason: "Reconciled the spring budget against receipts.",
   contextKey: "finance-team",
-});
-ok(skillLinks(sam.id, "budgeting", FULL).length === 1, "the budgeting link is live");
-event(c1, chair.id, sam.id, "REVISE", "evidence.correction", at("2025-05-20"), "self_reported", {
+}));
+ok((await skillLinks(sam.id, "budgeting", FULL)).length === 1, "the budgeting link is live");
+(await event(c1, chair.id, sam.id, "REVISE", "evidence.correction", at("2025-05-20"), "self_reported", {
   corrects: c1e,
   statement: "The treasurer did the reconciliation; Sam collected the receipts.",
-});
-ok(skillLinks(sam.id, "budgeting", FULL).length === 0,
+}));
+ok((await skillLinks(sam.id, "budgeting", FULL)).length === 0,
   "evidence somebody has filed a correction against stops supporting a skill claim");
 
 // ================================================== artifacts are append-only
 
-const s1 = episode("Fall sponsorship drive", dana.id, at("2025-10-05"), "completed");
-event(s1, dana.id, dana.id, "EXECUTE", "deal.signed", at("2025-11-01"), "counterparty_confirmed");
-const contract = recordArtifact(chair, {
+const s1 = (await episode("Fall sponsorship drive", dana.id, at("2025-10-05"), "completed"));
+(await event(s1, dana.id, dana.id, "EXECUTE", "deal.signed", at("2025-11-01"), "counterparty_confirmed"));
+const contract = (await recordArtifact(chair, {
   personId: dana.id,
   kind: "contract",
   title: "IBM sponsorship agreement, $4,000",
   episodeId: s1,
   url: "https://drive.example.test/ibm-2025",
   producedAt: at("2025-11-01"),
-});
+}));
 ok(contract, "an artifact is recorded");
-throws(
-  () => db().prepare("UPDATE skill_artifacts SET title='something else' WHERE id=?").run(contract),
+(await throws(
+  async () => (await db().prepare("UPDATE skill_artifacts SET title='something else' WHERE id=?").run(contract)),
   /append only/,
-);
+));
 ok(true, "an artifact cannot be edited after a claim was built on it");
-throws(() => db().prepare("DELETE FROM skill_artifacts WHERE id=?").run(contract), /append only/);
+(await throws(async () => (await db().prepare("DELETE FROM skill_artifacts WHERE id=?").run(contract)), /append only/));
 ok(true, "an artifact cannot be deleted");
 
 // ======================================================== strength mechanics
@@ -421,7 +421,7 @@ ok(fresh.drivers.length >= 6 && fresh.drivers.every((d) => Number.isFinite(d.con
 // ==================================== the same person, two very different jobs
 
 // Backend: three episodes, two settings, three terms.
-linkEvidence(chair, {
+(await linkEvidence(chair, {
   personId: dana.id,
   skillId: "backend_engineering",
   evidenceKind: "activity_event",
@@ -429,10 +429,10 @@ linkEvidence(chair, {
   roleContext: "implementer",
   reason: "Wrote and shipped the portal's task API.",
   contextKey: "eng-team",
-});
-const b2 = episode("Ticketing API", dana.id, at("2025-10-05"), "completed");
-const b2e = event(b2, dana.id, dana.id, "EXECUTE", "task.completed", at("2025-10-05"), "counterparty_confirmed");
-linkEvidence(chair, {
+}));
+const b2 = (await episode("Ticketing API", dana.id, at("2025-10-05"), "completed"));
+const b2e = (await event(b2, dana.id, dana.id, "EXECUTE", "task.completed", at("2025-10-05"), "counterparty_confirmed"));
+(await linkEvidence(chair, {
   personId: dana.id,
   skillId: "backend_engineering",
   evidenceKind: "activity_event",
@@ -440,10 +440,10 @@ linkEvidence(chair, {
   roleContext: "lead",
   reason: "Built the ticketing service used at Big Red Hacks, including the queue.",
   contextKey: "hack-cornell",
-});
-const b3 = episode("Payments migration", dana.id, at("2026-03-12"));
-const b3e = event(b3, dana.id, dana.id, "EXECUTE", "task.completed", at("2026-03-12"), "counterparty_confirmed");
-linkEvidence(chair, {
+}));
+const b3 = (await episode("Payments migration", dana.id, at("2026-03-12")));
+const b3e = (await event(b3, dana.id, dana.id, "EXECUTE", "task.completed", at("2026-03-12"), "counterparty_confirmed"));
+(await linkEvidence(chair, {
   personId: dana.id,
   skillId: "backend_engineering",
   evidenceKind: "activity_event",
@@ -451,18 +451,18 @@ linkEvidence(chair, {
   roleContext: "owner",
   reason: "Migrated dues collection to the new provider with no lost payments.",
   contextKey: "eng-team",
-});
-recordArtifact(chair, {
+}));
+(await recordArtifact(chair, {
   personId: dana.id,
   kind: "repository",
   title: "clubos-payments",
   episodeId: b3,
   url: "https://github.example.test/clubos-payments",
   producedAt: at("2026-03-20"),
-});
+}));
 
 // Sponsorship: a different two episodes, with a contract and a labelled outcome.
-linkEvidence(chair, {
+(await linkEvidence(chair, {
   personId: dana.id,
   skillId: "sponsorship_sales",
   evidenceKind: "episode",
@@ -470,16 +470,16 @@ linkEvidence(chair, {
   roleContext: "owner",
   reason: "Ran the fall sponsorship pipeline and closed the IBM agreement.",
   contextKey: "sponsorship-team",
-});
-const outcomeId = label(chair, {
+}));
+const outcomeId = (await label(chair, {
   subjectType: "episode",
   subjectId: s1,
   kind: "sponsor_converted",
   value: 1,
   horizonStart: at("2025-10-05"),
   occurredAt: at("2025-11-01"),
-});
-linkEvidence(chair, {
+}));
+(await linkEvidence(chair, {
   personId: dana.id,
   skillId: "sponsorship_sales",
   evidenceKind: "outcome",
@@ -487,10 +487,10 @@ linkEvidence(chair, {
   roleContext: "owner",
   reason: "The sponsor converted: a signed agreement, not a pitch deck.",
   contextKey: "sponsorship-team",
-});
-const s2 = episode("Spring sponsor renewals", dana.id, at("2026-03-12"));
-const s2e = event(s2, dana.id, dana.id, "EXECUTE", "deal.signed", at("2026-03-12"), "counterparty_confirmed");
-linkEvidence(chair, {
+}));
+const s2 = (await episode("Spring sponsor renewals", dana.id, at("2026-03-12")));
+const s2e = (await event(s2, dana.id, dana.id, "EXECUTE", "deal.signed", at("2026-03-12"), "counterparty_confirmed"));
+(await linkEvidence(chair, {
   personId: dana.id,
   skillId: "sponsorship_sales",
   evidenceKind: "activity_event",
@@ -498,20 +498,20 @@ linkEvidence(chair, {
   roleContext: "owner",
   reason: "Renewed two of three sponsors for spring.",
   contextKey: "sponsorship-team",
-});
+}));
 
-throws(
-  () =>
-    linkEvidence(chair, {
+(await throws(
+  async () =>
+    (await linkEvidence(chair, {
       personId: sam.id,
       skillId: "sponsorship_sales",
       evidenceKind: "outcome",
       evidenceId: outcomeId,
       roleContext: "owner",
       reason: "not mine",
-    }),
+    })),
   /no record in|someone else/i,
-);
+));
 ok(true, "an outcome cannot be borrowed by someone with no record in the work that produced it");
 
 const backendJob = {
@@ -535,42 +535,42 @@ const salesJob = {
 };
 
 // --- consent gate -----------------------------------------------------------
-const noGrant = jobEvidenceMatch({
+const noGrant = (await jobEvidenceMatch({
   personId: dana.id,
   job: backendJob,
   audience: "employer",
   asOf: FULL,
-});
+}));
 ok(noGrant.granted === false, "an absent grant is refused, not partially honoured");
 ok(noGrant.requirements.length === 0 && noGrant.unevidenced.length === 0,
   "nothing at all is released without consent — not even the shape of what exists");
-ok(evidenceProfile({ personId: dana.id, audience: "employer", asOf: FULL }).skills.length === 0,
+ok((await evidenceProfile({ personId: dana.id, audience: "employer", asOf: FULL })).skills.length === 0,
   "the unscoped profile is equally empty without a grant");
 
-ok(grantProfileAccess(dana, { personId: dana.id, audience: "employer", scope: "skill_evidence" }),
+ok((await grantProfileAccess(dana, { personId: dana.id, audience: "employer", scope: "skill_evidence" })),
   "the person grants access to their own record");
-throws(
-  () => grantProfileAccess(chair, { personId: dana.id, audience: "employer", scope: "skill_evidence" }),
+(await throws(
+  async () => (await grantProfileAccess(chair, { personId: dana.id, audience: "employer", scope: "skill_evidence" })),
   /Only the person/,
-);
+));
 ok(true, "an officer cannot consent on a member's behalf");
-ok(activeGrant(dana.id, "employer", "skill_evidence", FULL) !== null, "the grant is live");
-ok(activeGrant(dana.id, "investor", "skill_evidence", FULL) === null,
+ok((await activeGrant(dana.id, "employer", "skill_evidence", FULL)) !== null, "the grant is live");
+ok((await activeGrant(dana.id, "investor", "skill_evidence", FULL)) === null,
   "consent is per audience: an employer grant does not open the investor view");
 
 // --- job specificity --------------------------------------------------------
-const beMatch = jobEvidenceMatch({
+const beMatch = (await jobEvidenceMatch({
   personId: dana.id,
   job: backendJob,
   audience: "employer",
   asOf: FULL,
-});
-const salesMatch = jobEvidenceMatch({
+}));
+const salesMatch = (await jobEvidenceMatch({
   personId: dana.id,
   job: salesJob,
   audience: "employer",
   asOf: FULL,
-});
+}));
 ok(beMatch.granted && salesMatch.granted, "with a grant, both matches are released");
 
 const ids = (m) =>
@@ -615,7 +615,7 @@ ok(
   "every exhibit carries the reason, the role and the episode it came from",
 );
 
-const fullProfile = evidenceProfile({ personId: dana.id, audience: "employer", asOf: FULL });
+const fullProfile = (await evidenceProfile({ personId: dana.id, audience: "employer", asOf: FULL }));
 ok(
   fullProfile.skills.length > beMatch.requirements.length,
   "Profile(person) is not Profile(person, job): the unscoped profile is strictly wider",
@@ -668,7 +668,7 @@ ok(
   "the guard catches both a score by name and a score smuggled into an innocent field",
 );
 ok(
-  skillSummary(dana.id, "backend_engineering", FULL).confidence > 0,
+  (await skillSummary(dana.id, "backend_engineering", FULL)).confidence > 0,
   "the internal number still exists and is still useful — it simply never crosses the boundary",
 );
 ok(
@@ -677,28 +677,28 @@ ok(
 );
 
 // ---- revocation ------------------------------------------------------------
-ok(revokeProfileAccess(dana, { personId: dana.id, audience: "employer", scope: "skill_evidence" }),
+ok((await revokeProfileAccess(dana, { personId: dana.id, audience: "employer", scope: "skill_evidence" })),
   "the person revokes the grant");
-const revoked = jobEvidenceMatch({
+const revoked = (await jobEvidenceMatch({
   personId: dana.id,
   job: backendJob,
   audience: "employer",
   asOf: FULL,
-});
+}));
 ok(revoked.granted === false && revoked.requirements.length === 0,
   "a revoked grant returns nothing, not a stale or partial record");
 ok(
-  db()
+  (await db()
     .prepare(
       "SELECT revoked_at FROM professional_profile_grants WHERE person_id=? AND audience='employer'",
     )
-    .get(dana.id).revoked_at !== null,
+    .get(dana.id)).revoked_at !== null,
   "the revocation is recorded rather than deleted, so 'who could see this, and when' stays answerable",
 );
 
 // ================================================================ the VC view
 
-const hack = episode("Big Red Hacks", kai.id, at("2025-09-20"), "completed");
+const hack = (await episode("Big Red Hacks", kai.id, at("2025-09-20"), "completed"));
 const priors = [
   ["Course scheduler", at("2025-01-15"), [kai, rin]],
   ["Club website", at("2025-03-04"), [rin, noor]],
@@ -706,61 +706,61 @@ const priors = [
   ["Orientation fair booth", at("2025-05-02"), [kai, rin, noor]],
 ];
 for (const [title, when, people] of priors) {
-  const eid = episode(title, people[0].id, when, "completed");
-  for (const p of people) event(eid, p.id, p.id, "EXECUTE", "task.completed", when);
+  const eid = (await episode(title, people[0].id, when, "completed"));
+  for (const p of people) (await event(eid, p.id, p.id, "EXECUTE", "task.completed", when));
 }
-for (const p of [kai, rin, noor]) event(hack, p.id, p.id, "EXECUTE", "task.completed", at("2025-09-20"));
-event(hack, kai.id, kai.id, "OUTCOME", "episode.outcome_recorded", at("2025-09-22"), "self_reported");
+for (const p of [kai, rin, noor]) (await event(hack, p.id, p.id, "EXECUTE", "task.completed", at("2025-09-20")));
+(await event(hack, kai.id, kai.id, "OUTCOME", "episode.outcome_recorded", at("2025-09-22"), "self_reported"));
 
 // The part an investor actually wants: what happened AFTER the hackathon ended.
-const after = episode("Palette (post-hackathon)", kai.id, at("2025-10-01"));
-event(after, kai.id, kai.id, "INITIATE", "project.created", at("2025-10-01"));
-event(after, rin.id, rin.id, "REVISE", "task.updated", at("2025-11-15"));
-event(after, kai.id, kai.id, "REVIEW", "task.completed", at("2025-12-10"));
-event(after, noor.id, noor.id, "REVISE", "task.updated", at("2026-01-20"));
-recordArtifact(chair, {
+const after = (await episode("Palette (post-hackathon)", kai.id, at("2025-10-01")));
+(await event(after, kai.id, kai.id, "INITIATE", "project.created", at("2025-10-01")));
+(await event(after, rin.id, rin.id, "REVISE", "task.updated", at("2025-11-15")));
+(await event(after, kai.id, kai.id, "REVIEW", "task.completed", at("2025-12-10")));
+(await event(after, noor.id, noor.id, "REVISE", "task.updated", at("2026-01-20")));
+(await recordArtifact(chair, {
   personId: kai.id,
   kind: "repository",
   title: "palette",
   episodeId: after,
   url: "https://github.example.test/palette",
   producedAt: at("2025-10-04"),
-});
-recordArtifact(chair, {
+}));
+(await recordArtifact(chair, {
   personId: rin.id,
   kind: "usage_record",
   title: "Two other clubs are running Palette for their spring intake",
   episodeId: after,
   detail: "Confirmed with both club presidents in January.",
   producedAt: at("2026-01-18"),
-});
+}));
 
 const venture = { name: "Palette", originEpisodeId: hack };
-const vcDenied = vcProfile({
+const vcDenied = (await vcProfile({
   founders: [kai.id, rin.id, noor.id],
   audience: "investor",
   venture,
   asOf: FULL,
-});
+}));
 ok(vcDenied.granted === false, "the venture view is closed without grants");
 ok(vcDenied.withheld.length === 3 && vcDenied.repeated_collaboration.pairs.length === 0,
   "no founder's collaboration history leaks before any of them consented");
 
 for (const p of [kai, rin, noor])
-  grantProfileAccess(p, { personId: p.id, audience: "investor", scope: "venture_evidence" });
-throws(
-  () =>
-    vcProfile({ founders: [kai.id, rin.id, noor.id], audience: "employer", venture, asOf: FULL }),
+  (await grantProfileAccess(p, { personId: p.id, audience: "investor", scope: "venture_evidence" }));
+(await throws(
+  async () =>
+    (await vcProfile({ founders: [kai.id, rin.id, noor.id], audience: "employer", venture, asOf: FULL })),
   /not offered to that audience/,
-);
+));
 ok(true, "venture evidence is not offered to an employer audience at all");
 
-const vc = vcProfile({
+const vc = (await vcProfile({
   founders: [kai.id, rin.id, noor.id],
   audience: "investor",
   venture,
   asOf: FULL,
-});
+}));
 ok(vc.granted === true, "with all three grants the venture record opens");
 ok(vc.team_formation.founder_count === 3, "the team is three people");
 ok(vc.repeated_collaboration.prior_shared_episodes === 4,
@@ -793,23 +793,23 @@ ok(
   "and no field that a scout could sort a cohort by",
 );
 
-const vcEarly = vcProfile({
+const vcEarly = (await vcProfile({
   founders: [kai.id, rin.id, noor.id],
   audience: "investor",
   venture,
   asOf: "2025-10-15T00:00:00.000Z",
-});
+}));
 ok(vcEarly.persistence.days_active_after_origin < 120,
   "asked in October, the record says what was true in October");
 
-ok(revokeProfileAccess(noor, { personId: noor.id, audience: "investor", scope: "venture_evidence" }),
+ok((await revokeProfileAccess(noor, { personId: noor.id, audience: "investor", scope: "venture_evidence" })),
   "one founder revokes");
-const vcPartial = vcProfile({
+const vcPartial = (await vcProfile({
   founders: [kai.id, rin.id, noor.id],
   audience: "investor",
   venture,
   asOf: FULL,
-});
+}));
 ok(vcPartial.granted === false && vcPartial.withheld.length === 1,
   "one revoked grant closes the whole team view: a team record missing a founder misleads");
 ok(vcPartial.repeated_collaboration.prior_shared_episodes === 0,
@@ -817,7 +817,7 @@ ok(vcPartial.repeated_collaboration.prior_shared_episodes === 0,
 
 // ================================================================ the mirror
 
-const mine = personSkills(dana.id, FULL);
+const mine = (await personSkills(dana.id, FULL));
 ok(mine.length >= 2 && mine.every((s) => s.reading && s.links.length),
   "the person's own view carries every skill with evidence, each with a plain-language reading");
 

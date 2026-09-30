@@ -1,3 +1,4 @@
+import { asyncMap } from "./async";
 // Interview rounds: capacity feasibility, panel assembly, and self-healing drops.
 //
 // Built from observed CEC operations (docs/12-cec-field-evidence.md): ~35 first
@@ -28,8 +29,8 @@ import {
 } from "./scheduler";
 import { offer, respond } from "./opportunities";
 
-export function interviewsInit() {
-  db().exec(`
+export async function interviewsInit() {
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS interview_rounds(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -75,13 +76,13 @@ CREATE TABLE IF NOT EXISTS interview_assignments(
   UNIQUE(round_id,candidate_id));
 CREATE INDEX IF NOT EXISTS interview_assign_round ON interview_assignments(round_id,status);
 CREATE INDEX IF NOT EXISTS interview_assign_status_at ON interview_assignments(status_at);
-`);
+`));
   // Additive migration for databases created before status_at existed.
-  const cols = db()
+  const cols = (await db()
     .prepare("PRAGMA table_info(interview_assignments)")
-    .all() as { name: string }[];
+    .all()) as { name: string }[];
   if (!cols.some((c) => c.name === "status_at"))
-    db().exec("ALTER TABLE interview_assignments ADD COLUMN status_at TEXT");
+    (await db().exec("ALTER TABLE interview_assignments ADD COLUMN status_at TEXT"));
 }
 
 type Round = {
@@ -94,10 +95,10 @@ type Round = {
   created_at: string;
 };
 
-function round(roundId: string): Round {
-  const r = db()
+async function round(roundId: string): Promise<Round> {
+  const r = (await db()
     .prepare("SELECT * FROM interview_rounds WHERE id=?")
-    .get(roundId) as Round | undefined;
+    .get(roundId)) as Round | undefined;
   if (!r) fail("Interview round not found.", 404);
   return r;
 }
@@ -107,12 +108,12 @@ function opt(v: unknown, fallback: string, max = 120): string {
   return typeof v === "string" && v.trim() && v.length <= max ? v.trim() : fallback;
 }
 
-function avail(roundId: string, side: "panelist" | "candidate") {
-  const rows = db()
+async function avail(roundId: string, side: "panelist" | "candidate") {
+  const rows = (await db()
     .prepare(
       "SELECT person_id,slot FROM interview_availability WHERE round_id=? AND side=?",
     )
-    .all(roundId, side) as { person_id: string; slot: string }[];
+    .all(roundId, side)) as { person_id: string; slot: string }[];
   const map = new Map<string, Set<string>>();
   for (const r of rows) {
     if (!map.has(r.person_id)) map.set(r.person_id, new Set());
@@ -121,12 +122,12 @@ function avail(roundId: string, side: "panelist" | "candidate") {
   return map;
 }
 
-function conflicts(roundId: string) {
-  const rows = db()
+async function conflicts(roundId: string) {
+  const rows = (await db()
     .prepare(
       "SELECT candidate_id,user_id FROM interview_conflicts WHERE round_id=?",
     )
-    .all(roundId) as { candidate_id: string; user_id: string }[];
+    .all(roundId)) as { candidate_id: string; user_id: string }[];
   const map = new Map<string, Set<string>>();
   for (const r of rows) {
     if (!map.has(r.candidate_id)) map.set(r.candidate_id, new Set());
@@ -138,21 +139,21 @@ function conflicts(roundId: string) {
 // Load a round out of SQLite into the pure scheduler's input shape. All the
 // math lives in scheduler.ts so it can be tested and replayed without a
 // database; this function is only plumbing.
-function input(roundId: string): SchedulerInput {
-  const r = round(roundId);
+async function input(roundId: string): Promise<SchedulerInput> {
+  const r = (await round(roundId));
   const candidates = (
-    db()
+    (await db()
       .prepare(
         "SELECT candidate_id FROM interview_candidates WHERE round_id=? AND status<>'withdrawn'",
       )
-      .all(roundId) as { candidate_id: string }[]
+      .all(roundId)) as { candidate_id: string }[]
   ).map((c) => c.candidate_id);
   const panelists = (
-    db()
+    (await db()
       .prepare(
         "SELECT user_id,weekly_cap FROM interview_panelists WHERE round_id=?",
       )
-      .all(roundId) as { user_id: string; weekly_cap: number }[]
+      .all(roundId)) as { user_id: string; weekly_cap: number }[]
   ).map((p) => ({ id: p.user_id, cap: p.weekly_cap }));
 
   const toRecord = (m: Map<string, Set<string>>) =>
@@ -162,18 +163,18 @@ function input(roundId: string): SchedulerInput {
     panelSize: Math.max(1, r.panel_size),
     candidates,
     panelists,
-    candidateSlots: toRecord(avail(roundId, "candidate")),
-    panelistSlots: toRecord(avail(roundId, "panelist")),
-    conflicts: toRecord(conflicts(roundId)),
+    candidateSlots: toRecord((await avail(roundId, "candidate"))),
+    panelistSlots: toRecord((await avail(roundId, "panelist"))),
+    conflicts: toRecord((await conflicts(roundId))),
   };
 }
 
-export function feasibility(roundId: string): Feasibility {
-  return computeFeasibility(input(roundId));
+export async function feasibility(roundId: string): Promise<Feasibility> {
+  return computeFeasibility((await input(roundId)));
 }
 
-export function solve(roundId: string) {
-  const { assignments, unplaced, load } = computeAssignment(input(roundId));
+export async function solve(roundId: string) {
+  const { assignments, unplaced, load } = computeAssignment((await input(roundId)));
   return {
     assignments: assignments.map((a) => ({
       candidate_id: a.candidate,
@@ -185,41 +186,41 @@ export function solve(roundId: string) {
   };
 }
 
-export function interviewState(u: User) {
-  officer(u);
-  const rounds = db()
+export async function interviewState(u: User) {
+  (await officer(u));
+  const rounds = (await db()
     .prepare("SELECT * FROM interview_rounds ORDER BY created_at DESC")
-    .all() as Round[];
+    .all()) as Round[];
   return {
-    rounds: rounds.map((r) => {
-      const counts = db()
+    rounds: (await asyncMap(rounds, async (r) => {
+      const counts = (await db()
         .prepare(
           "SELECT COUNT(*) n FROM interview_candidates WHERE round_id=? AND status<>'withdrawn'",
         )
-        .get(r.id) as { n: number };
-      const assigned = db()
+        .get(r.id)) as { n: number };
+      const assigned = (await db()
         .prepare(
           "SELECT COUNT(*) n FROM interview_assignments WHERE round_id=? AND status<>'cancelled'",
         )
-        .get(r.id) as { n: number };
+        .get(r.id)) as { n: number };
       return {
         ...r,
         candidates: counts.n,
         assigned: assigned.n,
-        feasibility: r.status === "draft" ? null : feasibility(r.id),
+        feasibility: r.status === "draft" ? null : (await feasibility(r.id)),
       };
-    }),
+    })),
   };
 }
 
-export function interviews(u: User, action: string, b: any) {
-  officer(u);
+export async function interviews(u: User, action: string, b: any) {
+  (await officer(u));
   const now = timestamp();
 
   if (action === "round/create") {
     const key = id();
     const panel = Math.max(1, Math.min(8, Number(b.panel_size) || 1));
-    db()
+    (await db()
       .prepare(
         "INSERT INTO interview_rounds(id,name,stage,panel_size,slot_minutes,status,created_at) VALUES (?,?,?,?,?,?,?)",
       )
@@ -231,9 +232,9 @@ export function interviews(u: User, action: string, b: any) {
         Math.max(10, Math.min(180, Number(b.slot_minutes) || 30)),
         "open",
         now,
-      );
-    audit(u, "interview.round.create", key, { panel_size: panel });
-    emit(u, "interview", "round", key, { status: "planned", stage: text(b.stage, 40) || "first" });
+      ));
+    (await audit(u, "interview.round.create", key, { panel_size: panel }));
+    (await emit(u, "interview", "round", key, { status: "planned", stage: text(b.stage, 40) || "first" }));
     return { id: key };
   }
 
@@ -255,7 +256,7 @@ export function interviews(u: User, action: string, b: any) {
     const stage = opt(b.stage, "first", 40);
     const fromStage = opt(b.from_application_stage, "submitted", 24);
     const cap = Math.max(0, Number(b.default_cap) || 3);
-    db()
+    (await db()
       .prepare(
         "INSERT INTO interview_rounds(id,name,stage,panel_size,slot_minutes,status,created_at) VALUES (?,?,?,?,?,?,?)",
       )
@@ -267,43 +268,43 @@ export function interviews(u: User, action: string, b: any) {
         Math.max(10, Math.min(180, Number(b.slot_minutes) || 30)),
         "open",
         now,
-      );
+      ));
 
     // Candidates: everyone sitting at the requested application stage.
-    const applicants = db()
+    const applicants = (await db()
       .prepare("SELECT user_id FROM applications WHERE stage=?")
-      .all(fromStage) as { user_id: string }[];
+      .all(fromStage)) as { user_id: string }[];
     const insCand = db().prepare(
       "INSERT OR IGNORE INTO interview_candidates(round_id,candidate_id) VALUES (?,?)",
     );
-    for (const a of applicants) insCand.run(key, a.user_id);
+    for (const a of applicants) (await insCand.run(key, a.user_id));
 
     // Panelists: the officers, each at one shared default cap.
-    const officers = db()
+    const officers = (await db()
       .prepare("SELECT id FROM users WHERE role='officer'")
-      .all() as { id: string }[];
+      .all()) as { id: string }[];
     const insPan = db().prepare(
       "INSERT INTO interview_panelists(round_id,user_id,weekly_cap) VALUES (?,?,?) ON CONFLICT(round_id,user_id) DO UPDATE SET weekly_cap=excluded.weekly_cap",
     );
     for (const o of officers) {
-      insPan.run(key, o.id, cap);
-      offer(u, {
+      (await insPan.run(key, o.id, cap));
+      (await offer(u, {
         kind: "panel",
         objectType: "interview_round",
         objectId: key,
         to: o.id,
         response: o.id === u.id ? "accepted" : "pending",
-      });
+      }));
     }
 
     // Availability: an officer's own open future slots are already a statement
     // of when they are free. Reuse them rather than asking twice.
     const officerIds = new Set(officers.map((o) => o.id));
-    const slots = db()
+    const slots = (await db()
       .prepare(
         "SELECT i.id,i.owner,i.data FROM items i WHERE i.kind='slot' AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.slot_id=i.id)",
       )
-      .all() as { id: string; owner: string; data: string }[];
+      .all()) as { id: string; owner: string; data: string }[];
     const insAvail = db().prepare(
       "INSERT OR IGNORE INTO interview_availability(round_id,person_id,side,slot) VALUES (?,?,?,?)",
     );
@@ -316,7 +317,7 @@ export function interviews(u: User, action: string, b: any) {
         d = JSON.parse(sl.data);
       } catch {}
       if (!d.starts_at || d.starts_at <= now) continue;
-      insAvail.run(key, sl.owner, "panelist", d.starts_at);
+      (await insAvail.run(key, sl.owner, "panelist", d.starts_at));
       offered.add(d.starts_at);
       seeded++;
     }
@@ -327,14 +328,14 @@ export function interviews(u: User, action: string, b: any) {
     const assumed = b.candidate_availability !== "declared";
     if (assumed)
       for (const a of applicants)
-        for (const slot of offered) insAvail.run(key, a.user_id, "candidate", slot);
+        for (const slot of offered) (await insAvail.run(key, a.user_id, "candidate", slot));
 
     // Conflicts: anyone who already sat a coffee chat with an officer.
-    const chats = db()
+    const chats = (await db()
       .prepare(
         "SELECT b.user_id AS candidate, i.owner AS officer FROM bookings b JOIN items i ON i.id=b.slot_id WHERE i.kind='slot'",
       )
-      .all() as { candidate: string; officer: string }[];
+      .all()) as { candidate: string; officer: string }[];
     const insCoi = db().prepare(
       "INSERT OR IGNORE INTO interview_conflicts(round_id,candidate_id,user_id,reason) VALUES (?,?,?,?)",
     );
@@ -342,18 +343,18 @@ export function interviews(u: User, action: string, b: any) {
     const candidateIds = new Set(applicants.map((a) => a.user_id));
     for (const c of chats) {
       if (!candidateIds.has(c.candidate) || !officerIds.has(c.officer)) continue;
-      insCoi.run(key, c.candidate, c.officer, "coffee chat");
+      (await insCoi.run(key, c.candidate, c.officer, "coffee chat"));
       coi++;
     }
 
-    audit(u, "interview.round.quickstart", key, {
+    (await audit(u, "interview.round.quickstart", key, {
       candidates: applicants.length,
       panelists: officers.length,
       conflicts: coi,
-    });
-    emit(u, "interview", "round", key, { status: "planned", stage });
+    }));
+    (await emit(u, "interview", "round", key, { status: "planned", stage }));
 
-    const f = feasibility(key);
+    const f = (await feasibility(key));
     const missing = officers.filter(
       (o) =>
         !slots.some((sl) => {
@@ -387,55 +388,55 @@ export function interviews(u: User, action: string, b: any) {
 
   if (action === "panelist/set") {
     const roundId = text(b.round_id, 64);
-    round(roundId);
-    db()
+    (await round(roundId));
+    (await db()
       .prepare(
         "INSERT INTO interview_panelists(round_id,user_id,weekly_cap) VALUES (?,?,?) ON CONFLICT(round_id,user_id) DO UPDATE SET weekly_cap=excluded.weekly_cap",
       )
-      .run(roundId, text(b.user_id, 64), Math.max(0, Number(b.weekly_cap) || 0));
-    audit(u, "interview.panelist.set", roundId, { user: b.user_id });
+      .run(roundId, text(b.user_id, 64), Math.max(0, Number(b.weekly_cap) || 0)));
+    (await audit(u, "interview.panelist.set", roundId, { user: b.user_id }));
     // Being put on a panel is an offer; setting your own availability accepts it.
     const who = text(b.user_id, 64);
-    offer(u, {
+    (await offer(u, {
       kind: "panel",
       objectType: "interview_round",
       objectId: roundId,
       to: who,
       response: who === u.id ? "accepted" : "pending",
-    });
+    }));
     return { ok: true };
   }
 
   if (action === "availability/set") {
     const roundId = text(b.round_id, 64);
-    round(roundId);
+    (await round(roundId));
     const side = b.side === "candidate" ? "candidate" : "panelist";
     const person = text(b.person_id, 64) || u.id;
     const slots: string[] = Array.isArray(b.slots)
       ? b.slots.slice(0, 400).map((s: unknown) => text(s, 40))
       : [];
-    db()
+    (await db()
       .prepare(
         "DELETE FROM interview_availability WHERE round_id=? AND person_id=? AND side=?",
       )
-      .run(roundId, person, side);
+      .run(roundId, person, side));
     const ins = db().prepare(
       "INSERT OR IGNORE INTO interview_availability(round_id,person_id,side,slot) VALUES (?,?,?,?)",
     );
-    for (const s of slots) if (s) ins.run(roundId, person, side, s);
-    audit(u, "interview.availability.set", roundId, {
+    for (const s of slots) if (s) (await ins.run(roundId, person, side, s));
+    (await audit(u, "interview.availability.set", roundId, {
       person,
       side,
       slots: slots.length,
-    });
+    }));
     if (side === "panelist" && slots.length)
-      respond(u, { objectType: "interview_round", objectId: roundId, to: person, response: "accepted", kind: "panel" });
+      (await respond(u, { objectType: "interview_round", objectId: roundId, to: person, response: "accepted", kind: "panel" }));
     return { ok: true, slots: slots.length };
   }
 
   if (action === "candidate/add") {
     const roundId = text(b.round_id, 64);
-    round(roundId);
+    (await round(roundId));
     const list: string[] = Array.isArray(b.candidate_ids)
       ? b.candidate_ids.slice(0, 500).map((c: unknown) => text(c, 64))
       : [text(b.candidate_id, 64)];
@@ -443,15 +444,15 @@ export function interviews(u: User, action: string, b: any) {
       "INSERT OR IGNORE INTO interview_candidates(round_id,candidate_id) VALUES (?,?)",
     );
     let n = 0;
-    for (const c of list) if (c) (ins.run(roundId, c), n++);
-    audit(u, "interview.candidate.add", roundId, { count: n });
+    for (const c of list) if (c) ((await ins.run(roundId, c)), n++);
+    (await audit(u, "interview.candidate.add", roundId, { count: n }));
     return { ok: true, added: n };
   }
 
   if (action === "conflict/add") {
     const roundId = text(b.round_id, 64);
-    round(roundId);
-    db()
+    (await round(roundId));
+    (await db()
       .prepare(
         "INSERT OR IGNORE INTO interview_conflicts(round_id,candidate_id,user_id,reason) VALUES (?,?,?,?)",
       )
@@ -460,30 +461,30 @@ export function interviews(u: User, action: string, b: any) {
         text(b.candidate_id, 64),
         text(b.user_id, 64),
         text(b.reason, 200) || "prior contact",
-      );
-    audit(u, "interview.conflict.add", roundId, {});
+      ));
+    (await audit(u, "interview.conflict.add", roundId, {}));
     return { ok: true };
   }
 
   if (action === "feasibility") {
-    return feasibility(text(b.round_id, 64));
+    return (await feasibility(text(b.round_id, 64)));
   }
 
   if (action === "solve") {
     const roundId = text(b.round_id, 64);
-    const r = round(roundId);
-    const { assignments, unplaced } = solve(roundId);
+    const r = (await round(roundId));
+    const { assignments, unplaced } = (await solve(roundId));
     if (b.commit) {
-      db()
+      (await db()
         .prepare(
           "DELETE FROM interview_assignments WHERE round_id=? AND status='offered'",
         )
-        .run(roundId);
+        .run(roundId));
       const ins = db().prepare(
         "INSERT INTO interview_assignments(id,round_id,candidate_id,slot,panel,status,created_at,status_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(round_id,candidate_id) DO UPDATE SET slot=excluded.slot,panel=excluded.panel,status='offered',status_at=excluded.status_at",
       );
       for (const a of assignments)
-        ins.run(
+        (await ins.run(
           id(),
           roundId,
           a.candidate_id,
@@ -492,12 +493,12 @@ export function interviews(u: User, action: string, b: any) {
           "offered",
           now,
           now,
-        );
-      audit(u, "interview.solve.commit", roundId, {
+        ));
+      (await audit(u, "interview.solve.commit", roundId, {
         placed: assignments.length,
         unplaced: unplaced.length,
-      });
-      emit(u, "interview", "round", roundId, { status: "offered", stage: r.stage });
+      }));
+      (await emit(u, "interview", "round", roundId, { status: "offered", stage: r.stage }));
     }
     return {
       assignments,
@@ -512,23 +513,23 @@ export function interviews(u: User, action: string, b: any) {
   // it from the candidate emailing back for a new person.
   if (action === "assignment/drop") {
     const key = text(b.assignment_id, 64);
-    const row = db()
+    const row = (await db()
       .prepare("SELECT * FROM interview_assignments WHERE id=?")
-      .get(key) as any;
+      .get(key)) as any;
     if (!row) fail("Assignment not found.", 404);
-    db()
+    (await db()
       .prepare("UPDATE interview_assignments SET status='cancelled',status_at=? WHERE id=?")
-      .run(now, key);
-    db()
+      .run(now, key));
+    (await db()
       .prepare(
         "UPDATE interview_candidates SET status='pending' WHERE round_id=? AND candidate_id=?",
       )
-      .run(row.round_id, row.candidate_id);
-    audit(u, "interview.assignment.drop", key, {
+      .run(row.round_id, row.candidate_id));
+    (await audit(u, "interview.assignment.drop", key, {
       reason: text(b.reason, 200),
-    });
-    emit(u, "interview", "assignment", key, { status: "cancelled", stage: "drop" });
-    return { ok: true, refill: solve(row.round_id) };
+    }));
+    (await emit(u, "interview", "assignment", key, { status: "cancelled", stage: "drop" }));
+    return { ok: true, refill: (await solve(row.round_id)) };
   }
 
   if (action === "assignment/status") {
@@ -536,15 +537,15 @@ export function interviews(u: User, action: string, b: any) {
     const status = text(b.status, 24);
     if (!["offered", "accepted", "completed", "no_show"].includes(status))
       fail("Unknown status.");
-    db()
+    (await db()
       .prepare("UPDATE interview_assignments SET status=?,status_at=? WHERE id=?")
-      .run(status, now, key);
-    audit(u, "interview.assignment.status", key, { status });
+      .run(status, now, key));
+    (await audit(u, "interview.assignment.status", key, { status }));
     // No-shows and completions are the labels every downstream model needs.
-    emit(u, "interview", "assignment", key, {
+    (await emit(u, "interview", "assignment", key, {
       status: status === "offered" ? "offered" : status,
       stage: "outcome",
-    });
+    }));
     return { ok: true };
   }
 

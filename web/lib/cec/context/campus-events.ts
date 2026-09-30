@@ -1,3 +1,4 @@
+import { asyncMap } from "../async";
 // Canonical campus events: one row per real-world thing, however many feeds
 // described it.
 //
@@ -143,9 +144,9 @@ export type EventSourceLink = {
 // =================================================================== schema
 
 let ready = false;
-export function campusEventsInit() {
+export async function campusEventsInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS campus_events(
   id TEXT PRIMARY KEY,
   institution_id TEXT NOT NULL,
@@ -183,7 +184,7 @@ CREATE TABLE IF NOT EXISTS campus_event_sources(
   observed_at TEXT NOT NULL,
   PRIMARY KEY(source_id,external_record_id));
 CREATE INDEX IF NOT EXISTS campus_event_src_canon ON campus_event_sources(canonical_event_id);
-`);
+`));
   ready = true;
 }
 
@@ -592,8 +593,8 @@ function deriveOccurredAt(startAt: string | null | undefined, observedAt: string
  * the only way a source record ever moves; there is no path in this module that
  * deletes one.
  */
-export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string {
-  campusEventsInit();
+export async function recordCampusEvent(draft: CanonicalDraft, p: Provenance): Promise<string> {
+  (await campusEventsInit());
   if (!draft.institutionId?.trim()) fail("A canonical event needs an institution_id.");
   if (!draft.title?.trim()) fail("A canonical event needs a title.");
   if (!draft.observedAt?.trim()) fail("A canonical event needs observed_at: when WE learned of it.");
@@ -601,16 +602,16 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
 
   const now = timestamp();
   const matchedAt = p.matchedAt || now;
-  const existingLink = db()
+  const existingLink = (await db()
     .prepare(
       "SELECT canonical_event_id FROM campus_event_sources WHERE source_id=? AND external_record_id=?",
     )
-    .get(p.sourceId, p.externalRecordId) as { canonical_event_id: string } | undefined;
+    .get(p.sourceId, p.externalRecordId)) as { canonical_event_id: string } | undefined;
 
   const targetId = existingLink?.canonical_event_id || p.canonicalEventId || id();
-  const current = db()
+  const current = (await db()
     .prepare("SELECT * FROM campus_events WHERE id=?")
-    .get(targetId) as any | undefined;
+    .get(targetId)) as any | undefined;
 
   const confidence = clamp01(draft.sourceConfidence ?? 0.5);
   const fingerprint = sourceHash({
@@ -621,7 +622,7 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
   });
 
   if (!current) {
-    db()
+    (await db()
       .prepare(
         `INSERT INTO campus_events(id,institution_id,canonical_type,title,description,start_at,end_at,occurred_at,observed_at,published_at,location,audiences,topics,organizations,career_categories,event_category,url,source_confidence,source_hash,parser_version,created_at,updated_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -649,7 +650,7 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
         draft.parserVersion || "1.0.0",
         now,
         now,
-      );
+      ));
   } else {
     // A more confident source overwrites the descriptive fields; a less
     // confident one only fills blanks. Otherwise the last crawl to run wins,
@@ -668,7 +669,7 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
       draft.observedAt < String(current.observed_at) ? draft.observedAt : String(current.observed_at);
     const startAt = keep(draft.startAt || null, current.start_at, null);
 
-    db()
+    (await db()
       .prepare(
         `UPDATE campus_events SET
            canonical_type=?, title=?, description=?, start_at=?, end_at=?, occurred_at=?,
@@ -702,10 +703,10 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
         draft.parserVersion || current.parser_version,
         now,
         targetId,
-      );
+      ));
   }
 
-  db()
+  (await db()
     .prepare(
       `INSERT INTO campus_event_sources(canonical_event_id,source_id,external_record_id,match_method,match_confidence,matched_at,raw_title,raw_start_at,observed_at)
        VALUES (?,?,?,?,?,?,?,?,?)
@@ -727,7 +728,7 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
       draft.title.slice(0, 400),
       draft.startAt || null,
       draft.observedAt,
-    );
+    ));
 
   return targetId;
 }
@@ -745,32 +746,32 @@ export function recordCampusEvent(draft: CanonicalDraft, p: Provenance): string 
  * so a backtest replayed across a merge sees today's grouping of yesterday's
  * events. Stated because it is a real limitation, not because it is fine.
  */
-export function mergeCanonical(
+export async function mergeCanonical(
   loserId: string,
   winnerId: string,
   method: MatchMethod,
   confidence: number,
   at = timestamp(),
-): void {
-  campusEventsInit();
+): Promise<void> {
+  (await campusEventsInit());
   if (loserId === winnerId) return;
-  const winner = db().prepare("SELECT id FROM campus_events WHERE id=?").get(winnerId);
+  const winner = (await db().prepare("SELECT id FROM campus_events WHERE id=?").get(winnerId));
   if (!winner) fail("Cannot merge into a canonical event that does not exist.", 404);
-  db()
+  (await db()
     .prepare(
       "UPDATE campus_event_sources SET canonical_event_id=?, match_method=?, match_confidence=?, matched_at=? WHERE canonical_event_id=?",
     )
-    .run(winnerId, method, clamp01(confidence), at, loserId);
+    .run(winnerId, method, clamp01(confidence), at, loserId));
   // The loser's earliest observation must survive the merge, or a point-in-time
   // query loses an event it used to be able to see.
-  const loser = db()
+  const loser = (await db()
     .prepare("SELECT observed_at FROM campus_events WHERE id=?")
-    .get(loserId) as { observed_at: string } | undefined;
+    .get(loserId)) as { observed_at: string } | undefined;
   if (loser)
-    db()
+    (await db()
       .prepare("UPDATE campus_events SET observed_at=MIN(observed_at,?), updated_at=? WHERE id=?")
-      .run(loser.observed_at, at, winnerId);
-  db().prepare("DELETE FROM campus_events WHERE id=?").run(loserId);
+      .run(loser.observed_at, at, winnerId));
+  (await db().prepare("DELETE FROM campus_events WHERE id=?").run(loserId));
 }
 
 function clamp01(v: unknown): number {
@@ -787,12 +788,12 @@ function clamp01(v: unknown): number {
  * allowed to reintroduce a fact we had not yet learned, which is why the start
  * window is optional and the observation filter is not.
  */
-export function campusEventsAsOf(
+export async function campusEventsAsOf(
   institutionId: string,
   asOf: string,
   opts: { from?: string; to?: string; types?: CanonicalType[]; limit?: number } = {},
-): CanonicalEvent[] {
-  campusEventsInit();
+): Promise<CanonicalEvent[]> {
+  (await campusEventsInit());
   const where = ["institution_id=?", "observed_at<=?"];
   const args: (string | number)[] = [institutionId, asOf];
   if (opts.from) {
@@ -808,38 +809,38 @@ export function campusEventsAsOf(
     args.push(...opts.types);
   }
   args.push(Math.min(Math.max(opts.limit ?? 2000, 1), 20000));
-  const rows = db()
+  const rows = (await db()
     .prepare(
       `SELECT * FROM campus_events WHERE ${where.join(" AND ")} ORDER BY start_at, id LIMIT ?`,
     )
-    .all(...args) as any[];
+    .all(...args)) as any[];
   return rows.map(hydrate);
 }
 
-export function canonicalEvent(eventId: string): CanonicalEvent | null {
-  campusEventsInit();
-  const row = db().prepare("SELECT * FROM campus_events WHERE id=?").get(eventId) as any;
+export async function canonicalEvent(eventId: string): Promise<CanonicalEvent | null> {
+  (await campusEventsInit());
+  const row = (await db().prepare("SELECT * FROM campus_events WHERE id=?").get(eventId)) as any;
   return row ? hydrate(row) : null;
 }
 
 /** Every source record behind one canonical event, with how it got there. */
-export function eventSources(eventId: string): EventSourceLink[] {
-  campusEventsInit();
-  return db()
+export async function eventSources(eventId: string): Promise<EventSourceLink[]> {
+  (await campusEventsInit());
+  return (await db()
     .prepare(
       "SELECT * FROM campus_event_sources WHERE canonical_event_id=? ORDER BY matched_at, source_id",
     )
-    .all(eventId) as EventSourceLink[];
+    .all(eventId)) as EventSourceLink[];
 }
 
 /** Which canonical event a source record ended up in. Null when never ingested. */
-export function canonicalFor(sourceId: string, externalRecordId: string): string | null {
-  campusEventsInit();
-  const row = db()
+export async function canonicalFor(sourceId: string, externalRecordId: string): Promise<string | null> {
+  (await campusEventsInit());
+  const row = (await db()
     .prepare(
       "SELECT canonical_event_id FROM campus_event_sources WHERE source_id=? AND external_record_id=?",
     )
-    .get(sourceId, externalRecordId) as { canonical_event_id: string } | undefined;
+    .get(sourceId, externalRecordId)) as { canonical_event_id: string } | undefined;
   return row?.canonical_event_id ?? null;
 }
 
@@ -870,14 +871,14 @@ export type IngestResult = {
  * calls `Date.now()` for it, because a backfill replaying an August crawl must
  * be able to say so.
  */
-export function ingestContextRecords(input: {
+export async function ingestContextRecords(input: {
   institutionId: string;
   observedAt: string;
   records: IngestRecord[];
   threshold?: number;
   parserVersion?: string;
-}): IngestResult {
-  campusEventsInit();
+}): Promise<IngestResult> {
+  (await campusEventsInit());
   if (!input.institutionId?.trim()) fail("Ingest needs an institution_id.");
   if (!input.observedAt?.trim()) fail("Ingest needs observedAt: when this crawl happened.");
   const threshold = input.threshold ?? MATCH_THRESHOLDS.merge;
@@ -901,7 +902,7 @@ export function ingestContextRecords(input: {
     });
   }
 
-  for (const stored of neighbours(input.institutionId, candidates, input.observedAt))
+  for (const stored of (await neighbours(input.institutionId, candidates, input.observedAt)))
     candidates.push(stored);
 
   const resolution = resolve(candidates, { threshold });
@@ -921,20 +922,19 @@ export function ingestContextRecords(input: {
 
     // The oldest stored canonical wins; anything else in the cluster folds into
     // it. Oldest, so an event's id is stable from the first day we saw it.
-    const storedIds = stored
-      .map((s) => canonicalEvent(s.externalId))
+    const storedIds = (await asyncMap(stored, async (s) => (await canonicalEvent(s.externalId))))
       .filter((e): e is CanonicalEvent => !!e)
       .sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
     let targetId = storedIds[0]?.id;
     for (const extra of storedIds.slice(1)) {
       const edge = stored.find((s) => s.externalId === extra.id);
-      mergeCanonical(
+      (await mergeCanonical(
         extra.id,
         targetId!,
         edge?.matchMethod ?? "title_time_location",
         edge?.matchConfidence ?? threshold,
         input.observedAt,
-      );
+      ));
       out.merged++;
     }
 
@@ -952,8 +952,8 @@ export function ingestContextRecords(input: {
     for (const member of ordered) {
       const rec = byKey.get(member.key)!;
       const before = targetId;
-      targetId = recordCampusEvent(
-        draftOf(rec, input.institutionId, input.observedAt, classification, input.parserVersion),
+      targetId = (await recordCampusEvent(
+        (await draftOf(rec, input.institutionId, input.observedAt, classification, input.parserVersion)),
         {
           sourceId: rec.sourceId,
           externalRecordId: rec.externalId,
@@ -962,7 +962,7 @@ export function ingestContextRecords(input: {
           canonicalEventId: targetId,
           matchedAt: input.observedAt,
         },
-      );
+      ));
       if (!before) out.created++;
       else out.linked++;
     }
@@ -979,17 +979,17 @@ export function ingestContextRecords(input: {
  * that could have matched is left out of the batch, and nothing that could not
  * is loaded.
  */
-function neighbours(
+async function neighbours(
   institutionId: string,
   incoming: ResolutionCandidate[],
   observedAt: string,
-): ResolutionCandidate[] {
+): Promise<ResolutionCandidate[]> {
   const starts = incoming.map((c) => (c.startAt ? Date.parse(c.startAt) : NaN)).filter(Number.isFinite);
   if (!starts.length) return [];
   const pad = 12 * 3600e3;
   const from = new Date(Math.min(...starts) - pad).toISOString();
   const to = new Date(Math.max(...starts) + pad).toISOString();
-  return campusEventsAsOf(institutionId, observedAt, { from, to }).map((e) => ({
+  return (await campusEventsAsOf(institutionId, observedAt, { from, to })).map((e) => ({
     key: `${CANONICAL_KEY}:${e.id}`,
     sourceId: CANONICAL_KEY,
     externalId: e.id,
@@ -1012,13 +1012,13 @@ function bestClassification(records: IngestRecord[]): Classification {
   return best;
 }
 
-function draftOf(
+async function draftOf(
   rec: IngestRecord,
   institutionId: string,
   observedAt: string,
   classification: Classification,
   parserVersion?: string,
-): CanonicalDraft {
+): Promise<CanonicalDraft> {
   return {
     institutionId,
     canonicalType: classification.type,
@@ -1035,7 +1035,7 @@ function draftOf(
     careerCategories: rec.careerCategories,
     eventCategory: rec.eventCategory,
     url: rec.url,
-    sourceConfidence: rec.sourceConfidence ?? confidenceOf(rec.sourceId),
+    sourceConfidence: rec.sourceConfidence ?? (await confidenceOf(rec.sourceId)),
     parserVersion,
   };
 }
@@ -1045,8 +1045,8 @@ function draftOf(
  * from the record. An unregistered source is not trusted at the default — it is
  * trusted less, because nobody has said where it came from.
  */
-function confidenceOf(sourceId: string): number {
-  const row = findSource(sourceId);
+async function confidenceOf(sourceId: string): Promise<number> {
+  const row = (await findSource(sourceId));
   if (!row) return 0.4;
   return TRUST_CONFIDENCE[row.trust_level as TrustLevel] ?? 0.5;
 }

@@ -1,3 +1,4 @@
+import { asyncMap } from "./async";
 // The behavioral signal library and its registry.
 //
 // Each signal is a fact sheet (definition, hypothesis, the outcome it claims
@@ -236,11 +237,11 @@ const ageDays = (at: string, asOf: string) =>
   Math.max(0, (Date.parse(asOf) - Date.parse(at)) / DAY);
 const hoursBetween = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 3600e3;
 
-function loadEvents(asOf: string): Ev[] {
+async function loadEvents(asOf: string): Promise<Ev[]> {
   return (
-    db()
+    (await db()
       .prepare("SELECT * FROM activity_events WHERE observed_at<=? ORDER BY seq")
-      .all(asOf) as any[]
+      .all(asOf)) as any[]
   ).map((e) => {
     let context = {};
     try {
@@ -260,9 +261,9 @@ function hit(r: RawSignal, ok: boolean, at: string, asOf: string) {
 }
 
 /** Raw counts for every signal, for one person, as of a point in time. */
-export function computeRaw(userId: string, asOf: string, events?: Ev[]): Record<string, RawSignal> {
-  opportunitiesInit();
-  const evs = events || loadEvents(asOf);
+export async function computeRaw(userId: string, asOf: string, events?: Ev[]): Promise<Record<string, RawSignal>> {
+  (await opportunitiesInit());
+  const evs = events || (await loadEvents(asOf));
   const out: Record<string, RawSignal> = {};
   for (const s of SIGNALS) out[s.key] = empty();
 
@@ -312,9 +313,9 @@ export function computeRaw(userId: string, asOf: string, events?: Ev[]): Record<
   // recorded long after `asOf` — a point-in-time leak that also dated the
   // point at `asOf`, giving a leaked observation maximum recency weight.
   // Filter by offer time, then only count a response actually known by then.
-  const opps = db()
+  const opps = (await db()
     .prepare("SELECT kind,response,responded_at,offered_at FROM opportunities WHERE offered_to=? AND offered_at<=?")
-    .all(userId, asOf) as { kind: string; response: string; responded_at: string | null; offered_at: string }[];
+    .all(userId, asOf)) as { kind: string; response: string; responded_at: string | null; offered_at: string }[];
   const takeKey: Record<string, string> = { task: "task_take_rate", ownership: "ownership_take_rate", panel: "panel_take_rate" };
   for (const o of opps) {
     const key = takeKey[o.kind];
@@ -326,9 +327,9 @@ export function computeRaw(userId: string, asOf: string, events?: Ev[]): Record<
   }
 
   // --- blockers ----------------------------------------------------------------
-  const blockers = db()
+  const blockers = (await db()
     .prepare("SELECT * FROM work_blockers WHERE created_at<=?")
-    .all(asOf) as any[];
+    .all(asOf)) as any[];
   const myTasks = new Set([...accepted.keys()]);
   for (const b of blockers) {
     const resolved = b.resolved_at && b.resolved_at <= asOf ? b.resolved_at : null;
@@ -398,18 +399,18 @@ export function computeRaw(userId: string, asOf: string, events?: Ev[]): Record<
   }
 
   // --- interview_reliability (from the scheduler's assignments) --------------------
-  const hasInterviews = db()
+  const hasInterviews = (await db()
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='interview_assignments'")
-    .get();
+    .get());
   if (hasInterviews) {
     // `status` is mutable, so filtering on `created_at` reads an outcome that
     // may have been recorded after `asOf`. Filter on when the status was set.
     // Rows written before `status_at` existed are skipped rather than guessed.
-    const rows = db()
+    const rows = (await db()
       .prepare(
         "SELECT panel,status,status_at FROM interview_assignments WHERE status_at IS NOT NULL AND status_at<=? AND status IN ('completed','no_show')",
       )
-      .all(asOf) as { panel: string; status: string; status_at: string }[];
+      .all(asOf)) as { panel: string; status: string; status_at: string }[];
     for (const r of rows) {
       let panel: string[] = [];
       try {
@@ -458,12 +459,12 @@ function reading(def: SignalDef, n: number, p: Posterior | null, med: number | n
 }
 
 /** All signals for one person as of a moment, with peer-informed uncertainty. */
-export function computeSignals(userId: string, asOf: string): PersonSignal[] {
-  const events = loadEvents(asOf);
-  const users = (db().prepare("SELECT id FROM users").all() as { id: string }[]).map((u) => u.id);
+export async function computeSignals(userId: string, asOf: string): Promise<PersonSignal[]> {
+  const events = (await loadEvents(asOf));
+  const users = ((await db().prepare("SELECT id FROM users").all()) as { id: string }[]).map((u) => u.id);
   const raws = new Map<string, Record<string, RawSignal>>();
-  for (const id of users) raws.set(id, computeRaw(id, asOf, events));
-  const mine = raws.get(userId) || computeRaw(userId, asOf, events);
+  for (const id of users) raws.set(id, (await computeRaw(id, asOf, events)));
+  const mine = raws.get(userId) || (await computeRaw(userId, asOf, events));
 
   return SIGNALS.map((def) => {
     const r = mine[def.key];
@@ -512,9 +513,9 @@ export function computeSignals(userId: string, asOf: string): PersonSignal[] {
 // -------------------------------------------------------------- registry
 
 let registryReady = false;
-function registryInit() {
+async function registryInit() {
   if (registryReady) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS signal_registry_runs(
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   signal TEXT NOT NULL,
@@ -527,7 +528,7 @@ CREATE TABLE IF NOT EXISTS signal_registry_runs(
   verdict TEXT NOT NULL,
   policy TEXT NOT NULL,
   computed_at TEXT NOT NULL);
-`);
+`));
   registryReady = true;
 }
 
@@ -553,10 +554,10 @@ export type RegistryRow = {
  * horizon_start using only events observed by then. Windows are months of
  * horizon_start, so the information ratio measures consistency over time.
  */
-export function runRegistry(u: User): RegistryRow[] {
-  officer(u);
-  registryInit();
-  outcomesInit();
+export async function runRegistry(u: User): Promise<RegistryRow[]> {
+  (await officer(u));
+  (await registryInit());
+  (await outcomesInit());
   const now = timestamp();
   const rows: RegistryRow[] = [];
   const cache = new Map<string, Record<string, RawSignal>>();
@@ -564,9 +565,9 @@ export function runRegistry(u: User): RegistryRow[] {
   for (const def of SIGNALS) {
     let pairs: { x: number; y: number; window: string }[] = [];
     if (def.outcome) {
-      for (const o of personOutcomes(def.outcome)) {
+      for (const o of (await personOutcomes(def.outcome))) {
         const ck = `${o.subject_id}|${o.horizon_start}`;
-        if (!cache.has(ck)) cache.set(ck, computeRaw(o.subject_id, o.horizon_start));
+        if (!cache.has(ck)) cache.set(ck, (await computeRaw(o.subject_id, o.horizon_start)));
         const r = cache.get(ck)![def.key];
         const n = def.kind === "latency" ? r.values.length : r.successes + r.failures;
         if (n < 1) continue; // pure prior carries no information about this person
@@ -589,11 +590,11 @@ export function runRegistry(u: User): RegistryRow[] {
     const ir = informationRatio(ics);
     const verdict = def.outcome ? signalVerdict(pairs.length, ic) : "descriptive";
     const signAgrees = ic === null ? null : Math.sign(ic) === def.expectedSign;
-    db()
+    (await db()
       .prepare(
         "INSERT INTO signal_registry_runs(signal,outcome,pairs,windows,ic,ir,sign_agrees,verdict,policy,computed_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
       )
-      .run(def.key, def.outcome || "", pairs.length, byWindow.size, ic, ir, signAgrees === null ? null : signAgrees ? 1 : 0, verdict, POLICY, now);
+      .run(def.key, def.outcome || "", pairs.length, byWindow.size, ic, ir, signAgrees === null ? null : signAgrees ? 1 : 0, verdict, POLICY, now));
     rows.push({
       signal: def.key,
       label: def.label,
@@ -610,18 +611,18 @@ export function runRegistry(u: User): RegistryRow[] {
       computed_at: now,
     });
   }
-  audit(u, "signal.registry.run", POLICY, { signals: rows.length });
+  (await audit(u, "signal.registry.run", POLICY, { signals: rows.length }));
   return rows;
 }
 
 /** Latest registry run per signal, plus fact-sheet text, without recomputing. */
-export function registryLatest(u: User): RegistryRow[] {
-  officer(u);
-  registryInit();
-  return SIGNALS.map((def) => {
-    const r = db()
+export async function registryLatest(u: User): Promise<RegistryRow[]> {
+  (await officer(u));
+  (await registryInit());
+  return (await asyncMap(SIGNALS, async (def) => {
+    const r = (await db()
       .prepare("SELECT * FROM signal_registry_runs WHERE signal=? ORDER BY seq DESC LIMIT 1")
-      .get(def.key) as any;
+      .get(def.key)) as any;
     return {
       signal: def.key,
       label: def.label,
@@ -637,25 +638,25 @@ export function registryLatest(u: User): RegistryRow[] {
       verdict: r?.verdict ?? "never_run",
       computed_at: r?.computed_at ?? "",
     };
-  });
+  }));
 }
 
 /** A member's own signals. Only their own — the mirror test. */
-export function behaviorState(u: User) {
-  member(u);
+export async function behaviorState(u: User) {
+  (await member(u));
   const asOf = timestamp();
   return {
     policy: POLICY,
     as_of: asOf,
-    signals: computeSignals(u.id, asOf),
+    signals: (await computeSignals(u.id, asOf)),
     note: "These are your own observations with uncertainty. Nobody else sees a number beside your name; officers see only whether a signal predicts anything in aggregate.",
   };
 }
 
-export function behavior(u: User, action: string, b: any) {
-  if (action === "registry/run") return { rows: runRegistry(u) };
-  if (action === "registry") return { rows: registryLatest(u) };
-  if (action === "self") return behaviorState(u);
+export async function behavior(u: User, action: string, b: any) {
+  if (action === "registry/run") return { rows: (await runRegistry(u)) };
+  if (action === "registry") return { rows: (await registryLatest(u)) };
+  if (action === "self") return (await behaviorState(u));
   if (action === "definitions") return { signals: SIGNALS };
   fail("Unknown behavior action.", 404);
 }

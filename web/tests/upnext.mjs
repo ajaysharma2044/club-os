@@ -18,14 +18,14 @@ const ok = (c, m) => {
   checks++;
 };
 
-evidenceInit();
-const mk = (id, name, role) =>
-  db()
+(await evidenceInit());
+const mk = async (id, name, role) =>
+  (await db()
     .prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,?)")
-    .run(id, name, `${id}@cornell.edu`, "x", role);
-mk("m1", "Maya", "member");
-mk("m2", "Priya", "member");
-mk("a1", "Applicant", "applicant");
+    .run(id, name, `${id}@cornell.edu`, "x", role));
+(await mk("m1", "Maya", "member"));
+(await mk("m2", "Priya", "member"));
+(await mk("a1", "Applicant", "applicant"));
 const maya = { id: "m1", name: "Maya", email: "m1@cornell.edu", role: "member" };
 const priya = { id: "m2", name: "Priya", email: "m2@cornell.edu", role: "member" };
 const applicant = { id: "a1", name: "A", email: "a1@cornell.edu", role: "applicant" };
@@ -36,46 +36,46 @@ const applicant = { id: "a1", name: "A", email: "a1@cornell.edu", role: "applica
 const NOW = new Date().toISOString();
 const at = (h) => new Date(Date.parse(NOW) + h * 3600e3).toISOString();
 
-const putEvent = (id, data, createdAt = NOW) =>
-  db()
+const putEvent = async (id, data, createdAt = NOW) =>
+  (await db()
     .prepare(
       "INSERT INTO items(id,kind,owner,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?)",
     )
-    .run(id, "event", "m2", JSON.stringify(data), createdAt, createdAt, 1);
+    .run(id, "event", "m2", JSON.stringify(data), createdAt, createdAt, 1));
 
 // ============================================ only what needs THIS person
 {
-  putEvent("e-tonight", {
+  (await putEvent("e-tonight", {
     title: "Startup Pitch Night",
     status: "published",
     starts_at: at(1),
     ends_at: at(3),
     location: "Statler 196",
     capacity: 60,
-  });
-  putEvent("e-draft", {
+  }));
+  (await putEvent("e-draft", {
     title: "Unpublished idea",
     status: "draft",
     starts_at: at(2),
     ends_at: at(3),
     location: "Gates",
-  });
-  putEvent("e-past", {
+  }));
+  (await putEvent("e-past", {
     title: "Already happened",
     status: "published",
     starts_at: at(-5),
     ends_at: at(-3),
     location: "Uris",
-  });
-  putEvent("e-far", {
+  }));
+  (await putEvent("e-far", {
     title: "Next month",
     status: "published",
     starts_at: at(24 * 40),
     ends_at: at(24 * 40 + 2),
     location: "eHub",
-  });
+  }));
 
-  const r = upNext(maya, NOW);
+  const r = (await upNext(maya, NOW));
   const ids = r.rows.map((x) => x.id);
   ok(ids.includes("e-tonight"), "a published event inside the horizon appears");
   ok(!ids.includes("e-draft"), "a draft does not — it is not asking anything of anyone yet");
@@ -119,12 +119,12 @@ const putEvent = (id, data, createdAt = NOW) =>
     version: 2,
     data: { ...before.data, location: "Phillips 203" },
   };
-  db()
+  (await db()
     .prepare("UPDATE items SET data=?, version=2 WHERE id=?")
-    .run(JSON.stringify(after.data), "e-tonight");
-  captureItem(priya, after, "src-move-1", before);
+    .run(JSON.stringify(after.data), "e-tonight"));
+  (await captureItem(priya, after, "src-move-1", before));
 
-  const row = upNext(maya, NOW).rows.find((x) => x.id === "e-tonight");
+  const row = (await upNext(maya, NOW)).rows.find((x) => x.id === "e-tonight");
   ok(row.changes.length === 1, `the move is detected, got ${row.changes.length} changes`);
   const c = row.changes[0];
   ok(c.field === "location", "as a location change");
@@ -134,11 +134,11 @@ const putEvent = (id, data, createdAt = NOW) =>
 
   // A time change is detected the same way.
   const moved2 = { ...after, version: 3, data: { ...after.data, starts_at: at(2) } };
-  db()
+  (await db()
     .prepare("UPDATE items SET data=?, version=3 WHERE id=?")
-    .run(JSON.stringify(moved2.data), "e-tonight");
-  captureItem(priya, moved2, "src-move-2", after);
-  const row2 = upNext(maya, NOW).rows.find((x) => x.id === "e-tonight");
+    .run(JSON.stringify(moved2.data), "e-tonight"));
+  (await captureItem(priya, moved2, "src-move-2", after));
+  const row2 = (await upNext(maya, NOW)).rows.find((x) => x.id === "e-tonight");
   ok(
     row2.changes.some((x) => x.field === "starts_at"),
     "a time change is detected too",
@@ -155,12 +155,12 @@ const putEvent = (id, data, createdAt = NOW) =>
 
 // ============================= a change far from the start is NOT news
 {
-  putEvent("e-later", {
+  (await putEvent("e-later", {
     title: "Rescheduled weeks ago",
     status: "published",
     starts_at: at(24 * 5),
     location: "Gates G01",
-  });
+  }));
   const before = {
     id: "e-later",
     kind: "event",
@@ -176,9 +176,9 @@ const putEvent = (id, data, createdAt = NOW) =>
     },
   };
   const after = { ...before, version: 2, data: { ...before.data, location: "Gates G01" } };
-  captureItem(priya, after, "src-far-move", before);
+  (await captureItem(priya, after, "src-far-move", before));
 
-  const row = upNext(maya, NOW).rows.find((x) => x.id === "e-later");
+  const row = (await upNext(maya, NOW)).rows.find((x) => x.id === "e-later");
   ok(
     row.changes.length === 0,
     `an event moved ${24 * 5}h before it starts is not a ${DIFF_WINDOW_HOURS}h-window alert`,
@@ -187,23 +187,23 @@ const putEvent = (id, data, createdAt = NOW) =>
 
 // ===================================== tasks, including ones with NO due date
 {
-  const putTask = (id, data) =>
-    db()
+  const putTask = async (id, data) =>
+    (await db()
       .prepare(
         "INSERT INTO items(id,kind,owner,data,created_at,updated_at,version) VALUES(?,?,?,?,?,?,?)",
       )
-      .run(id, "task", "m2", JSON.stringify(data), NOW, NOW, 1);
+      .run(id, "task", "m2", JSON.stringify(data), NOW, NOW, 1));
 
-  putTask("t-overdue", { title: "Still owed", status: "accepted", assignee: "m1", due_at: at(-72), work_history: [{kind: "revision"}] });
-  putTask("t-mine", { title: "Book the room", status: "assigned", assignee: "m1", due_at: at(20) });
-  putTask("t-nodate", { title: "Chase the sponsor", status: "accepted", assignee: "m1" });
-  putTask("t-review", { title: "Awaiting review", status: "submitted", assignee: "m1", due_at: at(20) });
-  putTask("t-theirs", { title: "Not mine", status: "assigned", assignee: "m2", due_at: at(20) });
-  putTask("t-done", { title: "Finished", status: "completed", assignee: "m1", due_at: at(5) });
+  (await putTask("t-overdue", { title: "Still owed", status: "accepted", assignee: "m1", due_at: at(-72), work_history: [{kind: "revision"}] }));
+  (await putTask("t-mine", { title: "Book the room", status: "assigned", assignee: "m1", due_at: at(20) }));
+  (await putTask("t-nodate", { title: "Chase the sponsor", status: "accepted", assignee: "m1" }));
+  (await putTask("t-review", { title: "Awaiting review", status: "submitted", assignee: "m1", due_at: at(20) }));
+  (await putTask("t-theirs", { title: "Not mine", status: "assigned", assignee: "m2", due_at: at(20) }));
+  (await putTask("t-done", { title: "Finished", status: "completed", assignee: "m1", due_at: at(5) }));
 
-  const ids = upNext(maya, NOW).rows.map((r) => r.id);
+  const ids = (await upNext(maya, NOW)).rows.map((r) => r.id);
   ok(ids.includes("t-overdue"), "overdue open work remains visible after 24 hours");
-  ok(upNext(maya, NOW).rows.find(r => r.id === "t-overdue").state === "changes_requested", "pending revision has a distinct state");
+  ok((await upNext(maya, NOW)).rows.find(r => r.id === "t-overdue").state === "changes_requested", "pending revision has a distinct state");
   ok(ids.includes("t-mine"), "a task assigned to me appears");
   ok(
     ids.includes("t-nodate"),
@@ -212,9 +212,9 @@ const putEvent = (id, data, createdAt = NOW) =>
   ok(!ids.includes("t-theirs"), "someone else's task does not");
   ok(!ids.includes("t-done"), "a completed task does not");
 
-  const mine = upNext(maya, NOW).rows.find((r) => r.id === "t-mine");
-  const accepted = upNext(maya, NOW).rows.find((r) => r.id === "t-nodate");
-  const submitted = upNext(maya, NOW).rows.find((r) => r.id === "t-review");
+  const mine = (await upNext(maya, NOW)).rows.find((r) => r.id === "t-mine");
+  const accepted = (await upNext(maya, NOW)).rows.find((r) => r.id === "t-nodate");
+  const submitted = (await upNext(maya, NOW)).rows.find((r) => r.id === "t-review");
   ok(accepted.actions[0].kind === "task.view" && accepted.actions[0].label === "Submit work", "submission opens the evidence form instead of an empty status mutation");
   ok(submitted.actions[0].kind === "task.view" && submitted.actions[0].label === "View submitted work", "submitted work is not offered a duplicate submission action");
   ok(mine.needsAnswer === true, "an unaccepted assignment needs an answer");
@@ -227,7 +227,7 @@ const putEvent = (id, data, createdAt = NOW) =>
 
 // ================================================== ordering and privacy
 {
-  const r = upNext(maya, NOW);
+  const r = (await upNext(maya, NOW));
   const dated = r.rows.filter((x) => x.at);
   for (let i = 1; i < dated.length; i++)
     ok(dated[i - 1].at <= dated[i].at, "dated rows are in time order");
@@ -241,14 +241,14 @@ const putEvent = (id, data, createdAt = NOW) =>
   );
 
   // This is a PERSONAL list. Two people see different things.
-  const hers = upNext(priya, NOW).rows.map((x) => x.id);
+  const hers = (await upNext(priya, NOW)).rows.map((x) => x.id);
   ok(!hers.includes("t-mine"), "Priya does not see Maya's assigned task");
   ok(hers.includes("t-theirs"), "she sees her own");
 
   // An applicant is not a member.
   let threw = false;
   try {
-    upNext(applicant, NOW);
+    (await upNext(applicant, NOW));
   } catch {
     threw = true;
   }

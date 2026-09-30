@@ -1,3 +1,4 @@
+import { asyncFilter } from "./async";
 // "Up next" — the home screen.
 //
 // The screen it replaces showed four static counts: published events, open
@@ -98,16 +99,16 @@ export type UpNext = {
  * those rows rather than keeping a second changelog, so the diff and the record
  * cannot disagree.
  */
-function recentChanges(eventId: string, startsAt: string, now: number): Change[] {
+async function recentChanges(eventId: string, startsAt: string, now: number): Promise<Change[]> {
   const start = Date.parse(startsAt);
   if (!Number.isFinite(start)) return [];
-  const rows = db()
+  const rows = (await db()
     .prepare(
       `SELECT occurred_at, context FROM activity_events
        WHERE object_type IN ('event','meeting') AND object_id=? AND event_type LIKE '%.updated'
        ORDER BY seq DESC LIMIT 10`,
     )
-    .all(eventId) as { occurred_at: string; context: string }[];
+    .all(eventId)) as { occurred_at: string; context: string }[];
 
   const out: Change[] = [];
   for (const r of rows) {
@@ -148,8 +149,8 @@ function recentChanges(eventId: string, startsAt: string, now: number): Change[]
  * Member-gated: this is a personal list. An officer's view of the club is a
  * different screen and should be (docs/22 §5.4).
  */
-export function upNext(u: User, asOfIso?: string): UpNext {
-  member(u);
+export async function upNext(u: User, asOfIso?: string): Promise<UpNext> {
+  (await member(u));
   const asOf = asOfIso || timestamp();
   const now = Date.parse(asOf);
   const horizonEnd = new Date(now + HORIZON_DAYS * DAY).toISOString();
@@ -159,11 +160,11 @@ export function upNext(u: User, asOfIso?: string): UpNext {
   // Published events inside the horizon, whether or not the person answered.
   // An unanswered event is the single most common thing a club needs from a
   // member, and it has no due date — which is why Canvas's model cannot hold it.
-  const events = db()
+  const events = (await db()
     .prepare(
       `SELECT id, data, updated_at FROM items WHERE kind='event' ORDER BY created_at DESC LIMIT 200`,
     )
-    .all() as { id: string; data: string; updated_at: string }[];
+    .all()) as { id: string; data: string; updated_at: string }[];
 
   for (const e of events) {
     let d: any = {};
@@ -177,13 +178,13 @@ export function upNext(u: User, asOfIso?: string): UpNext {
     const start = Date.parse(startsAt);
     if (!Number.isFinite(start) || start < now || startsAt > horizonEnd) continue;
 
-    const mine = db()
+    const mine = (await db()
       .prepare("SELECT status, attendance FROM rsvps WHERE event_id=? AND user_id=?")
-      .get(e.id, u.id) as { status: string; attendance: string | null } | undefined;
+      .get(e.id, u.id)) as { status: string; attendance: string | null } | undefined;
     const going = (
-      db()
+      (await db()
         .prepare("SELECT COUNT(*) n FROM rsvps WHERE event_id=? AND status='yes'")
-        .get(e.id) as { n: number }
+        .get(e.id)) as { n: number }
     ).n;
 
     const state = !mine ? "unanswered" : mine.status;
@@ -196,7 +197,7 @@ export function upNext(u: User, asOfIso?: string): UpNext {
         ? [{ kind: "rsvp.no", label: "Can't make it", target: e.id }]
         : [{ kind: "rsvp.yes", label: "I'm going", target: e.id, primary: true }];
 
-    const changes = recentChanges(e.id, startsAt, now).map((c) => ({
+    const changes = (await recentChanges(e.id, startsAt, now)).map((c) => ({
       ...c,
       to: c.field === "location" ? (d.location ?? "") : startsAt,
     }));
@@ -219,9 +220,9 @@ export function upNext(u: User, asOfIso?: string): UpNext {
   }
 
   // ---- tasks assigned to me ----------------------------------------------
-  const tasks = db()
+  const tasks = (await db()
     .prepare("SELECT id, data FROM items WHERE kind='task' ORDER BY created_at DESC LIMIT 300")
-    .all() as { id: string; data: string }[];
+    .all()) as { id: string; data: string }[];
   for (const t of tasks) {
     let d: any = {};
     try {
@@ -257,12 +258,12 @@ export function upNext(u: User, asOfIso?: string): UpNext {
   }
 
   // ---- coffee chats I booked ---------------------------------------------
-  const chats = db()
+  const chats = (await db()
     .prepare(
       `SELECT b.slot_id, i.data FROM bookings b JOIN items i ON i.id=b.slot_id
        WHERE b.user_id=? AND i.kind='slot'`,
     )
-    .all(u.id) as { slot_id: string; data: string }[];
+    .all(u.id)) as { slot_id: string; data: string }[];
   for (const c of chats) {
     let d: any = {};
     try {
@@ -296,20 +297,20 @@ export function upNext(u: User, asOfIso?: string): UpNext {
 
   // Unanswered things beyond the horizon become a COUNT, never a list. A home
   // screen that grows without bound is a feed, and docs/22 §6.2 refuses that.
-  const laterCount = events.filter((e) => {
+  const laterCount = (await asyncFilter(events, async (e) => {
     try {
       const d = JSON.parse(e.data);
       return (
         d.status === "published" &&
         d.starts_at > horizonEnd &&
-        !db()
+        !(await db()
           .prepare("SELECT 1 FROM rsvps WHERE event_id=? AND user_id=?")
-          .get(e.id, u.id)
+          .get(e.id, u.id))
       );
     } catch {
       return false;
     }
-  }).length;
+  })).length;
 
   return {
     asOf,

@@ -1,3 +1,4 @@
+import { asyncMap } from "../async";
 // The skill evidence graph: what a person can show, bolted to the rows that show it.
 //
 // A résumé line is a claim. This is the claim plus the receipt. Every row in
@@ -148,13 +149,13 @@ const HALF_LIFE_DAYS = 365;
 const RECENCY_FLOOR = 0.25;
 
 let ready = false;
-export function skillsInit() {
+export async function skillsInit() {
   if (ready) return;
   // Episodes, activity events and outcomes are the evidence this graph points
   // at, so their tables must exist before any link can be verified.
-  evidenceInit();
-  outcomesInit();
-  db().exec(`
+  (await evidenceInit());
+  (await outcomesInit());
+  (await db().exec(`
 -- Append-only. A thing that exists afterwards and can be looked at: a repo, a
 -- deck, a budget, a recording. See the file header for why this is not
 -- 'submissions'.
@@ -211,7 +212,7 @@ CREATE TABLE IF NOT EXISTS evidence_skill_links(
   retracted_reason TEXT NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS skill_link_identity ON evidence_skill_links(person_id,skill_id,evidence_kind,evidence_id);
 CREATE INDEX IF NOT EXISTS skill_link_person ON evidence_skill_links(person_id,skill_id,occurred_at);
-`);
+`));
   ready = true;
 }
 
@@ -323,7 +324,7 @@ export function evidenceStrength(i: StrengthInput): Strength {
 
 // ==================================================================== artifacts
 
-export function recordArtifact(
+export async function recordArtifact(
   u: User,
   a: {
     personId: string;
@@ -337,17 +338,17 @@ export function recordArtifact(
     sourceRef?: string;
     context?: Record<string, unknown>;
   },
-): string {
-  skillsInit();
-  member(u);
-  if (u.id !== a.personId) officer(u);
+): Promise<string> {
+  (await skillsInit());
+  (await member(u));
+  if (u.id !== a.personId) (await officer(u));
   if (!ARTIFACT_KINDS.includes(a.kind)) fail("Unknown artifact kind.");
   const title = text(a.title, 240);
   const sourceRef = (a.sourceRef || a.url || title).slice(0, 400);
   const now = timestamp();
   const producedAt = a.producedAt || now;
   const key = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO skill_artifacts(id,person_id,episode_id,kind,title,url,detail,produced_at,recorded_at,recorded_by,evidence_level,source_ref,context)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -369,14 +370,14 @@ export function recordArtifact(
       a.evidenceLevel || (u.id === a.personId ? "self_reported" : "counterparty_confirmed"),
       sourceRef,
       JSON.stringify(a.context || {}),
-    );
-  const row = db()
+    ));
+  const row = (await db()
     .prepare(
       "SELECT id FROM skill_artifacts WHERE person_id=? AND kind=? AND source_ref=?",
     )
-    .get(a.personId, a.kind, sourceRef) as { id: string } | undefined;
+    .get(a.personId, a.kind, sourceRef)) as { id: string } | undefined;
   if (!row) fail("Artifact could not be recorded.", 500);
-  audit(u, "skill.artifact.record", row.id, { person: a.personId, kind: a.kind });
+  (await audit(u, "skill.artifact.record", row.id, { person: a.personId, kind: a.kind }));
   return row.id;
 }
 
@@ -390,17 +391,17 @@ export function recordArtifact(
  * to the club's best project. Owning it or appearing in one of its recorded acts
  * is the weakest defensible test, and it is the one the schema can answer.
  */
-function participatedIn(episodeId: string, personId: string): boolean {
+async function participatedIn(episodeId: string, personId: string): Promise<boolean> {
   if (!episodeId) return false;
-  const owned = db()
+  const owned = (await db()
     .prepare("SELECT 1 FROM episodes WHERE id=? AND owner=?")
-    .get(episodeId, personId);
+    .get(episodeId, personId));
   if (owned) return true;
-  return !!db()
+  return !!(await db()
     .prepare(
       "SELECT 1 FROM activity_events WHERE episode_id=? AND (actor_id=? OR subject_id=?) LIMIT 1",
     )
-    .get(episodeId, personId, personId);
+    .get(episodeId, personId, personId));
 }
 
 type ResolvedEvidence = {
@@ -417,19 +418,19 @@ type ResolvedEvidence = {
  * about somebody else. This is the whole anti-fabrication guarantee: there is no
  * other way into `evidence_skill_links`.
  */
-function resolveEvidence(
+async function resolveEvidence(
   kind: EvidenceKind,
   evidenceId: string,
   personId: string,
-): ResolvedEvidence {
+): Promise<ResolvedEvidence> {
   if (kind === "episode") {
-    const e = db()
+    const e = (await db()
       .prepare("SELECT id,title,created_at,owner,source_type FROM episodes WHERE id=?")
-      .get(evidenceId) as
+      .get(evidenceId)) as
       | { id: string; title: string; created_at: string; owner: string; source_type: string }
       | undefined;
     if (!e) fail("That episode does not exist; a skill link needs a real record.", 404);
-    if (!participatedIn(e.id, personId))
+    if (!(await participatedIn(e.id, personId)))
       fail("That episode has no record of this person working in it.", 422);
     return {
       occurredAt: e.created_at,
@@ -443,11 +444,11 @@ function resolveEvidence(
     };
   }
   if (kind === "activity_event") {
-    const e = db()
+    const e = (await db()
       .prepare(
         "SELECT id,episode_id,actor_id,subject_id,event_type,occurred_at,observed_at,evidence_level FROM activity_events WHERE id=?",
       )
-      .get(evidenceId) as
+      .get(evidenceId)) as
       | {
           id: string;
           episode_id: string;
@@ -474,11 +475,11 @@ function resolveEvidence(
     };
   }
   if (kind === "artifact") {
-    const a = db()
+    const a = (await db()
       .prepare(
         "SELECT id,person_id,episode_id,kind,title,produced_at,recorded_at,evidence_level FROM skill_artifacts WHERE id=?",
       )
-      .get(evidenceId) as
+      .get(evidenceId)) as
       | {
           id: string;
           person_id: string;
@@ -501,11 +502,11 @@ function resolveEvidence(
       outcomeValue: null,
     };
   }
-  const o = db()
+  const o = (await db()
     .prepare(
       "SELECT id,subject_type,subject_id,kind,value,occurred_at,observed_at,evidence_level,context FROM outcomes WHERE id=?",
     )
-    .get(evidenceId) as
+    .get(evidenceId)) as
     | {
         id: string;
         subject_type: string;
@@ -530,7 +531,7 @@ function resolveEvidence(
   const outcomeEpisode =
     o.subject_type === "episode" ? o.subject_id : String(ctx.episode_id || "");
   // A result achieved by work this person is nowhere in is not their evidence.
-  if (o.subject_type !== "person" && !participatedIn(outcomeEpisode, personId))
+  if (o.subject_type !== "person" && !(await participatedIn(outcomeEpisode, personId)))
     fail("That outcome belongs to work this person has no record in.", 422);
   return {
     occurredAt: o.occurred_at,
@@ -550,25 +551,25 @@ function resolveEvidence(
  * under-counts breadth on purpose: a caller who knows the team should pass
  * `contextKey`, and in its absence the graph should claim less, not more.
  */
-function defaultContext(episodeId: string): string {
+async function defaultContext(episodeId: string): Promise<string> {
   if (!episodeId) return "unassigned";
-  const e = db()
+  const e = (await db()
     .prepare("SELECT source_type FROM episodes WHERE id=?")
-    .get(episodeId) as { source_type: string } | undefined;
+    .get(episodeId)) as { source_type: string } | undefined;
   return e?.source_type || "unassigned";
 }
 
-function artifactCount(personId: string, episodeId: string, asOf: string): number {
+async function artifactCount(personId: string, episodeId: string, asOf: string): Promise<number> {
   if (!episodeId) return 0;
-  const r = db()
+  const r = (await db()
     .prepare(
       "SELECT COUNT(*) n FROM skill_artifacts WHERE person_id=? AND episode_id=? AND produced_at<=? AND recorded_at<=?",
     )
-    .get(personId, episodeId, asOf, asOf) as { n: number };
+    .get(personId, episodeId, asOf, asOf)) as { n: number };
   return r.n;
 }
 
-export function linkEvidence(
+export async function linkEvidence(
   u: User,
   l: {
     personId: string;
@@ -581,11 +582,11 @@ export function linkEvidence(
     contextKey?: string;
     term?: string;
   },
-): string {
-  skillsInit();
-  member(u);
+): Promise<string> {
+  (await skillsInit());
+  (await member(u));
   // You may assert about your own work; anyone else's takes an officer.
-  if (u.id !== l.personId) officer(u);
+  if (u.id !== l.personId) (await officer(u));
   if (!isSkill(l.skillId))
     fail("Unknown skill. The skill vocabulary is a curated list.", 422);
   if (!EVIDENCE_KINDS.includes(l.evidenceKind)) fail("Unknown evidence kind.");
@@ -594,21 +595,21 @@ export function linkEvidence(
   const reason = text(l.reason, 600);
   const evidenceId = text(l.evidenceId, 64);
 
-  const resolved = resolveEvidence(l.evidenceKind, evidenceId, l.personId);
+  const resolved = (await resolveEvidence(l.evidenceKind, evidenceId, l.personId));
   const now = timestamp();
-  const contextKey = (l.contextKey || "").trim() || defaultContext(resolved.episodeId);
+  const contextKey = (l.contextKey || "").trim() || (await defaultContext(resolved.episodeId));
   const term = (l.term || "").trim() || termOf(resolved.occurredAt);
 
-  const prior = db()
+  const prior = (await db()
     .prepare(
       "SELECT COUNT(*) n FROM evidence_skill_links WHERE person_id=? AND skill_id=? AND retracted_at IS NULL",
     )
-    .get(l.personId, l.skillId) as { n: number };
-  const contexts = db()
+    .get(l.personId, l.skillId)) as { n: number };
+  const contexts = (await db()
     .prepare(
       "SELECT COUNT(DISTINCT context_key) n FROM evidence_skill_links WHERE person_id=? AND skill_id=? AND retracted_at IS NULL",
     )
-    .get(l.personId, l.skillId) as { n: number };
+    .get(l.personId, l.skillId)) as { n: number };
 
   // Snapshot strength as of now. skillSummary recomputes against its own asOf,
   // because recency is a property of the question and not of the row.
@@ -618,14 +619,14 @@ export function linkEvidence(
     roleContext: l.roleContext,
     occurredAt: resolved.occurredAt,
     asOf: now,
-    artifactSupport: artifactCount(l.personId, resolved.episodeId, now),
+    artifactSupport: (await artifactCount(l.personId, resolved.episodeId, now)),
     outcomeValue: resolved.outcomeValue,
     repeatCount: prior.n + 1,
     distinctContexts: Math.max(contexts.n, 1),
   });
 
   const key = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO evidence_skill_links(id,person_id,skill_id,evidence_kind,evidence_id,evidence_strength,role_context,created_at,model_version,reason,occurred_at,observed_at,evidence_level,outcome_value,episode_id,context_key,term)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -649,20 +650,20 @@ export function linkEvidence(
       resolved.episodeId,
       contextKey,
       term,
-    );
-  const row = db()
+    ));
+  const row = (await db()
     .prepare(
       "SELECT id FROM evidence_skill_links WHERE person_id=? AND skill_id=? AND evidence_kind=? AND evidence_id=?",
     )
-    .get(l.personId, l.skillId, l.evidenceKind, evidenceId) as
+    .get(l.personId, l.skillId, l.evidenceKind, evidenceId)) as
     | { id: string }
     | undefined;
   if (!row) fail("Skill link could not be recorded.", 500);
-  audit(u, "skill.link", row.id, {
+  (await audit(u, "skill.link", row.id, {
     person: l.personId,
     skill: l.skillId,
     evidence: `${l.evidenceKind}:${evidenceId}`,
-  });
+  }));
   return row.id;
 }
 
@@ -670,23 +671,23 @@ export function linkEvidence(
  * Withdraw a link. Not a delete: the person disputing a claim about them is
  * itself part of the record, and a deleted row cannot be audited.
  */
-export function retractLink(u: User, linkId: string, reason: string): boolean {
-  skillsInit();
-  const row = db()
+export async function retractLink(u: User, linkId: string, reason: string): Promise<boolean> {
+  (await skillsInit());
+  const row = (await db()
     .prepare("SELECT id,person_id,retracted_at FROM evidence_skill_links WHERE id=?")
-    .get(linkId) as
+    .get(linkId)) as
     | { id: string; person_id: string; retracted_at: string | null }
     | undefined;
   if (!row) fail("Skill link not found.", 404);
-  if (u.id !== row.person_id) officer(u);
+  if (u.id !== row.person_id) (await officer(u));
   if (row.retracted_at) return false;
   const why = text(reason, 600);
-  db()
+  (await db()
     .prepare(
       "UPDATE evidence_skill_links SET retracted_at=?,retracted_reason=? WHERE id=?",
     )
-    .run(timestamp(), why, linkId);
-  audit(u, "skill.link.retract", linkId, { reason: why });
+    .run(timestamp(), why, linkId));
+  (await audit(u, "skill.link.retract", linkId, { reason: why }));
   return true;
 }
 
@@ -715,12 +716,12 @@ export type SkillLinkRow = {
 };
 
 /** Events somebody has filed a correction against, on or before `asOf`. */
-function disputedEvents(asOf: string): Set<string> {
-  const rows = db()
+async function disputedEvents(asOf: string): Promise<Set<string>> {
+  const rows = (await db()
     .prepare(
       "SELECT json_extract(context,'$.corrects') c FROM activity_events WHERE event_type='evidence.correction' AND occurred_at<=? AND observed_at<=?",
     )
-    .all(asOf, asOf) as { c: string | null }[];
+    .all(asOf, asOf)) as { c: string | null }[];
   return new Set(rows.map((r) => r.c).filter((c): c is string => !!c));
 }
 
@@ -729,13 +730,13 @@ function disputedEvents(asOf: string): Set<string> {
  * observed, the link had not been retracted, and nobody had filed a correction
  * against the underlying event.
  */
-export function skillLinks(
+export async function skillLinks(
   personId: string,
   skillId: string | null,
   asOf: string = timestamp(),
-): SkillLinkRow[] {
-  skillsInit();
-  const rows = db()
+): Promise<SkillLinkRow[]> {
+  (await skillsInit());
+  const rows = (await db()
     .prepare(
       `SELECT * FROM evidence_skill_links
         WHERE person_id=?${skillId ? " AND skill_id=?" : ""}
@@ -745,8 +746,8 @@ export function skillLinks(
     )
     .all(
       ...([personId, ...(skillId ? [skillId] : []), asOf, asOf, asOf] as any[]),
-    ) as SkillLinkRow[];
-  const disputed = disputedEvents(asOf);
+    )) as SkillLinkRow[];
+  const disputed = (await disputedEvents(asOf));
   return rows.filter(
     (r) => !(r.evidence_kind === "activity_event" && disputed.has(r.evidence_id)),
   );
@@ -786,13 +787,13 @@ export type SkillSummary = {
  * all three, because a skill that only ever appears in one team in one semester
  * is a skill we have seen once under one set of conditions.
  */
-export function skillSummary(
+export async function skillSummary(
   personId: string,
   skillId: string,
   asOf: string = timestamp(),
-): SkillSummary {
-  skillsInit();
-  const links = skillLinks(personId, skillId, asOf);
+): Promise<SkillSummary> {
+  (await skillsInit());
+  const links = (await skillLinks(personId, skillId, asOf));
   const base = {
     person_id: personId,
     skill_id: skillId,
@@ -824,19 +825,19 @@ export function skillSummary(
   // evidence is by the time someone asks, and how much else has since
   // corroborated it. Both are properties of the question, not of the row — the
   // row carries the inputs (level, outcome, times) so the recomputation is exact.
-  const recomputed = links.map((l) =>
+  const recomputed = (await asyncMap(links, async (l) =>
     evidenceStrength({
       evidenceKind: l.evidence_kind,
       evidenceLevel: l.evidence_level,
       roleContext: l.role_context,
       occurredAt: l.occurred_at,
       asOf,
-      artifactSupport: artifactCount(personId, l.episode_id, asOf),
+      artifactSupport: (await artifactCount(personId, l.episode_id, asOf)),
       outcomeValue: l.outcome_value,
       repeatCount: links.length,
       distinctContexts: contexts.size,
     }),
-  );
+  ));
   const strength =
     recomputed.reduce((a, r) => a + r.value, 0) / recomputed.length;
 
@@ -882,22 +883,21 @@ export function skillSummary(
 }
 
 /** Every skill this person has any evidence for, as of a moment. */
-export function personSkills(
+export async function personSkills(
   personId: string,
   asOf: string = timestamp(),
-): SkillSummary[] {
-  skillsInit();
+): Promise<SkillSummary[]> {
+  (await skillsInit());
   const ids = (
-    db()
+    (await db()
       .prepare(
         `SELECT DISTINCT skill_id FROM evidence_skill_links
           WHERE person_id=? AND occurred_at<=? AND observed_at<=?
             AND (retracted_at IS NULL OR retracted_at>?)`,
       )
-      .all(personId, asOf, asOf, asOf) as { skill_id: string }[]
+      .all(personId, asOf, asOf, asOf)) as { skill_id: string }[]
   ).map((r) => r.skill_id);
-  return ids
-    .map((s) => skillSummary(personId, s, asOf))
+  return (await asyncMap(ids, async (s) => (await skillSummary(personId, s, asOf))))
     .filter((s) => s.links.length)
     .sort((a, b) => b.episodes - a.episodes || a.skill_id.localeCompare(b.skill_id));
 }
@@ -917,18 +917,18 @@ export type ArtifactRow = {
   evidence_level: string;
 };
 
-export function artifactsFor(
+export async function artifactsFor(
   personId: string,
   episodeId: string,
   asOf: string = timestamp(),
-): ArtifactRow[] {
-  skillsInit();
+): Promise<ArtifactRow[]> {
+  (await skillsInit());
   if (!episodeId) return [];
-  return db()
+  return (await db()
     .prepare(
       "SELECT id,person_id,episode_id,kind,title,url,detail,produced_at,recorded_at,evidence_level FROM skill_artifacts WHERE person_id=? AND episode_id=? AND produced_at<=? AND recorded_at<=? ORDER BY produced_at",
     )
-    .all(personId, episodeId, asOf, asOf) as ArtifactRow[];
+    .all(personId, episodeId, asOf, asOf)) as ArtifactRow[];
 }
 
 export type EpisodeRow = {
@@ -941,15 +941,15 @@ export type EpisodeRow = {
   source_type: string;
 };
 
-export function episodeRow(episodeId: string): EpisodeRow | null {
+export async function episodeRow(episodeId: string): Promise<EpisodeRow | null> {
   if (!episodeId) return null;
-  skillsInit();
+  (await skillsInit());
   return (
-    (db()
+    ((await db()
       .prepare(
         "SELECT id,title,goal,status,owner,created_at,source_type FROM episodes WHERE id=?",
       )
-      .get(episodeId) as EpisodeRow | undefined) || null
+      .get(episodeId)) as EpisodeRow | undefined) || null
   );
 }
 
@@ -962,13 +962,13 @@ export type OutcomeFact = {
 };
 
 /** Outcomes attached to an episode, either directly or via context. */
-export function outcomesForEpisode(
+export async function outcomesForEpisode(
   episodeId: string,
   asOf: string = timestamp(),
-): OutcomeFact[] {
+): Promise<OutcomeFact[]> {
   if (!episodeId) return [];
-  skillsInit();
-  return db()
+  (await skillsInit());
+  return (await db()
     .prepare(
       `SELECT id,kind,value,occurred_at,evidence_level FROM outcomes
         WHERE ((subject_type='episode' AND subject_id=?)
@@ -976,5 +976,5 @@ export function outcomesForEpisode(
           AND occurred_at<=? AND observed_at<=?
         ORDER BY occurred_at`,
     )
-    .all(episodeId, episodeId, asOf, asOf) as OutcomeFact[];
+    .all(episodeId, episodeId, asOf, asOf)) as OutcomeFact[];
 }

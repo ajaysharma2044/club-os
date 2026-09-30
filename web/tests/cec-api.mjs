@@ -1,3 +1,4 @@
+import {openTestDatabase, waitForOutbox} from './postgres-fixture.mjs';
 // Run against a dedicated fresh test database, never a real club installation.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -15,6 +16,7 @@ async function request(path, body, cookie = "", expected = 200) {
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
+  if(process.env.CEC_STORAGE==='postgres' && r.ok && body) await waitForOutbox();
   const raw = await r.text();
   let data;
   try {
@@ -444,15 +446,15 @@ assert.ok(
   process.env.CEC_DATABASE?.includes("cec-test-"),
   "Weekly fixture requires the isolated test runner database",
 );
-const fixture = new DatabaseSync(process.env.CEC_DATABASE);
-fixture
+const fixture = openTestDatabase(process.env.CEC_DATABASE);
+(await fixture
   .prepare("UPDATE adaptive_sessions SET week='2000-01-03' WHERE id=?")
-  .run(oldId);
-fixture
+  .run(oldId));
+(await fixture
   .prepare(
     "UPDATE adaptive_facts SET observed_at='2000-01-03T00:00:00.000Z' WHERE user_id=?",
   )
-  .run(u.id);
+  .run(u.id));
 fixture.close();
 intake = (
   await request(
@@ -949,41 +951,41 @@ checks++;
 const exportData = (await request("export", undefined, participant)).data;
 assert.ok(exportData.adaptive && exportData.evidence && exportData.schedule);
 checks++;
-const immutableFixture = new DatabaseSync(process.env.CEC_DATABASE);
-const late = immutableFixture
+const immutableFixture = openTestDatabase(process.env.CEC_DATABASE);
+const late = (await immutableFixture
   .prepare("SELECT * FROM activity_events WHERE id=?")
-  .get(acceptedEvent.id);
+  .get(acceptedEvent.id));
 delete late.seq;
 late.id = "late-" + suffix;
 late.source_key = late.id;
 late.object_id = late.id;
 late.observed_at = "2030-01-01T00:00:00.000Z";
 const cols = Object.keys(late);
-immutableFixture
+(await immutableFixture
   .prepare(
     `INSERT INTO activity_events(${cols.join(",")}) VALUES(${cols.map(() => "?").join(",")})`,
   )
-  .run(...Object.values(late));
+  .run(...Object.values(late)));
 const replay = (
   await request("evidence/snapshot", { as_of: beforeCorrection }, participant)
 ).data;
 assert.equal(replay.id, historical.id);
 assert.ok(!replay.features.source_event_ids.includes(late.id));
 checks += 2;
-assert.throws(
-  () =>
-    immutableFixture
+(await assert.rejects(
+  async () =>
+    (await immutableFixture
       .prepare("UPDATE activity_events SET action_family='COMPLETE' WHERE id=?")
-      .run(acceptedEvent.id),
+      .run(acceptedEvent.id)),
   /append only/,
-);
-assert.throws(
-  () =>
-    immutableFixture
+));
+(await assert.rejects(
+  async () =>
+    (await immutableFixture
       .prepare("DELETE FROM activity_events WHERE id=?")
-      .run(acceptedEvent.id),
+      .run(acceptedEvent.id)),
   /append only/,
-);
+));
 immutableFixture.close();
 checks += 2;
 await request("auth/logout", {}, participant);

@@ -1,3 +1,4 @@
+import { asyncMap } from "../lib/cec/async";
 // The sponsor campaign substrate, against a real database.
 // Run: node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/campaigns.mjs
 //
@@ -65,21 +66,21 @@ const ok = (c, m) => {
   checks++;
 };
 
-inventoryInit();
-fatigueInit();
-campaignsInit();
+(await inventoryInit());
+(await fatigueInit());
+(await campaignsInit());
 
 // --- fixtures ---------------------------------------------------------------
-const mkUser = (id, role) => {
-  db()
+const mkUser = async (id, role) => {
+  (await db()
     .prepare(
       "INSERT INTO users(id,name,email,password,role,interests,shared) VALUES (?,?,?,?,?,'',0)",
     )
-    .run(id, id, `${id}@example.test`, "x:unusable", role);
+    .run(id, id, `${id}@example.test`, "x:unusable", role));
   return { id, name: id, email: `${id}@example.test`, role, interests: "", shared: 0 };
 };
-const officerUser = mkUser("officer-1", "officer");
-const memberUser = mkUser("member-1", "member");
+const officerUser = (await mkUser("officer-1", "officer"));
+const memberUser = (await mkUser("member-1", "member"));
 
 // "cornell-ec" is the one configured club (institutions.ts). The run club is a
 // second, unconfigured id on purpose: eligibility must have an answer for a
@@ -136,7 +137,7 @@ ok(
   "restricted categories are excluded by default: silence is not consent",
 );
 
-const slot = declareInventory(officerUser, {
+const slot = (await declareInventory(officerUser, {
   clubId: CEC,
   activationType: "workshop",
   audience: "Undergraduates building companies",
@@ -147,38 +148,38 @@ const slot = declareInventory(officerUser, {
   minimumBudget: 1000,
   maximumFrequency: 2,
   approvalRequired: true,
-});
+}));
 ok(slot.estimatedReach === 60, "declared reach is stored");
 
 // Reach is bounded by capacity: a club cannot advertise seats it does not have.
-const inflated = declareInventory(officerUser, {
+const inflated = (await declareInventory(officerUser, {
   clubId: CEC,
   activationType: "product_test",
   capacity: 40,
   estimatedReach: 4000,
   availableDates: WINDOW,
-});
+}));
 ok(inflated.estimatedReach === 40, "estimated reach cannot exceed declared capacity");
 
 // A member cannot set the club's own terms.
-assert.throws(
-  () => setClubPolicy(memberUser, CEC, { maxActivationsPerMonth: 99 }),
+(await assert.rejects(
+  async () => (await setClubPolicy(memberUser, CEC, { maxActivationsPerMonth: 99 })),
   /Officer access required/,
   "only an officer may change a club's sponsorship policy",
-);
+));
 checks++;
 
 // ============================================================ 2. eligibility
-setClubPolicy(officerUser, CEC, {
+(await setClubPolicy(officerUser, CEC, {
   excludedCategories: ["crypto", "gambling", "alcohol", "tobacco", "vape", "dating", "political", "pharma"],
   preferredCategories: ["software"],
   minimumSponsorshipValue: 500,
   maxActivationsPerMonth: 3,
   maxActivationsPerWeek: 2,
   maxPerSectorPerMonth: 2,
-});
+}));
 
-const eligible = eligibilityFor(CEC, sponsor(), AT);
+const eligible = (await eligibilityFor(CEC, sponsor(), AT));
 ok(eligible.eligible, "a well-formed sponsor with matching inventory is eligible");
 ok(eligible.slots.length >= 1, "at least one slot survives the filters");
 ok(
@@ -187,7 +188,7 @@ ok(
 );
 
 // --- a rejection NAMES the filter -------------------------------------------
-const broke = eligibilityFor(CEC, sponsor({ id: "tiny", budget: 100 }), AT);
+const broke = (await eligibilityFor(CEC, sponsor({ id: "tiny", budget: 100 }), AT));
 ok(!broke.eligible, "a sponsor below the club's floor is not eligible");
 ok(
   broke.reasons.some((r) => r.filter === "minimum_value"),
@@ -198,13 +199,13 @@ ok(
   "every rejection reason is prefixed with the filter that produced it",
 );
 
-const wrongGeo = eligibilityFor(CEC, sponsor({ geographies: ["stanford"] }), AT);
+const wrongGeo = (await eligibilityFor(CEC, sponsor({ geographies: ["stanford"] }), AT));
 ok(
   wrongGeo.reasons.some((r) => r.filter === "geography"),
   "an out-of-area campaign is rejected by geography, named",
 );
 
-const noCampus = eligibilityFor("club-that-does-not-exist", sponsor(), AT);
+const noCampus = (await eligibilityFor("club-that-does-not-exist", sponsor(), AT));
 ok(
   noCampus.reasons.some((r) => r.filter === "campus_eligibility"),
   "a club with no configured campus is rejected by campus_eligibility",
@@ -216,7 +217,7 @@ ok(
 
 // --- the club's excluded category is honoured, at any budget ----------------
 const whale = sponsor({ id: "coinbase", category: "crypto", budget: 250000 });
-const excluded = eligibilityFor(CEC, whale, AT);
+const excluded = (await eligibilityFor(CEC, whale, AT));
 ok(!excluded.eligible, "an excluded category is refused");
 ok(
   excluded.reasons.some((r) => r.filter === "club_category_exclusion"),
@@ -228,68 +229,68 @@ ok(
 );
 // The point: 250k does not buy past it. A penalty-based design would.
 ok(
-  eligibilityFor(CEC, sponsor({ id: "coinbase2", category: "crypto", budget: 10_000_000 }), AT)
+  (await eligibilityFor(CEC, sponsor({ id: "coinbase2", category: "crypto", budget: 10_000_000 }), AT))
     .eligible === false,
   "ten million dollars still does not buy past a club's stated exclusion",
 );
 
 // --- restricted categories are default-deny ---------------------------------
-setClubPolicy(officerUser, CEC, { excludedCategories: [], preferredCategories: ["software"] });
-const restricted = eligibilityFor(CEC, sponsor({ id: "bet", category: "gambling" }), AT);
+(await setClubPolicy(officerUser, CEC, { excludedCategories: [], preferredCategories: ["software"] }));
+const restricted = (await eligibilityFor(CEC, sponsor({ id: "bet", category: "gambling" }), AT));
 ok(
   restricted.reasons.some((r) => r.filter === "category_accepted"),
   "a restricted category with no explicit opt-in is rejected by category_accepted",
 );
 
 // --- member privacy ---------------------------------------------------------
-const nosy = eligibilityFor(CEC, sponsor({ id: "nosy", wantsMemberData: true }), AT);
+const nosy = (await eligibilityFor(CEC, sponsor({ id: "nosy", wantsMemberData: true }), AT));
 ok(
   nosy.reasons.some((r) => r.filter === "member_privacy"),
   "a campaign wanting member-level data is rejected by member_privacy",
 );
 
 // --- brand safety -----------------------------------------------------------
-const unrated = eligibilityFor(CEC, sponsor({ id: "unknown-brand", brandSafety: "unrated" }), AT);
+const unrated = (await eligibilityFor(CEC, sponsor({ id: "unknown-brand", brandSafety: "unrated" }), AT));
 ok(
   unrated.reasons.some((r) => r.filter === "brand_safety"),
   "an unrated brand is rejected: unrated is treated as unsafe, not neutral",
 );
 
 // --- an undeclared date window is not an open one ---------------------------
-const outOfWindow = eligibilityFor(CEC, sponsor(), "2027-03-01T18:00:00.000Z");
+const outOfWindow = (await eligibilityFor(CEC, sponsor(), "2027-03-01T18:00:00.000Z"));
 ok(
   outOfWindow.reasons.some((r) => r.filter === "available_date"),
   "a date outside every declared window is rejected by available_date",
 );
 
 // Restore the working policy for the rest of the run.
-setClubPolicy(officerUser, CEC, {
+(await setClubPolicy(officerUser, CEC, {
   excludedCategories: ["crypto", "gambling", "alcohol", "tobacco", "vape", "dating", "political", "pharma"],
   preferredCategories: ["software"],
   minimumSponsorshipValue: 500,
   maxActivationsPerMonth: 3,
   maxActivationsPerWeek: 2,
   maxPerSectorPerMonth: 2,
-});
+}));
 
 // ============================================================ 3. fatigue
 // THE CASE: a run club must not receive Adidas, Garmin, Hoka, Nike and
 // Gatorade in the same week.
-declareInventory(officerUser, {
+(await declareInventory(officerUser, {
   clubId: RUN,
   activationType: "weekly_run",
   capacity: 80,
   estimatedReach: 50,
   availableDates: WINDOW,
-});
-setClubPolicy(officerUser, RUN, {
+}));
+(await setClubPolicy(officerUser, RUN, {
   excludedCategories: [],
   preferredCategories: ["athletic_apparel", "footwear", "wearables", "sports_nutrition"],
   minimumSponsorshipValue: 0,
   maxActivationsPerMonth: 4,
   maxActivationsPerWeek: 2,
   maxPerSectorPerMonth: 2,
-});
+}));
 
 const endurance = [
   ["adidas", "athletic_apparel"],
@@ -308,24 +309,24 @@ const dayOf = (n) => new Date(weekStart + n * 86400e3).toISOString();
 const AFTER_WEEK = dayOf(6.5);
 
 let firstBlockedAt = null;
-endurance.forEach(([id, category], i) => {
-  const check = fatigueCheck({
+(await asyncMap(endurance, async ([id, category], i) => {
+  const check = (await fatigueCheck({
     clubId: RUN,
     sponsor: { id, category },
     at: dayOf(i),
-  });
+  }));
   if (!check.withinCaps && firstBlockedAt === null) firstBlockedAt = i;
   // Only record the ones that were actually allowed through; a blocked
   // candidate never reaches the club and so never counts against it.
   if (check.withinCaps)
-    recordExposure({
+    (await recordExposure({
       clubId: RUN,
       sponsorId: id,
       sponsorCategory: category,
       stage: "shown",
       occurredAt: dayOf(i),
-    });
-});
+    }));
+}));
 
 ok(firstBlockedAt !== null, "the run of five endurance sponsors is stopped");
 ok(
@@ -333,11 +334,11 @@ ok(
   `the cap fires on the third brand of the week, not the fifth (fired at index ${firstBlockedAt})`,
 );
 
-const fifth = fatigueCheck({
+const fifth = (await fatigueCheck({
   clubId: RUN,
   sponsor: { id: "gatorade", category: "sports_nutrition" },
   at: AFTER_WEEK,
-});
+}));
 ok(!fifth.withinCaps, "the fifth endurance brand in the same week is refused");
 ok(
   fifth.violations.some((v) => v.rule === "max_per_sector_per_month"),
@@ -356,7 +357,7 @@ ok(isCommercial("workshop"), "so does a workshop");
 ok(!isCommercial("scholarship"), "a scholarship does not: it is money without a pitch");
 ok(!isCommercial("competition_funding"), "nor does a covered entry fee");
 
-const summary = exposureSummary(RUN, AFTER_WEEK);
+const summary = (await exposureSummary(RUN, AFTER_WEEK));
 ok(summary.week === 2, "only the two that got through count against the week");
 ok(
   summary.bySector[0].sector === "endurance_sport",
@@ -364,24 +365,24 @@ ok(
 );
 
 // An internal recommendation nobody saw does not spend the club's attention.
-recordExposure({
+(await recordExposure({
   clubId: RUN,
   sponsorId: "asics",
   sponsorCategory: "footwear",
   stage: "recommended",
   occurredAt: dayOf(1),
-});
+}));
 ok(
-  exposureSummary(RUN, AFTER_WEEK).week === 2,
+  (await exposureSummary(RUN, AFTER_WEEK)).week === 2,
   "a 'recommended' candidate that was never shown does not count against a cap",
 );
 
 // A different sector is not blocked by endurance crowding.
-const bank = fatigueCheck({
+const bank = (await fatigueCheck({
   clubId: RUN,
   sponsor: { id: "chase", category: "financial_services" },
   at: AFTER_WEEK,
-});
+}));
 ok(
   bank.violations.every((v) => v.rule !== "max_per_sector_per_month"),
   "a sponsor from an unrelated sector is not caught by the sector cap",
@@ -389,35 +390,35 @@ ok(
 
 // Member-level exposure is refused unless the club permits it AND consent is
 // pointed at.
-assert.throws(
-  () =>
-    recordExposure({
+(await assert.rejects(
+  async () =>
+    (await recordExposure({
       clubId: RUN,
       sponsorId: "nike",
       sponsorCategory: "footwear",
       stage: "shown",
       memberId: "member-1",
       consentBasis: "consent-123",
-    }),
+    })),
   /Member-level exposure refused/,
   "member-level exposure is refused when the club shares aggregate only",
-);
+));
 checks++;
-setClubPolicy(officerUser, RUN, { memberDataSharing: "opt_in_per_campaign" });
-assert.throws(
-  () =>
-    recordExposure({
+(await setClubPolicy(officerUser, RUN, { memberDataSharing: "opt_in_per_campaign" }));
+(await assert.rejects(
+  async () =>
+    (await recordExposure({
       clubId: RUN,
       sponsorId: "nike",
       sponsorCategory: "footwear",
       stage: "shown",
       memberId: "member-1",
-    }),
+    })),
   /no consent reference supplied/,
   "and refused when consent cannot be pointed at",
-);
+));
 checks++;
-recordExposure({
+(await recordExposure({
   clubId: RUN,
   sponsorId: "nike",
   sponsorCategory: "footwear",
@@ -425,20 +426,20 @@ recordExposure({
   memberId: "member-1",
   consentBasis: "consent-123",
   occurredAt: dayOf(3),
-});
-ok(memberExposureCount("member-1", AFTER_WEEK) === 1, "a permissioned member exposure is counted");
+}));
+ok((await memberExposureCount("member-1", AFTER_WEEK)) === 1, "a permissioned member exposure is counted");
 ok(
-  exposureSummary(RUN, AFTER_WEEK).week === 2,
+  (await exposureSummary(RUN, AFTER_WEEK)).week === 2,
   "member rows do not double-count against the club cap",
 );
-setClubPolicy(officerUser, RUN, { memberDataSharing: "none" });
+(await setClubPolicy(officerUser, RUN, { memberDataSharing: "none" }));
 
 // The eligibility layer inherits the cap and names it.
-const capped = eligibilityFor(
+const capped = (await eligibilityFor(
   RUN,
   sponsor({ id: "hoka", category: "footwear", activationTypes: ["weekly_run"], minimumAudience: 20 }),
   AFTER_WEEK,
-);
+));
 ok(
   capped.reasons.some((r) => r.filter === "frequency_limit"),
   "eligibility rejects an over-cap sponsor and names frequency_limit",
@@ -448,36 +449,36 @@ ok(
 // Give the store a planning-only factor and a sponsor-permitted one, both live
 // at the decision time, so the gate has something real to withhold.
 const cal = termCalendar("cornell", "FA26").calendar;
-computeAndStore(regimeTurnoutPrior, "cornell", { calendar: cal, at: AT }, AT, {
+(await computeAndStore(regimeTurnoutPrior, "cornell", { calendar: cal, at: AT }, AT, {
   occurredAt: AT,
   observedAt: AT,
-});
-computeAndStore(assessmentPressure, "cornell", { calendar: cal, at: AT }, AT, {
+}));
+(await computeAndStore(assessmentPressure, "cornell", { calendar: cal, at: AT }, AT, {
   occurredAt: AT,
   observedAt: AT,
-});
+}));
 
 // Both are in the store for a planning read...
-const planningRead = factorsAsOf({
+const planningRead = (await factorsAsOf({
   entityType: "campus",
   entityId: "cornell",
   asOf: AT,
   use: "planning",
   registry: CONTEXT_FACTORS,
-});
+}));
 ok(
   planningRead.factors.some((f) => f.factor === "assessment_pressure"),
   "assessment_pressure is readable for planning",
 );
 
 // ...and the sponsor read cannot see the planning-only one.
-const sponsorRead = factorsAsOf({
+const sponsorRead = (await factorsAsOf({
   entityType: "campus",
   entityId: "cornell",
   asOf: AT,
   use: "sponsor_ranking",
   registry: CONTEXT_FACTORS,
-});
+}));
 ok(
   sponsorRead.factors.every((f) => f.factor !== "assessment_pressure"),
   "a sponsor read cannot see assessment_pressure",
@@ -491,11 +492,11 @@ ok(
   "while a factor that declared sponsor_ranking is returned",
 );
 
-const result = rankCandidates({
+const result = (await rankCandidates({
   sponsor: sponsor(),
   clubIds: [CEC, RUN, "club-that-does-not-exist"],
   at: AT,
-});
+}));
 
 ok(result.ranked.length >= 1, "ranking returns at least one candidate");
 ok(
@@ -558,15 +559,15 @@ ok(
 ok(t.operationalBurden > 0, "operational burden is charged, not externalised onto the club");
 
 // A crowded club scores lower than the same club uncrowded. Fatigue is priced.
-const quiet = rankCandidates({ sponsor: sponsor(), clubIds: [CEC], at: AT }).ranked[0];
-recordExposure({
+const quiet = (await rankCandidates({ sponsor: sponsor(), clubIds: [CEC], at: AT })).ranked[0];
+(await recordExposure({
   clubId: CEC,
   sponsorId: "filler-0",
   sponsorCategory: "media",
   stage: "shown",
   occurredAt: new Date(Date.parse(AT) - 86400e3).toISOString(),
-});
-const crowded = rankCandidates({ sponsor: sponsor(), clubIds: [CEC], at: AT }).ranked[0];
+}));
+const crowded = (await rankCandidates({ sponsor: sponsor(), clubIds: [CEC], at: AT })).ranked[0];
 ok(
   crowded.terms.sponsorFatigue > quiet.terms.sponsorFatigue,
   "a club that has already been sold to this month carries more fatigue",
@@ -574,24 +575,24 @@ ok(
 ok(crowded.terms.score < quiet.terms.score, "and therefore ranks lower for the same sponsor");
 
 // ============================================================ 5. the funnel
-registerSponsor(officerUser, sponsor());
-ok(sponsorProfile("adidas").category === "athletic_apparel", "a sponsor round-trips");
+(await registerSponsor(officerUser, sponsor()));
+ok((await sponsorProfile("adidas")).category === "athletic_apparel", "a sponsor round-trips");
 ok(
-  sponsorProfile("adidas").history.campaignsRun === 6,
+  (await sponsorProfile("adidas")).history.campaignsRun === 6,
   "and so does its campaign history",
 );
 
-const camp = createCampaign(officerUser, {
+const camp = (await createCampaign(officerUser, {
   sponsorId: "adidas",
   name: "Fall 2026 campus running",
   objective: "trial",
   budget: 40000,
   startsAt: "2026-09-01T00:00:00.000Z",
   endsAt: "2026-12-01T00:00:00.000Z",
-});
+}));
 
 const snap = snapshot(CEC, AT, sponsorRead.factors, sponsorRead.omitted, "at recommendation");
-const candidateId = recordCandidate({
+const candidateId = (await recordCandidate({
   campaignId: camp.id,
   clubId: CEC,
   inventoryId: top.inventoryId,
@@ -603,12 +604,12 @@ const candidateId = recordCandidate({
   eligibility: { checks: top.eligibility.length },
   snapshot: snap,
   asOf: AT,
-});
+}));
 ok(candidateId, "a ranked candidate is persisted");
 
-assert.throws(
-  () =>
-    recordCandidate({
+(await assert.rejects(
+  async () =>
+    (await recordCandidate({
       campaignId: camp.id,
       clubId: CEC,
       inventoryId: null,
@@ -620,20 +621,20 @@ assert.throws(
       eligibility: {},
       snapshot: snap,
       asOf: AT,
-    }),
+    })),
   /must carry an explanation/,
   "a candidate with no explanation is refused rather than stored",
-);
+));
 checks++;
 
 for (const outcome of PREDICTED_OUTCOMES)
-  recordPrediction({
+  (await recordPrediction({
     campaignId: camp.id,
     candidateId,
     clubId: CEC,
     outcome,
     prediction: top.predictions[outcome],
-  });
+  }));
 
 // Walk the whole funnel, each stage with the context live at that moment.
 const stages = [
@@ -652,14 +653,14 @@ const stages = [
   ["sponsor_renewal", "2026-12-01T12:00:00.000Z", 0],
 ];
 for (const [stage, occurredAt, n] of stages) {
-  const stageFactors = factorsAsOf({
+  const stageFactors = (await factorsAsOf({
     entityType: "campus",
     entityId: "cornell",
     asOf: occurredAt,
     use: "sponsor_ranking",
     registry: CONTEXT_FACTORS,
-  });
-  recordStage({
+  }));
+  (await recordStage({
     campaignId: camp.id,
     clubId: CEC,
     candidateId,
@@ -668,10 +669,10 @@ for (const [stage, occurredAt, n] of stages) {
     occurredAt,
     snapshot: snapshot(CEC, occurredAt, stageFactors.factors, stageFactors.omitted, `at ${stage}`),
     context: { stage_note: stage },
-  });
+  }));
 }
 
-const f = funnel(camp.id, CEC);
+const f = (await funnel(camp.id, CEC));
 ok(f.length === stages.length, "every stage of the funnel is preserved");
 ok(
   FUNNEL_STAGES.indexOf(f[0].stage) < FUNNEL_STAGES.indexOf(f[f.length - 1].stage),
@@ -699,21 +700,21 @@ ok(
 );
 ok(f.find((r) => r.stage === "attendance").n === 44, "stage counts survive the round trip");
 
-assert.throws(
-  () =>
-    recordStage({
+(await assert.rejects(
+  async () =>
+    (await recordStage({
       campaignId: camp.id,
       clubId: CEC,
       stage: "teleportation",
       occurredAt: AT,
       snapshot: snap,
-    }),
+    })),
   /Unknown funnel stage/,
   "an unknown stage is refused",
-);
+));
 checks++;
 
-const raw = rawConversions(camp.id);
+const raw = (await rawConversions(camp.id));
 ok(
   raw.every((r) => r.caveat.includes("not an effect")),
   "raw conversions are labelled as counts, not as effects",
@@ -721,7 +722,7 @@ ok(
 
 // ============================================================ 6. lift
 // No holdout: refuse, and say why.
-const noHoldout = createExperiment(officerUser, {
+const noHoldout = (await createExperiment(officerUser, {
   campaignId: camp.id,
   name: "everyone got it",
   design: "none",
@@ -729,8 +730,8 @@ const noHoldout = createExperiment(officerUser, {
   holdout: [],
   assignedAt: "2026-09-01T00:00:00.000Z",
   outcomeStage: "attendance",
-});
-const lift1 = incrementalLift(noHoldout.id);
+}));
+const lift1 = (await incrementalLift(noHoldout.id));
 ok(lift1.lift === null, "incrementalLift returns null with no holdout");
 ok(lift1.refused === true, "and says it refused");
 ok(
@@ -744,7 +745,7 @@ ok(
 ok(lift1.treatment.n === 2, "while still reporting the raw arms honestly");
 
 // A holdout that is too small: still refuse.
-const tiny = createExperiment(officerUser, {
+const tiny = (await createExperiment(officerUser, {
   campaignId: camp.id,
   name: "four clubs",
   design: "randomized_holdout",
@@ -752,13 +753,13 @@ const tiny = createExperiment(officerUser, {
   holdout: ["d", "e", "f"],
   assignedAt: "2026-09-01T00:00:00.000Z",
   outcomeStage: "attendance",
-});
-const lift2 = incrementalLift(tiny.id);
+}));
+const lift2 = (await incrementalLift(tiny.id));
 ok(lift2.lift === null, "a three-per-arm experiment gets no number");
 ok(lift2.reason.includes("Arms too small"), "and is told the arms are too small");
 
 // A matched design that cannot name its covariates: refuse.
-const unmatched = createExperiment(officerUser, {
+const unmatched = (await createExperiment(officerUser, {
   campaignId: camp.id,
   name: "comparable clubs, allegedly",
   design: "matched_clubs",
@@ -766,17 +767,17 @@ const unmatched = createExperiment(officerUser, {
   holdout: Array.from({ length: 12 }, (_, i) => `h${i}`),
   assignedAt: "2026-09-01T00:00:00.000Z",
   outcomeStage: "attendance",
-});
-const lift3 = incrementalLift(unmatched.id);
+}));
+const lift3 = (await incrementalLift(unmatched.id));
 ok(lift3.lift === null, "a matched design with no stated covariates gets no number");
 ok(
   lift3.reason.includes("convenience sample"),
   "and is told what it actually is",
 );
 
-assert.throws(
-  () =>
-    createExperiment(officerUser, {
+(await assert.rejects(
+  async () =>
+    (await createExperiment(officerUser, {
       campaignId: camp.id,
       name: "both arms",
       design: "randomized_holdout",
@@ -784,16 +785,16 @@ assert.throws(
       holdout: ["x"],
       assignedAt: AT,
       outcomeStage: "attendance",
-    }),
+    })),
   /cannot be in both arms/,
   "a club cannot be in both arms",
-);
+));
 checks++;
 
 // A real randomized holdout with enough clubs: now it answers, with an interval.
 const treatment = Array.from({ length: 14 }, (_, i) => `treat-${i}`);
 const holdout = Array.from({ length: 14 }, (_, i) => `hold-${i}`);
-const real = createExperiment(officerUser, {
+const real = (await createExperiment(officerUser, {
   campaignId: camp.id,
   name: "randomized holdout",
   design: "randomized_holdout",
@@ -801,29 +802,29 @@ const real = createExperiment(officerUser, {
   holdout,
   assignedAt: "2026-09-01T00:00:00.000Z",
   outcomeStage: "attendance",
-});
+}));
 const emptySnap = snapshot(CEC, "2026-10-02T22:00:00.000Z", [], [], "backfilled arm outcome");
-treatment.slice(0, 10).forEach((c, i) =>
-  recordStage({
+(await asyncMap(treatment.slice(0, 10), async (c, i) =>
+  (await recordStage({
     campaignId: camp.id,
     clubId: c,
     stage: "attendance",
     n: 30,
     occurredAt: `2026-10-0${(i % 9) + 1}T22:00:00.000Z`,
     snapshot: emptySnap,
-  }),
-);
-holdout.slice(0, 4).forEach((c, i) =>
-  recordStage({
+  })),
+));
+(await asyncMap(holdout.slice(0, 4), async (c, i) =>
+  (await recordStage({
     campaignId: camp.id,
     clubId: c,
     stage: "attendance",
     n: 30,
     occurredAt: `2026-10-0${(i % 9) + 1}T22:00:00.000Z`,
     snapshot: emptySnap,
-  }),
-);
-const lift4 = incrementalLift(real.id);
+  })),
+));
+const lift4 = (await incrementalLift(real.id));
 ok(lift4.lift !== null, "a real randomized holdout with adequate n does get a number");
 ok(Array.isArray(lift4.interval), "and the number comes with an interval");
 ok(lift4.lift > 0.3 && lift4.lift < 0.6, "and the point estimate is the arithmetic we expect");
@@ -833,7 +834,7 @@ ok(
 );
 
 // Outcomes recorded BEFORE assignment do not count: that would be a post-hoc split.
-const late = createExperiment(officerUser, {
+const late = (await createExperiment(officerUser, {
   campaignId: camp.id,
   name: "assigned after the fact",
   design: "randomized_holdout",
@@ -841,20 +842,20 @@ const late = createExperiment(officerUser, {
   holdout,
   assignedAt: "2026-11-01T00:00:00.000Z",
   outcomeStage: "attendance",
-});
-const lift5 = incrementalLift(late.id);
+}));
+const lift5 = (await incrementalLift(late.id));
 ok(
   lift5.treatment.converted === 0 && lift5.holdout.converted === 0,
   "outcomes before assignment are not credited to an experiment assigned afterwards",
 );
 
 // ============================================================ 7. execution
-recordExecution(slot.id, "offered", AT);
-recordExecution(slot.id, "accepted", AT);
-const hist = recordExecution(slot.id, "occurred", AT, 44);
+(await recordExecution(slot.id, "offered", AT));
+(await recordExecution(slot.id, "accepted", AT));
+const hist = (await recordExecution(slot.id, "occurred", AT, 44));
 ok(hist.occurred === 1 && hist.offered === 1, "execution history accumulates");
 ok(hist.medianAttendance === 44, "and records realised attendance");
-const withHistory = rankCandidates({ sponsor: sponsor(), clubIds: [CEC], at: AT }).ranked.find(
+const withHistory = (await rankCandidates({ sponsor: sponsor(), clubIds: [CEC], at: AT })).ranked.find(
   (c) => c.inventoryId === slot.id,
 );
 ok(

@@ -39,45 +39,45 @@ const ok = (c, m) => {
   checks++;
 };
 
-assetsInit();
+(await assetsInit());
 
 // --- fixtures ---------------------------------------------------------------
-const user = (name, role) => {
+const user = async (name, role) => {
   const id = randomUUID();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO users(id,name,email,password,role,interests,shared) VALUES (?,?,?,?,?,'',0)",
     )
-    .run(id, name, `${id}@example.test`, "x:unusable", role);
+    .run(id, name, `${id}@example.test`, "x:unusable", role));
   return { id, name, email: `${id}@example.test`, role, interests: "", shared: 0 };
 };
 const inMonths = (n) => new Date(Date.now() + n * 30.436875 * 86400e3).toISOString();
-const reset = () => {
-  db().exec("DELETE FROM asset_access; DELETE FROM assets;");
+const reset = async () => {
+  (await db().exec("DELETE FROM asset_access; DELETE FROM assets;"));
 };
 
-const president = user("Rohan (President Emeritus)", "alumni"); // graduated
-const media = user("Maya, Media Chair", "officer");
-const ops = user("Owen, Ops", "officer");
-const junior = user("Jen, Junior", "member");
-const senior = user("Sam, Senior", "member");
+const president = (await user("Rohan (President Emeritus)", "alumni")); // graduated
+const media = (await user("Maya, Media Chair", "officer"));
+const ops = (await user("Owen, Ops", "officer"));
+const junior = (await user("Jen, Junior", "member"));
+const senior = (await user("Sam, Senior", "member"));
 
-setDeparture(media, president.id, inMonths(-4)); // left in May
-setDeparture(media, media.id, inMonths(8));
-setDeparture(media, ops.id, inMonths(20));
-setDeparture(media, junior.id, inMonths(32));
-setDeparture(media, senior.id, inMonths(2));
+(await setDeparture(media, president.id, inMonths(-4))); // left in May
+(await setDeparture(media, media.id, inMonths(8)));
+(await setDeparture(media, ops.id, inMonths(20)));
+(await setDeparture(media, junior.id, inMonths(32)));
+(await setDeparture(media, senior.id, inMonths(2)));
 
-ok(departureOf(president.id).startsWith("20"), "departure is stored as an ISO date");
-ok(departureOf(randomUUID()) === "", "unknown person has no recorded departure");
+ok((await departureOf(president.id)).startsWith("20"), "departure is stored as an ISO date");
+ok((await departureOf(randomUUID())) === "", "unknown person has no recorded departure");
 ok(Math.abs(monthsUntil(inMonths(6)) - 6) < 0.1, "monthsUntil counts forward");
 ok(monthsUntil(inMonths(-3)) < 0, "a past date reads negative");
 
 // --- the register stores no credentials ------------------------------------
-const columns = db()
+const columns = (await db()
   .prepare("SELECT name FROM pragma_table_info('assets')")
-  .all()
-  .concat(db().prepare("SELECT name FROM pragma_table_info('asset_access')").all())
+  .all())
+  .concat((await db().prepare("SELECT name FROM pragma_table_info('asset_access')").all()))
   .map((c) => c.name.toLowerCase());
 ok(
   !columns.some((c) => /password|secret|credential|token|^key$|api/.test(c)),
@@ -87,42 +87,42 @@ ok(columns.includes("location"), "it stores where the credential lives");
 ok(columns.includes("role_key"), "assets belong to a position, not a person");
 
 // --- 1. the only holder has graduated: bus factor 0, top of the list --------
-let domain = registerAsset(media, {
+let domain = (await registerAsset(media, {
   kind: "domain",
   name: "cornellec.com",
   location: "Porkbun — personal account",
   holder: president.id,
   roleKey: "president",
-});
-const drive = registerAsset(media, {
+}));
+const drive = (await registerAsset(media, {
   kind: "drive_folder",
   name: "CEC Shared Drive",
   holder: junior.id,
   roleKey: "vp_internal",
-});
+}));
 
-ok(busFactor(domain) === 0, `graduated sole holder -> bus factor 0, got ${busFactor(domain)}`);
-ok(busFactor(drive) === 1, "a current holder with owner access -> bus factor 1");
-let risk = orphanRisk();
+ok((await busFactor(domain)) === 0, `graduated sole holder -> bus factor 0, got ${(await busFactor(domain))}`);
+ok((await busFactor(drive)) === 1, "a current holder with owner access -> bus factor 1");
+let risk = (await orphanRisk());
 ok(risk[0].asset_id === domain, "the stranded domain sorts first in orphan risk");
 ok(risk[0].gone === true, "it carries the already-left flag");
 ok(risk[0].bus_factor === 0, "the row reports bus factor 0");
 ok(risk[0].months < 0, `the holder's departure is in the past: ${risk[0].months}`);
 ok(/has left/.test(risk[0].line), `the row reads as a sentence: ${risk[0].line}`);
 ok(
-  accessList(domain).every((a) => a.current === false),
+  (await accessList(domain)).every((a) => a.current === false),
   "nobody with access is still in the club",
 );
 
 // --- 2. a second admin raises the bus factor and clears the alarm -----------
-ok(busFactor(drive) === 1, "before: one owner");
+ok((await busFactor(drive)) === 1, "before: one owner");
 ok(
-  assetState(media).single_point.some((r) => r.asset_id === drive),
+  (await assetState(media)).single_point.some((r) => r.asset_id === drive),
   "bus factor 1 shows in the single-point list",
 );
-grantAccess(media, drive, ops.id, "admin");
-ok(busFactor(drive) === 2, `a second current admin -> 2, got ${busFactor(drive)}`);
-const state = assetState(media);
+(await grantAccess(media, drive, ops.id, "admin"));
+ok((await busFactor(drive)) === 2, `a second current admin -> 2, got ${(await busFactor(drive))}`);
+const state = (await assetState(media));
 ok(
   !state.single_point.some((r) => r.asset_id === drive),
   "it drops out of the single-point alarm list",
@@ -136,66 +136,66 @@ ok(
   "the domain is still stranded",
 );
 // Viewers and editors are not continuity: they cannot renew anything.
-grantAccess(media, drive, senior.id, "viewer");
-ok(busFactor(drive) === 2, "a viewer does not raise the bus factor");
-ok(accessList(drive).length === 3, "but is listed as having access");
+(await grantAccess(media, drive, senior.id, "viewer"));
+ok((await busFactor(drive)) === 2, "a viewer does not raise the bus factor");
+ok((await accessList(drive)).length === 3, "but is listed as having access");
 
 // --- 3. reassigning moves the holder and preserves the history -------------
-const before = db()
+const before = (await db()
   .prepare("SELECT granted_at,level FROM asset_access WHERE asset_id=? AND user_id=?")
-  .get(domain, president.id);
-ok(reassign(media, domain, media.id) === true, "reassign reports the move");
+  .get(domain, president.id));
+ok((await reassign(media, domain, media.id)) === true, "reassign reports the move");
 ok(
-  db().prepare("SELECT holder_id FROM assets WHERE id=?").get(domain).holder_id ===
+  (await db().prepare("SELECT holder_id FROM assets WHERE id=?").get(domain)).holder_id ===
     media.id,
   "the holder moved to the current officer",
 );
-const after = db()
+const after = (await db()
   .prepare("SELECT granted_at,level FROM asset_access WHERE asset_id=? AND user_id=?")
-  .get(domain, president.id);
+  .get(domain, president.id));
 ok(after && after.granted_at === before.granted_at, "the prior holder's access row is preserved untouched");
 ok(
-  db()
+  (await db()
     .prepare("SELECT COUNT(*) n FROM audit WHERE action='asset.reassign' AND object_id=?")
-    .get(domain).n === 1,
+    .get(domain)).n === 1,
   "the reassignment is in the append-only audit log",
 );
-ok(busFactor(domain) === 1, "the new holder can now actually get in");
-ok(reassign(media, domain, media.id) === false, "reassigning to the same person is a no-op");
+ok((await busFactor(domain)) === 1, "the new holder can now actually get in");
+ok((await reassign(media, domain, media.id)) === false, "reassigning to the same person is a no-op");
 
 // --- 4. revoking the last owner lowers the bus factor ----------------------
-ok(busFactor(domain) === 1, "one current owner before the revoke");
-ok(revokeAccess(media, domain, media.id) === true, "revoke reports the removal");
-ok(busFactor(domain) === 0, "revoking the last owner drops the bus factor to 0");
+ok((await busFactor(domain)) === 1, "one current owner before the revoke");
+ok((await revokeAccess(media, domain, media.id)) === true, "revoke reports the removal");
+ok((await busFactor(domain)) === 0, "revoking the last owner drops the bus factor to 0");
 ok(
-  orphanRisk().find((r) => r.asset_id === domain).bus_factor === 0,
+  (await orphanRisk()).find((r) => r.asset_id === domain).bus_factor === 0,
   "and the register says so, even though a current officer is still the holder",
 );
-ok(revokeAccess(media, domain, media.id) === false, "revoking twice is a no-op");
-ok(revokeAccess(media, domain, ops.id) === false, "revoking someone who never had access is a no-op");
-grantAccess(media, domain, media.id, "owner"); // put it back
+ok((await revokeAccess(media, domain, media.id)) === false, "revoking twice is a no-op");
+ok((await revokeAccess(media, domain, ops.id)) === false, "revoking someone who never had access is a no-op");
+(await grantAccess(media, domain, media.id, "owner")); // put it back
 
 // --- 5. orphan risk sorts by time to departure, ascending ------------------
-reset();
-const held = (name, holder, roleKey) =>
-  registerAsset(media, { kind: "social_account", name, holder, roleKey });
-held("Instagram", senior.id, "media_chair"); // 2 months
-held("LinkedIn", media.id, "media_chair"); // 8 months
-held("Substack", ops.id, "vp_external"); // 20 months
-held("YouTube", junior.id, "media_chair"); // 32 months
-const unknown = registerAsset(media, {
+(await reset());
+const held = async (name, holder, roleKey) =>
+  (await registerAsset(media, { kind: "social_account", name, holder, roleKey }));
+(await held("Instagram", senior.id, "media_chair")); // 2 months
+(await held("LinkedIn", media.id, "media_chair")); // 8 months
+(await held("Substack", ops.id, "vp_external")); // 20 months
+(await held("YouTube", junior.id, "media_chair")); // 32 months
+const unknown = (await registerAsset(media, {
   kind: "subscription",
   name: "Notion",
-  holder: user("Nia, No Date", "member").id,
-});
-const unheld = registerAsset(media, { kind: "form", name: "Coffee chat form" });
-const gone = registerAsset(media, {
+  holder: (await user("Nia, No Date", "member")).id,
+}));
+const unheld = (await registerAsset(media, { kind: "form", name: "Coffee chat form" }));
+const gone = (await registerAsset(media, {
   kind: "email_account",
   name: "cec.recruiting@gmail.com",
   holder: president.id,
-});
+}));
 
-risk = orphanRisk();
+risk = (await orphanRisk());
 ok(risk[0].asset_id === unheld, "an asset nobody holds sorts above everything");
 ok(risk[0].rank === 0 && risk[0].gone === true, "it is flagged as having no holder");
 ok(risk[1].asset_id === gone, "then the asset whose holder already left");
@@ -213,35 +213,35 @@ ok(
   "an undated holder sorts last, not into the emergency slots",
 );
 ok(risk[risk.length - 1].months === null, "with no invented number");
-ok(assetState(media).unassigned_role === 3, "assets tied to no position are counted");
+ok((await assetState(media)).unassigned_role === 3, "assets tied to no position are counted");
 
 // --- 6. the CEC case, end to end -------------------------------------------
-reset();
-domain = registerAsset(media, {
+(await reset());
+domain = (await registerAsset(media, {
   kind: "domain",
   name: "cornellec.com",
   location: "Porkbun — Rohan's personal account",
   holder: president.id,
   roleKey: "president",
   notes: "Discussed in #fall26-internalltools; he is not in the channel.",
-});
-registerAsset(media, {
+}));
+(await registerAsset(media, {
   kind: "drive_folder",
   name: "Recruiting 2026",
   holder: ops.id,
   roleKey: "vp_internal",
-});
+}));
 
 // Owen runs recruitment off the domain and cannot get in.
 ok(
-  !accessList(domain).some((a) => a.user_id === ops.id),
+  !(await accessList(domain)).some((a) => a.user_id === ops.id),
   "the officer who needs it has no access",
 );
 ok(
-  !myAccess(ops).assets.some((a) => a.id === domain),
+  !(await myAccess(ops)).assets.some((a) => a.id === domain),
   "and his own page confirms it, instead of 'u shd have access'",
 );
-const cec = assetState(media);
+const cec = (await assetState(media));
 ok(cec.orphan_risk[0].asset_id === domain, "the register flags the domain as the top risk");
 ok(cec.stranded.length === 1 && cec.stranded[0].asset_id === domain, "it is the only stranded asset");
 ok(cec.orphan_risk[0].role_key === "president", "and names the position that should hold it");
@@ -253,10 +253,10 @@ ok(cec.counts.length === 2 && cec.total === 2, "counts by kind cover the registe
 
 // The transition: hand it to the sitting president's seat and stop being one
 // graduation from zero.
-assets(media, "reassign", { asset_id: domain, to: media.id });
-assets(media, "grant", { asset_id: domain, user_id: ops.id, level: "admin" });
-ok(busFactor(domain) === 2, `after the handoff the bus factor is 2, got ${busFactor(domain)}`);
-const fixed = assetState(media);
+(await assets(media, "reassign", { asset_id: domain, to: media.id }));
+(await assets(media, "grant", { asset_id: domain, user_id: ops.id, level: "admin" }));
+ok((await busFactor(domain)) === 2, `after the handoff the bus factor is 2, got ${(await busFactor(domain))}`);
+const fixed = (await assetState(media));
 ok(fixed.stranded.length === 0, "nothing is stranded any more");
 ok(
   !fixed.single_point.some((r) => r.asset_id === domain),
@@ -271,28 +271,28 @@ ok(
   "the worst row is now a future date, not a past one",
 );
 ok(
-  myAccess(ops).assets.some((a) => a.id === domain),
+  (await myAccess(ops)).assets.some((a) => a.id === domain),
   "the officer who needed it can see that he has it",
 );
 
 // --- officer gate and unknown actions --------------------------------------
-const applicant = user("Ana, Applicant", "applicant");
-assert.throws(() => assetState(applicant), /Officer access required/);
+const applicant = (await user("Ana, Applicant", "applicant"));
+(await assert.rejects(async () => (await assetState(applicant)), /Officer access required/));
 checks++;
-assert.throws(() => assets(junior, "register", { kind: "domain", name: "x" }), /Officer access required/);
+(await assert.rejects(async () => (await assets(junior, "register", { kind: "domain", name: "x" })), /Officer access required/));
 checks++;
-assert.throws(() => assets(media, "nonsense", {}), /Unknown asset action/);
+(await assert.rejects(async () => (await assets(media, "nonsense", {})), /Unknown asset action/));
 checks++;
-assert.throws(
-  () => registerAsset(media, { kind: "domain", name: "cornellec.com" }),
+(await assert.rejects(
+  async () => (await registerAsset(media, { kind: "domain", name: "cornellec.com" })),
   /already in the register/,
-);
+));
 checks++;
-assert.throws(() => registerAsset(media, { kind: "wallet", name: "x" }), /Unknown asset kind/);
+(await assert.rejects(async () => (await registerAsset(media, { kind: "wallet", name: "x" })), /Unknown asset kind/));
 checks++;
-assert.throws(() => grantAccess(media, domain, media.id, "root"), /Unknown access level/);
+(await assert.rejects(async () => (await grantAccess(media, domain, media.id, "root")), /Unknown access level/));
 checks++;
-assert.throws(() => myAccess(applicant), /Club membership required/);
+(await assert.rejects(async () => (await myAccess(applicant)), /Club membership required/));
 checks++;
 
 // --- emissions stay inside the quant store's closed schema -----------------
@@ -310,9 +310,9 @@ const declared = {
     ],
   },
 };
-const emitted = db()
+const emitted = (await db()
   .prepare("SELECT body FROM outbox")
-  .all()
+  .all())
   .map((r) => JSON.parse(r.body));
 ok(emitted.length > 0, "the register emits behavioural events");
 ok(

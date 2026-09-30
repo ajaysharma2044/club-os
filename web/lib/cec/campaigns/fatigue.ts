@@ -74,9 +74,9 @@ export type ExposureRow = {
 
 let ready = false;
 
-export function fatigueInit() {
+export async function fatigueInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS campaign_exposures(
   id TEXT PRIMARY KEY,
   club_id TEXT NOT NULL,
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS campaign_exposures(
 CREATE INDEX IF NOT EXISTS campaign_exposure_club ON campaign_exposures(club_id,occurred_at);
 CREATE INDEX IF NOT EXISTS campaign_exposure_sector ON campaign_exposures(club_id,sector,occurred_at);
 CREATE INDEX IF NOT EXISTS campaign_exposure_member ON campaign_exposures(member_id,occurred_at);
-`);
+`));
   ready = true;
 }
 
@@ -128,8 +128,8 @@ export type RecordExposureInput = {
  * had per-member data when it did not, and the next person to read the table
  * would draw conclusions from a silently truncated log.
  */
-export function recordExposure(input: RecordExposureInput): ExposureRow {
-  fatigueInit();
+export async function recordExposure(input: RecordExposureInput): Promise<ExposureRow> {
+  (await fatigueInit());
   const now = timestamp();
   const occurredAt = input.occurredAt || now;
   const observedAt = input.observedAt || occurredAt;
@@ -137,7 +137,7 @@ export function recordExposure(input: RecordExposureInput): ExposureRow {
     fail("An exposure cannot be observed before it happened.", 422);
 
   if (input.memberId) {
-    const policy = clubPolicy(input.clubId);
+    const policy = (await clubPolicy(input.clubId));
     if (policy.memberDataSharing !== "opt_in_per_campaign")
       fail(
         `Member-level exposure refused: ${input.clubId} shares "${policy.memberDataSharing}". ` +
@@ -166,7 +166,7 @@ export function recordExposure(input: RecordExposureInput): ExposureRow {
     occurredAt,
     observedAt,
   };
-  db()
+  (await db()
     .prepare(
       `INSERT INTO campaign_exposures(id,club_id,sponsor_id,sponsor_category,sector,campaign_id,activation_type,stage,commercial,member_id,consent_basis,occurred_at,observed_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -185,7 +185,7 @@ export function recordExposure(input: RecordExposureInput): ExposureRow {
       row.consentBasis,
       row.occurredAt,
       row.observedAt,
-    );
+    ));
   return row;
 }
 
@@ -220,22 +220,22 @@ const daysBefore = (at: string, days: number): string =>
  * the decision could not have known about, and a replay would disagree with
  * what actually happened.
  */
-export function exposuresInWindow(
+export async function exposuresInWindow(
   clubId: string,
   at: string,
   days: number,
   opts: { stages?: readonly string[]; commercialOnly?: boolean } = {},
-): ExposureRow[] {
-  fatigueInit();
+): Promise<ExposureRow[]> {
+  (await fatigueInit());
   const stages = opts.stages ?? ATTENTION_STAGES;
-  const rows = db()
+  const rows = (await db()
     .prepare(
       `SELECT * FROM campaign_exposures
        WHERE club_id=? AND member_id IS NULL
          AND occurred_at > ? AND occurred_at <= ? AND observed_at <= ?
        ORDER BY occurred_at DESC`,
     )
-    .all(clubId, daysBefore(at, days), at, at) as Record<string, unknown>[];
+    .all(clubId, daysBefore(at, days), at, at)) as Record<string, unknown>[];
   return rows
     .map(hydrate)
     .filter((r) => stages.includes(r.stage))
@@ -253,9 +253,9 @@ export type ExposureSummary = {
 };
 
 /** What this club has already absorbed, the shape every cap reads from. */
-export function exposureSummary(clubId: string, at: string): ExposureSummary {
-  const week = exposuresInWindow(clubId, at, 7);
-  const month = exposuresInWindow(clubId, at, 30);
+export async function exposureSummary(clubId: string, at: string): Promise<ExposureSummary> {
+  const week = (await exposuresInWindow(clubId, at, 7));
+  const month = (await exposuresInWindow(clubId, at, 30));
 
   const sectorMap = new Map<string, Set<string>>();
   const sectorCount = new Map<string, number>();
@@ -333,17 +333,17 @@ export type FatigueCheck = {
  * rules should be told all three — one at a time is how a marketplace teaches
  * its buyers to retry blindly.
  */
-export function fatigueCheck(input: {
+export async function fatigueCheck(input: {
   clubId: string;
   sponsor: Pick<SponsorProfile, "id" | "category">;
   at: string;
   policy?: ClubSponsorshipPolicy;
   /** counts the proposed activation against the caps; default true */
   includeProposed?: boolean;
-}): FatigueCheck {
-  fatigueInit();
-  const policy = input.policy ?? clubPolicy(input.clubId);
-  const summary = exposureSummary(input.clubId, input.at);
+}): Promise<FatigueCheck> {
+  (await fatigueInit());
+  const policy = input.policy ?? (await clubPolicy(input.clubId));
+  const summary = (await exposureSummary(input.clubId, input.at));
   const proposed = input.includeProposed === false ? 0 : 1;
   const sector = sectorOf(input.sponsor.category);
 
@@ -420,13 +420,13 @@ export function fatigueCheck(input: {
  * a legitimate use, and the return type is narrow so that nothing downstream can
  * accidentally build one. Never call this on a sponsor's behalf.
  */
-export function memberExposureCount(memberId: string, at: string, days = 30): number {
-  fatigueInit();
-  const row = db()
+export async function memberExposureCount(memberId: string, at: string, days = 30): Promise<number> {
+  (await fatigueInit());
+  const row = (await db()
     .prepare(
       `SELECT COUNT(*) n FROM campaign_exposures
        WHERE member_id=? AND occurred_at > ? AND occurred_at <= ? AND observed_at <= ?`,
     )
-    .get(memberId, daysBefore(at, days), at, at) as { n: number };
+    .get(memberId, daysBefore(at, days), at, at)) as { n: number };
   return Number(row?.n ?? 0);
 }

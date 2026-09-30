@@ -4,7 +4,7 @@
 
 - Read README-CEC.md for runtime facts, docs/23-system-design.md for design direction,
   and docs/24-mvp-system.md for proposed MVP scope. Read relevant code before editing.
-- The running product is a single-CEC Next.js/SQLite app with a Python companion.
+- The running product is a single-CEC Next.js app with SQLite or Supabase PostgreSQL and a Python companion.
   Earlier research and Cursor session notes contain superseded stack and product claims.
 - Current user instructions take precedence. Do not infer remote publishing authorization
   from an old editor rule reporting another session's standing request.

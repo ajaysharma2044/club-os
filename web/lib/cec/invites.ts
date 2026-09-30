@@ -18,9 +18,9 @@ import {
 import { randomBytes } from "node:crypto";
 
 let ready = false;
-export function invitesInit() {
+export async function invitesInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS invites(
   code TEXT PRIMARY KEY,
   label TEXT NOT NULL DEFAULT '',
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS invite_claims(
   user_id TEXT NOT NULL,
   claimed_at TEXT NOT NULL,
   PRIMARY KEY(code,user_id));
-`);
+`));
   ready = true;
 }
 
@@ -61,11 +61,11 @@ export type InviteInfo = {
   expires_at: string;
 };
 
-export function inviteInfo(code: string): InviteInfo {
-  invitesInit();
-  const row = db()
+export async function inviteInfo(code: string): Promise<InviteInfo> {
+  (await invitesInit());
+  const row = (await db()
     .prepare("SELECT * FROM invites WHERE code=?")
-    .get(text(code, 32).toUpperCase()) as any;
+    .get(text(code, 32).toUpperCase())) as any;
   if (!row)
     return {
       code: "",
@@ -99,60 +99,60 @@ export function inviteInfo(code: string): InviteInfo {
 }
 
 /** A bearer invitation grants membership, never proof of account ownership. */
-export function claim(b: any): { token: string; name: string } {
-  invitesInit();
+export async function claim(b: any): Promise<{ token: string; name: string }> {
+  (await invitesInit());
   const code = text(b.code, 32).toUpperCase();
   const email = text(b.email, 254).toLowerCase();
-  throttle("invite:email:" + hash(email), 10);
-  throttle("invite:claims", 500);
+  (await throttle("invite:email:" + hash(email), 10));
+  (await throttle("invite:claims", 500));
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail("Enter a valid email.");
   const suppliedPassword = text(b.password, 256);
-  return tx(() => {
-    const invitation = db().prepare("SELECT * FROM invites WHERE code=?").get(code) as any;
+  return (await tx(async () => {
+    const invitation = (await db().prepare("SELECT * FROM invites WHERE code=?").get(code)) as any;
     if (!invitation || invitation.revoked || invitation.expires_at <= timestamp() || invitation.role !== "member")
       fail("This invitation is unavailable. Ask an officer for a new member invitation.", 403);
     if (invitation.email_domain && !email.endsWith("@" + invitation.email_domain))
       fail(`Use your @${invitation.email_domain} address.`);
-    const existing = db().prepare("SELECT * FROM accounts WHERE email=?").get(email) as any;
+    const existing = (await db().prepare("SELECT * FROM accounts WHERE email=?").get(email)) as any;
     if (existing && !verify(suppliedPassword, existing.password))
       fail("Unable to join. Use your existing account password, or contact an officer for account recovery.", 401);
-    const membership = existing ? db().prepare(
-      "SELECT * FROM memberships WHERE organization_id='cornell-ec' AND user_id=?").get(existing.id) as any : null;
+    const membership = existing ? (await db().prepare(
+      "SELECT * FROM memberships WHERE organization_id='cornell-ec' AND user_id=?").get(existing.id)) as any : null;
     if (membership && ["left", "suspended"].includes(membership.status))
       fail("An officer must restore your membership before you can rejoin.", 403);
-    const alreadyClaimed = existing && db().prepare(
-      "SELECT 1 FROM invite_claims WHERE code=? AND user_id=?").get(code, existing.id);
+    const alreadyClaimed = existing && (await db().prepare(
+      "SELECT 1 FROM invite_claims WHERE code=? AND user_id=?").get(code, existing.id));
     if (!alreadyClaimed && invitation.uses >= invitation.max_uses)
       fail("This invitation has reached its limit. Ask an officer for another.", 409);
     const uid = existing?.id || id();
     const name = existing?.name || text(b.name, 100);
     if (!existing) {
-      db().prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,'member')")
-        .run(uid, name, email, password(suppliedPassword));
+      (await db().prepare("INSERT INTO users(id,name,email,password,role) VALUES(?,?,?,?,'member')")
+        .run(uid, name, email, password(suppliedPassword)));
     } else if (!membership) {
-      db().prepare("INSERT INTO memberships(organization_id,user_id,role,status) VALUES('cornell-ec',?,'member','active')").run(uid);
+      (await db().prepare("INSERT INTO memberships(organization_id,user_id,role,status) VALUES('cornell-ec',?,'member','active')").run(uid));
     } else if (membership.status === "pending") {
-      db().prepare("UPDATE memberships SET role='member',status='active',joined_at=? WHERE organization_id='cornell-ec' AND user_id=?")
-        .run(timestamp(), uid);
+      (await db().prepare("UPDATE memberships SET role='member',status='active',joined_at=? WHERE organization_id='cornell-ec' AND user_id=?")
+        .run(timestamp(), uid));
     }
     const actor = { id: uid, name, email, role: membership?.role === "officer" ? "officer" : "member", interests: "", shared: 0 } as User;
-    if (!existing) audit(actor, "account.created", uid, {role:"member",via:"invite"});
+    if (!existing) (await audit(actor, "account.created", uid, {role:"member",via:"invite"}));
     if (!alreadyClaimed) {
-      db().prepare("INSERT INTO invite_claims(code,user_id,claimed_at) VALUES(?,?,?)").run(code, uid, timestamp());
-      db().prepare("UPDATE invites SET uses=uses+1 WHERE code=?").run(code);
-      audit(actor, "invite.claim", uid, { code });
-      if (!membership || membership.status === "pending") emit(actor, "membership", uid, "cornell-ec", { status: "active", role: "member" });
+      (await db().prepare("INSERT INTO invite_claims(code,user_id,claimed_at) VALUES(?,?,?)").run(code, uid, timestamp()));
+      (await db().prepare("UPDATE invites SET uses=uses+1 WHERE code=?").run(code));
+      (await audit(actor, "invite.claim", uid, { code }));
+      if (!membership || membership.status === "pending") (await emit(actor, "membership", uid, "cornell-ec", { status: "active", role: "member" }));
     }
-    return { token: session(uid), name };
-  });
+    return { token: (await session(uid)), name };
+  }));
 }
 
-export function inviteState(u: User) {
-  officer(u);
-  invitesInit();
-  const rows = db()
+export async function inviteState(u: User) {
+  (await officer(u));
+  (await invitesInit());
+  const rows = (await db()
     .prepare("SELECT * FROM invites WHERE revoked=0 ORDER BY created_at DESC LIMIT 20")
-    .all() as any[];
+    .all()) as any[];
   const now = timestamp();
   return {
     invites: rows.map((r) => ({
@@ -167,9 +167,9 @@ export function inviteState(u: User) {
   };
 }
 
-export function invites(u: User, action: string, b: any) {
-  officer(u);
-  invitesInit();
+export async function invites(u: User, action: string, b: any) {
+  (await officer(u));
+  (await invitesInit());
   if (action === "create") {
     if (b.role && b.role !== "member") fail("Invite members first, then promote them from membership controls.", 400);
     const code = makeCode();
@@ -179,7 +179,7 @@ export function invites(u: User, action: string, b: any) {
     if (!Number.isInteger(days) || days < 1 || days > 90 || !Number.isInteger(maxUses) || maxUses < 1 || maxUses > 500)
       fail("Choose 1–90 days and 1–500 members.");
     if (domain && (domain.length > 60 || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain))) fail("Enter an email domain, such as cornell.edu.");
-    db()
+    (await db()
       .prepare(
         "INSERT INTO invites(code,label,role,email_domain,created_by,created_at,expires_at,max_uses) VALUES (?,?,?,?,?,?,?,?)",
       )
@@ -192,14 +192,14 @@ export function invites(u: User, action: string, b: any) {
         timestamp(),
         new Date(Date.now() + days * 86400e3).toISOString(),
         maxUses,
-      );
-    audit(u, "invite.create", code, { days });
+      ));
+    (await audit(u, "invite.create", code, { days }));
     return { code };
   }
   if (action === "revoke") {
     const code = text(b.code, 32).toUpperCase();
-    db().prepare("UPDATE invites SET revoked=1 WHERE code=?").run(code);
-    audit(u, "invite.revoke", code, {});
+    (await db().prepare("UPDATE invites SET revoked=1 WHERE code=?").run(code));
+    (await audit(u, "invite.revoke", code, {}));
     return { ok: true };
   }
   fail("Unknown invite action.", 404);

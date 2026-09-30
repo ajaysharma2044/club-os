@@ -1,3 +1,4 @@
+import { asyncMap, asyncFilter } from "../async";
 // The external views: what an employer or an investor is allowed to see.
 //
 // ===========================================================================
@@ -84,10 +85,10 @@ const SCOPE_AUDIENCES: Record<ProfileScope, Audience[]> = {
 };
 
 let grantsReady = false;
-export function profilesInit() {
+export async function profilesInit() {
   if (grantsReady) return;
-  skillsInit();
-  db().exec(`
+  (await skillsInit());
+  (await db().exec(`
 -- Per-audience, revocable consent (docs/10 §6). A revocation is a row edit and
 -- not a delete, so "they could see this between March and June" stays answerable.
 CREATE TABLE IF NOT EXISTS professional_profile_grants(
@@ -101,7 +102,7 @@ CREATE TABLE IF NOT EXISTS professional_profile_grants(
   note TEXT NOT NULL DEFAULT '');
 CREATE UNIQUE INDEX IF NOT EXISTS grant_live ON professional_profile_grants(person_id,audience,scope) WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS grant_person ON professional_profile_grants(person_id,granted_at);
-`);
+`));
   grantsReady = true;
 }
 
@@ -119,11 +120,11 @@ export type GrantRow = {
  * Only the person may open their own record. There is no officer override: a
  * club cannot consent on a member's behalf to an employer seeing their work.
  */
-export function grantProfileAccess(
+export async function grantProfileAccess(
   u: User,
   g: { personId: string; audience: Audience; scope: ProfileScope; note?: string },
-): string {
-  profilesInit();
+): Promise<string> {
+  (await profilesInit());
   if (u.id !== g.personId)
     fail("Only the person can grant access to their own record.", 403);
   if (!AUDIENCES.includes(g.audience)) fail("Unknown audience.");
@@ -131,7 +132,7 @@ export function grantProfileAccess(
   if (!SCOPE_AUDIENCES[g.scope].includes(g.audience))
     fail("That scope is not offered to that audience.", 422);
   const key = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO professional_profile_grants(id,person_id,audience,scope,granted_at,granted_by,note)
        VALUES (?,?,?,?,?,?,?)
@@ -145,35 +146,35 @@ export function grantProfileAccess(
       timestamp(),
       u.id,
       (g.note || "").slice(0, 500),
-    );
-  const row = db()
+    ));
+  const row = (await db()
     .prepare(
       "SELECT id FROM professional_profile_grants WHERE person_id=? AND audience=? AND scope=? AND revoked_at IS NULL",
     )
-    .get(g.personId, g.audience, g.scope) as { id: string } | undefined;
+    .get(g.personId, g.audience, g.scope)) as { id: string } | undefined;
   if (!row) fail("Grant could not be recorded.", 500);
-  audit(u, "profile.grant", row.id, { audience: g.audience, scope: g.scope });
+  (await audit(u, "profile.grant", row.id, { audience: g.audience, scope: g.scope }));
   return row.id;
 }
 
-export function revokeProfileAccess(
+export async function revokeProfileAccess(
   u: User,
   g: { personId: string; audience: Audience; scope: ProfileScope },
-): boolean {
-  profilesInit();
+): Promise<boolean> {
+  (await profilesInit());
   if (u.id !== g.personId)
     fail("Only the person can revoke access to their own record.", 403);
   const now = timestamp();
-  const row = db()
+  const row = (await db()
     .prepare(
       "SELECT id FROM professional_profile_grants WHERE person_id=? AND audience=? AND scope=? AND revoked_at IS NULL",
     )
-    .get(g.personId, g.audience, g.scope) as { id: string } | undefined;
+    .get(g.personId, g.audience, g.scope)) as { id: string } | undefined;
   if (!row) return false;
-  db()
+  (await db()
     .prepare("UPDATE professional_profile_grants SET revoked_at=? WHERE id=?")
-    .run(now, row.id);
-  audit(u, "profile.revoke", row.id, { audience: g.audience, scope: g.scope });
+    .run(now, row.id));
+  (await audit(u, "profile.revoke", row.id, { audience: g.audience, scope: g.scope }));
   return true;
 }
 
@@ -182,15 +183,15 @@ export function revokeProfileAccess(
  * after `asOf` had not happened yet, and one revoked on or before `asOf` was
  * already gone.
  */
-export function activeGrant(
+export async function activeGrant(
   personId: string,
   audience: Audience,
   scope: ProfileScope,
   asOf: string = timestamp(),
-): GrantRow | null {
-  profilesInit();
+): Promise<GrantRow | null> {
+  (await profilesInit());
   return (
-    (db()
+    ((await db()
       .prepare(
         `SELECT id,person_id,audience,scope,granted_at,revoked_at,note
            FROM professional_profile_grants
@@ -198,7 +199,7 @@ export function activeGrant(
             AND granted_at<=? AND (revoked_at IS NULL OR revoked_at>?)
           ORDER BY granted_at DESC LIMIT 1`,
       )
-      .get(personId, audience, scope, asOf, asOf) as GrantRow | undefined) || null
+      .get(personId, audience, scope, asOf, asOf)) as GrantRow | undefined) || null
   );
 }
 
@@ -328,9 +329,9 @@ export type SkillEvidenceSection = {
   exhibits: EvidenceExhibit[];
 };
 
-function exhibits(personId: string, skillId: string, asOf: string): EvidenceExhibit[] {
-  return skillLinks(personId, skillId, asOf).map((l) => {
-    const ep = episodeRow(l.episode_id);
+async function exhibits(personId: string, skillId: string, asOf: string): Promise<EvidenceExhibit[]> {
+  return (await asyncMap((await skillLinks(personId, skillId, asOf)), async (l) => {
+    const ep = (await episodeRow(l.episode_id));
     return {
       skill_id: l.skill_id,
       canonical_name: skillName(l.skill_id),
@@ -350,23 +351,23 @@ function exhibits(personId: string, skillId: string, asOf: string): EvidenceExhi
             started_at: ep.created_at,
           }
         : null,
-      artifacts: artifactsFor(personId, l.episode_id, asOf).map((a) => ({
+      artifacts: (await artifactsFor(personId, l.episode_id, asOf)).map((a) => ({
         kind: a.kind,
         title: a.title,
         url: a.url,
         produced_at: a.produced_at,
       })),
-      outcomes: outcomesForEpisode(l.episode_id, asOf).map((o) => ({
+      outcomes: (await outcomesForEpisode(l.episode_id, asOf)).map((o) => ({
         kind: o.kind,
         result: (o.value >= 0.5 ? "met" : "not_met") as "met" | "not_met",
         recorded_by: o.evidence_level,
         occurred_at: o.occurred_at,
       })),
     };
-  });
+  }));
 }
 
-function section(summary: SkillSummary, asOf: string): SkillEvidenceSection {
+async function section(summary: SkillSummary, asOf: string): Promise<SkillEvidenceSection> {
   const def = skill(summary.skill_id);
   return {
     skill_id: summary.skill_id,
@@ -378,12 +379,12 @@ function section(summary: SkillSummary, asOf: string): SkillEvidenceSection {
     term_count: summary.distinctTerms,
     record_count: summary.links.length,
     reading: summary.reading,
-    exhibits: exhibits(summary.person_id, summary.skill_id, asOf),
+    exhibits: (await exhibits(summary.person_id, summary.skill_id, asOf)),
   };
 }
 
-function personName(personId: string): string {
-  const r = db().prepare("SELECT name FROM users WHERE id=?").get(personId) as
+async function personName(personId: string): Promise<string> {
+  const r = (await db().prepare("SELECT name FROM users WHERE id=?").get(personId)) as
     | { name: string }
     | undefined;
   return r?.name || personId;
@@ -416,22 +417,22 @@ export type EvidenceProfile = {
  * role. Kept mainly so `jobEvidenceMatch` has something to be different from:
  * see the file header on why the job-scoped view is the one to use.
  */
-export function evidenceProfile(input: {
+export async function evidenceProfile(input: {
   personId: string;
   audience: Audience;
   asOf?: string;
-}): EvidenceProfile {
-  profilesInit();
+}): Promise<EvidenceProfile> {
+  (await profilesInit());
   const asOf = input.asOf || timestamp();
   const base = {
-    person: { id: input.personId, name: personName(input.personId) },
+    person: { id: input.personId, name: (await personName(input.personId)) },
     audience: input.audience,
     scope: "skill_evidence" as ProfileScope,
     as_of: asOf,
     policy: POLICY,
     model_version: MODEL_VERSION,
   };
-  const grant = activeGrant(input.personId, input.audience, "skill_evidence", asOf);
+  const grant = (await activeGrant(input.personId, input.audience, "skill_evidence", asOf));
   if (!grant)
     return release({
       ...base,
@@ -444,7 +445,7 @@ export function evidenceProfile(input: {
   return release({
     ...base,
     granted: true,
-    skills: personSkills(input.personId, asOf).map((s) => section(s, asOf)),
+    skills: (await asyncMap((await personSkills(input.personId, asOf)), async (s) => (await section(s, asOf)))),
     notes: [NO_SCORE_NOTE, SINGLE_INSTANCE_NOTE],
   });
 }
@@ -517,18 +518,18 @@ export function checkRequirement(job: JobRequirement): string[] {
  * backend match and sponsorship match share no episodes: the work was different
  * work, and a general profile hides that behind a wall of everything.
  */
-export function jobEvidenceMatch(input: {
+export async function jobEvidenceMatch(input: {
   personId: string;
   job: JobRequirement;
   audience: Audience;
   asOf?: string;
-}): PersonJobEvidenceMatch {
-  profilesInit();
+}): Promise<PersonJobEvidenceMatch> {
+  (await profilesInit());
   const problems = checkRequirement(input.job);
   if (problems.length) fail("This job description cannot be matched: " + problems.join("; "), 422);
   const asOf = input.asOf || timestamp();
   const base = {
-    person: { id: input.personId, name: personName(input.personId) },
+    person: { id: input.personId, name: (await personName(input.personId)) },
     job: { id: input.job.id, title: input.job.title, employer: input.job.employer },
     audience: input.audience,
     as_of: asOf,
@@ -536,7 +537,7 @@ export function jobEvidenceMatch(input: {
     model_version: MODEL_VERSION,
   };
 
-  const grant = activeGrant(input.personId, input.audience, "skill_evidence", asOf);
+  const grant = (await activeGrant(input.personId, input.audience, "skill_evidence", asOf));
   if (!grant)
     return release({
       ...base,
@@ -551,7 +552,7 @@ export function jobEvidenceMatch(input: {
   const requirements: RequirementEvidence[] = [];
   const unevidenced: PersonJobEvidenceMatch["unevidenced"] = [];
   for (const want of input.job.skills) {
-    const summary = skillSummary(input.personId, want.skill_id, asOf);
+    const summary = (await skillSummary(input.personId, want.skill_id, asOf));
     if (!summary.links.length) {
       unevidenced.push({
         skill_id: want.skill_id,
@@ -561,7 +562,7 @@ export function jobEvidenceMatch(input: {
       continue;
     }
     requirements.push({
-      ...section(summary, asOf),
+      ...(await section(summary, asOf)),
       necessity: want.necessity,
       employer_note: want.note || "",
     });
@@ -674,13 +675,13 @@ type Ev = {
  * from the two people who consented misrepresents a team of three, and the
  * omission is invisible to the reader, which makes it worse than no answer.
  */
-export function vcProfile(input: {
+export async function vcProfile(input: {
   founders: string[];
   audience: Audience;
   venture?: { name?: string; originEpisodeId?: string };
   asOf?: string;
-}): VentureEvidence {
-  profilesInit();
+}): Promise<VentureEvidence> {
+  (await profilesInit());
   const asOf = input.asOf || timestamp();
   const founders = [...new Set(input.founders)].filter(Boolean);
   if (!founders.length) fail("Name at least one founder.");
@@ -718,9 +719,8 @@ export function vcProfile(input: {
       notes: [why],
     });
 
-  const withheld = founders.filter(
-    (f) => !activeGrant(f, input.audience, "venture_evidence", asOf),
-  );
+  const withheld = (await asyncFilter(founders, async (f) => !(await activeGrant(f, input.audience, "venture_evidence", asOf)),
+  ));
   if (withheld.length)
     return empty(
       withheld,
@@ -729,7 +729,7 @@ export function vcProfile(input: {
     );
 
   const marks = founders.map(() => "?").join(",");
-  const events = db()
+  const events = (await db()
     .prepare(
       `SELECT episode_id,actor_id,subject_id,action_family,event_type,occurred_at
          FROM activity_events
@@ -737,7 +737,7 @@ export function vcProfile(input: {
           AND (actor_id IN (${marks}) OR subject_id IN (${marks}))
         ORDER BY occurred_at`,
     )
-    .all(...([asOf, asOf, ...founders, ...founders] as any[])) as Ev[];
+    .all(...([asOf, asOf, ...founders, ...founders] as any[]))) as Ev[];
 
   // Who appears in which episode, and when.
   const byEpisode = new Map<string, { people: Set<string>; first: string; last: string }>();
@@ -755,7 +755,7 @@ export function vcProfile(input: {
 
   const titles = new Map<string, { title: string; status: string; created_at: string }>();
   for (const eid of byEpisode.keys()) {
-    const ep = episodeRow(eid);
+    const ep = (await episodeRow(eid));
     if (ep) titles.set(eid, { title: ep.title, status: ep.status, created_at: ep.created_at });
   }
 
@@ -766,16 +766,16 @@ export function vcProfile(input: {
   let originEnd = "";
   let originBasis = "";
   if (origin) {
-    const out = db()
+    const out = (await db()
       .prepare(
         "SELECT occurred_at FROM activity_events WHERE episode_id=? AND event_type='episode.outcome_recorded' AND occurred_at<=? ORDER BY occurred_at DESC LIMIT 1",
       )
-      .get(origin, asOf) as { occurred_at: string } | undefined;
+      .get(origin, asOf)) as { occurred_at: string } | undefined;
     if (out) {
       originEnd = out.occurred_at;
       originBasis = "the recorded outcome on the origin episode";
     } else {
-      const ep = episodeRow(origin);
+      const ep = (await episodeRow(origin));
       originEnd = ep?.created_at || "";
       originBasis =
         "the origin episode's start date; no outcome was ever recorded on it, so any gap measured from here is the longer reading";
@@ -812,7 +812,7 @@ export function vcProfile(input: {
       );
       if (!both.length) continue;
       pairs.push({
-        people: [personName(founders[i]), personName(founders[j])],
+        people: [(await personName(founders[i])), (await personName(founders[j]))],
         shared_episodes: both.length,
         first_together: both.reduce((m, [, v]) => (v.first < m ? v.first : m), both[0][1].first),
         last_together: both.reduce((m, [, v]) => (v.last > m ? v.last : m), both[0][1].last),
@@ -821,13 +821,13 @@ export function vcProfile(input: {
     }
 
   // Shipping: things that exist afterwards, plus episodes that actually closed.
-  const artifactRows = db()
+  const artifactRows = (await db()
     .prepare(
       `SELECT person_id,kind,title,url,detail,produced_at FROM skill_artifacts
         WHERE person_id IN (${marks}) AND produced_at<=? AND recorded_at<=?
         ORDER BY produced_at`,
     )
-    .all(...([...founders, asOf, asOf] as any[])) as {
+    .all(...([...founders, asOf, asOf] as any[]))) as {
     person_id: string;
     kind: string;
     title: string;
@@ -888,7 +888,7 @@ export function vcProfile(input: {
   return release({
     granted: true,
     venture: { name: input.venture?.name || "" },
-    founders: founders.map((f) => ({ id: f, name: personName(f) })),
+    founders: (await asyncMap(founders, async (f) => ({ id: f, name: (await personName(f)) }))),
     withheld: [],
     audience: input.audience,
     team_formation: {
@@ -903,15 +903,14 @@ export function vcProfile(input: {
       pairs,
     },
     shipping: {
-      artifacts: artifactRows
-        .filter((a) => a.kind !== "usage_record")
-        .map((a) => ({
-          person: personName(a.person_id),
+      artifacts: (await asyncMap(artifactRows
+        .filter((a) => a.kind !== "usage_record"), async (a) => ({
+          person: (await personName(a.person_id)),
           kind: a.kind,
           title: a.title,
           url: a.url,
           produced_at: a.produced_at,
-        })),
+        }))),
       completed_episodes: completed,
     },
     persistence: {
@@ -922,21 +921,21 @@ export function vcProfile(input: {
       origin: origin
         ? {
             id: origin,
-            title: titles.get(origin)?.title || episodeRow(origin)?.title || "",
+            title: titles.get(origin)?.title || (await episodeRow(origin))?.title || "",
             ended_at: originEnd,
             basis: originBasis,
           }
         : null,
     },
     iteration: { revisions, working_days: days.length, median_gap_days: medianGap },
-    external_usage: usage.map((a) => ({
-      person: personName(a.person_id),
+    external_usage: (await asyncMap(usage, async (a) => ({
+      person: (await personName(a.person_id)),
       kind: a.kind,
       title: a.title,
       url: a.url,
       detail: a.detail,
       produced_at: a.produced_at,
-    })),
+    }))),
     continuation: {
       episodes_started_after_origin: startedAfter,
       still_active: !!lastActivity && wholeDays(lastActivity, asOf) <= 30,
@@ -954,11 +953,11 @@ export function vcProfile(input: {
 }
 
 /** What a member sees about their own external exposure. The mirror test. */
-export function myGrants(u: User): GrantRow[] {
-  profilesInit();
-  return db()
+export async function myGrants(u: User): Promise<GrantRow[]> {
+  (await profilesInit());
+  return (await db()
     .prepare(
       "SELECT id,person_id,audience,scope,granted_at,revoked_at,note FROM professional_profile_grants WHERE person_id=? ORDER BY granted_at DESC",
     )
-    .all(u.id) as GrantRow[];
+    .all(u.id)) as GrantRow[];
 }

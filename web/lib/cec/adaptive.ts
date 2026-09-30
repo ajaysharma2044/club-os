@@ -1,4 +1,5 @@
-import { db, fail, id, timestamp, tx, User, url, officer } from "./db";
+import { asyncMap } from "./async";
+import { db, fail, id, timestamp, tx, type User, url, officer } from "./db";
 
 export const POLICY = "weekly-information-gap-v1";
 const PURPOSES = ["startup_hours", "coffee_chat", "recruitment"];
@@ -101,24 +102,24 @@ const BANK: Question[] = [
     ]),
   },
 ];
-function init() {
-  db().exec(`
+async function init() {
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS adaptive_preferences(user_id TEXT PRIMARY KEY REFERENCES accounts(id),shared INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS adaptive_facts(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),field TEXT NOT NULL,value TEXT NOT NULL,source_type TEXT NOT NULL,source_url TEXT NOT NULL,observed_at TEXT NOT NULL,policy TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS adaptive_facts_user ON adaptive_facts(user_id,observed_at);
 CREATE TABLE IF NOT EXISTS adaptive_sessions(id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES accounts(id),week TEXT NOT NULL,purpose TEXT NOT NULL,policy TEXT NOT NULL,created_at TEXT NOT NULL,completed_at TEXT,UNIQUE(user_id,week));
 CREATE TABLE IF NOT EXISTS adaptive_decisions(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES adaptive_sessions(id),question_id TEXT NOT NULL,snapshot TEXT NOT NULL,selected_at TEXT NOT NULL,exposed_at TEXT,answered_at TEXT,answer TEXT,status TEXT NOT NULL DEFAULT 'selected');
-`);
+`));
 }
 function weekKey() {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
   return d.toISOString().slice(0, 10);
 }
-function facts(uid: string) {
-  const rows = db()
+async function facts(uid: string) {
+  const rows = (await db()
     .prepare("SELECT * FROM adaptive_facts WHERE user_id=? ORDER BY rowid")
-    .all(uid) as any[];
+    .all(uid)) as any[];
   const latest: Record<string, any> = {};
   for (const r of rows) latest[r.field] = r;
   return latest;
@@ -131,8 +132,8 @@ function freshness(f: any) {
       )
     : 0;
 }
-function summary(uid: string) {
-  const fs = facts(uid),
+async function summary(uid: string) {
+  const fs = (await facts(uid)),
     known = FIELDS.filter((k) => fs[k]);
   return {
     facts: fs,
@@ -146,11 +147,11 @@ function summary(uid: string) {
     half_life_days: 28,
   };
 }
-function rank(session: any) {
-  const fs = facts(session.user_id),
-    decisions = db()
+async function rank(session: any) {
+  const fs = (await facts(session.user_id)),
+    decisions = (await db()
       .prepare("SELECT * FROM adaptive_decisions WHERE session_id=?")
-      .all(session.id) as any[];
+      .all(session.id)) as any[];
   const asked = new Set(decisions.map((d) => d.question_id));
   const current = (field: string, days: number) =>
     fs[field] &&
@@ -224,20 +225,20 @@ function rank(session: any) {
     .filter((q): q is NonNullable<typeof q> => q !== null && q.utility > 0)
     .sort((a, b) => b.utility - a.utility || a.id.localeCompare(b.id));
 }
-function sessionOwned(uid: string, sid: string) {
-  const s = db()
+async function sessionOwned(uid: string, sid: string) {
+  const s = (await db()
     .prepare("SELECT * FROM adaptive_sessions WHERE id=? AND user_id=?")
-    .get(sid, uid) as any;
+    .get(sid, uid)) as any;
   if (!s) fail("Check-in not found.", 404);
   return s;
 }
-function next(session: any) {
+async function next(session: any) {
   if (session.completed_at) return null;
-  const pending = db()
+  const pending = (await db()
     .prepare(
       "SELECT * FROM adaptive_decisions WHERE session_id=? AND status='selected'",
     )
-    .get(session.id) as any;
+    .get(session.id)) as any;
   if (pending)
     return {
       ...JSON.parse(pending.snapshot),
@@ -245,21 +246,21 @@ function next(session: any) {
       exposed: !!pending.exposed_at,
     };
   const count = (
-    db()
+    (await db()
       .prepare("SELECT COUNT(*) n FROM adaptive_decisions WHERE session_id=?")
-      .get(session.id) as any
+      .get(session.id)) as any
   ).n;
-  const ranked = count < MAX_QUESTIONS ? rank(session) : [];
+  const ranked = count < MAX_QUESTIONS ? (await rank(session)) : [];
   if (!ranked.length) {
     session.completed_at = timestamp();
-    db()
+    (await db()
       .prepare("UPDATE adaptive_sessions SET completed_at=? WHERE id=?")
-      .run(session.completed_at, session.id);
+      .run(session.completed_at, session.id));
     return null;
   }
   const q = ranked[0],
     did = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO adaptive_decisions(id,session_id,question_id,snapshot,selected_at) VALUES(?,?,?,?,?)",
     )
@@ -275,45 +276,45 @@ function next(session: any) {
         })),
       }),
       timestamp(),
-    );
+    ));
   return { ...q, decision_id: did, exposed: false };
 }
-function view(uid: string, select = true) {
-  const s = db()
+async function view(uid: string, select = true) {
+  const s = (await db()
     .prepare("SELECT * FROM adaptive_sessions WHERE user_id=? AND week=?")
-    .get(uid, weekKey()) as any;
-  const selectedQuestion = s && select ? next(s) : null;
+    .get(uid, weekKey())) as any;
+  const selectedQuestion = s && select ? (await next(s)) : null;
   const decisions = s
-    ? db()
+    ? (await db()
         .prepare(
           "SELECT * FROM adaptive_decisions WHERE session_id=? ORDER BY rowid",
         )
-        .all(s.id)
+        .all(s.id))
     : [];
   return {
-    profile: summary(uid),
+    profile: (await summary(uid)),
     shared: !!(
-      db()
+      (await db()
         .prepare("SELECT shared FROM adaptive_preferences WHERE user_id=?")
-        .get(uid) as any
+        .get(uid)) as any
     )?.shared,
     week: weekKey(),
     session: s || null,
     decisions,
-    history: db()
+    history: (await db()
       .prepare(
         "SELECT field,value,source_type,source_url,observed_at FROM adaptive_facts WHERE user_id=? ORDER BY rowid DESC LIMIT 50",
       )
-      .all(uid),
+      .all(uid)),
     question: s
       ? select
         ? selectedQuestion
-        : (() => {
-            const d = db()
+        : (await (async () => {
+            const d = (await db()
               .prepare(
                 "SELECT * FROM adaptive_decisions WHERE session_id=? AND status='selected'",
               )
-              .get(s.id) as any;
+              .get(s.id)) as any;
             return d
               ? {
                   ...JSON.parse(d.snapshot),
@@ -321,40 +322,40 @@ function view(uid: string, select = true) {
                   exposed: !!d.exposed_at,
                 }
               : null;
-          })()
+          })())
       : null,
   };
 }
-function fact(
+async function fact(
   uid: string,
   field: string,
   value: string,
   source: string,
   sourceUrl = "",
 ) {
-  db()
+  (await db()
     .prepare("INSERT INTO adaptive_facts VALUES(?,?,?,?,?,?,?,?)")
-    .run(id(), uid, field, value, source, sourceUrl, timestamp(), POLICY);
+    .run(id(), uid, field, value, source, sourceUrl, timestamp(), POLICY));
 }
-export function adaptiveRead(u: User, action: string) {
-  init();
-  if (action === "me") return view(u.id, false);
+export async function adaptiveRead(u: User, action: string) {
+  (await init());
+  if (action === "me") return (await view(u.id, false));
   if (action === "profiles") {
-    officer(u);
+    (await officer(u));
     return {
-      profiles: (
-        db()
+      profiles: (await asyncMap((
+        (await db()
           .prepare(
             "SELECT u.id,u.name FROM users u JOIN adaptive_preferences p ON p.user_id=u.id WHERE p.shared=1",
           )
-          .all() as any[]
-      ).map((person) => ({ ...person, ...summary(person.id) })),
+          .all()) as any[]
+      ), async (person) => ({ ...person, ...(await summary(person.id)) }))),
     };
   }
   fail("Not found.", 404);
 }
-export function adaptive(u: User, action: string, b: any) {
-  init();
+export async function adaptive(u: User, action: string, b: any) {
+  (await init());
   if (action === "preview") {
     if (typeof b.text !== "string" || b.text.length > 4000)
       fail("Use up to 4,000 characters.");
@@ -382,15 +383,15 @@ export function adaptive(u: User, action: string, b: any) {
         "Suggestions from your supplied text. Correct and confirm them before use. No LinkedIn page was fetched.",
     };
   }
-  return tx(() => {
+  return (await tx(async () => {
     if (action === "start") {
       if (!PURPOSES.includes(b.purpose)) fail("Choose a check-in purpose.");
       if (b.confirmed !== true)
         fail("Confirm the context or choose to start without it.");
-      const old = db()
+      const old = (await db()
         .prepare("SELECT * FROM adaptive_sessions WHERE user_id=? AND week=?")
-        .get(u.id, weekKey()) as any;
-      if (old) return view(u.id);
+        .get(u.id, weekKey())) as any;
+      if (old) return (await view(u.id));
       const link = b.source_url ? url(b.source_url) : "";
       if (b.stage && !STAGES.includes(b.stage))
         fail("Choose a valid project stage.");
@@ -401,78 +402,78 @@ export function adaptive(u: User, action: string, b: any) {
       )
         fail("Choose valid topics.");
       if (b.stage)
-        fact(
+        (await fact(
           u.id,
           "stage",
           b.stage,
           b.from_text === true ? "participant_confirmed_text" : "self_report",
           link,
-        );
+        ));
       if (b.topics?.length)
-        fact(
+        (await fact(
           u.id,
           "topics",
           [...new Set(b.topics)].join(", "),
           b.from_text === true ? "participant_confirmed_text" : "self_report",
           link,
-        );
+        ));
       const sid = id();
-      db()
+      (await db()
         .prepare(
           "INSERT INTO adaptive_sessions(id,user_id,week,purpose,policy,created_at) VALUES(?,?,?,?,?,?)",
         )
-        .run(sid, u.id, weekKey(), b.purpose, POLICY, timestamp());
-      return view(u.id);
+        .run(sid, u.id, weekKey(), b.purpose, POLICY, timestamp()));
+      return (await view(u.id));
     }
     if (action === "sharing") {
       if (typeof b.shared !== "boolean") fail("Choose a sharing preference.");
-      db()
+      (await db()
         .prepare(
           "INSERT INTO adaptive_preferences VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET shared=excluded.shared",
         )
-        .run(u.id, b.shared ? 1 : 0);
-      return view(u.id);
+        .run(u.id, b.shared ? 1 : 0));
+      return (await view(u.id));
     }
     if (action === "forget") {
       if (![...FIELDS, "topics"].includes(b.field)) fail("Unknown field.");
       // Forget all source evidence and dependent decision snapshots for this field and user.
-      db()
+      (await db()
         .prepare("DELETE FROM adaptive_facts WHERE user_id=? AND field=?")
-        .run(u.id, b.field);
-      db()
+        .run(u.id, b.field));
+      (await db()
         .prepare(
           "DELETE FROM adaptive_decisions WHERE session_id IN (SELECT id FROM adaptive_sessions WHERE user_id=?)",
         )
-        .run(u.id);
-      db().prepare("DELETE FROM adaptive_sessions WHERE user_id=?").run(u.id);
-      return view(u.id, false);
+        .run(u.id));
+      (await db().prepare("DELETE FROM adaptive_sessions WHERE user_id=?").run(u.id));
+      return (await view(u.id, false));
     }
     if (action === "clear") {
-      db()
+      (await db()
         .prepare(
           "DELETE FROM adaptive_decisions WHERE session_id IN (SELECT id FROM adaptive_sessions WHERE user_id=?)",
         )
-        .run(u.id);
-      db().prepare("DELETE FROM adaptive_sessions WHERE user_id=?").run(u.id);
-      db().prepare("DELETE FROM adaptive_facts WHERE user_id=?").run(u.id);
-      db()
+        .run(u.id));
+      (await db().prepare("DELETE FROM adaptive_sessions WHERE user_id=?").run(u.id));
+      (await db().prepare("DELETE FROM adaptive_facts WHERE user_id=?").run(u.id));
+      (await db()
         .prepare("DELETE FROM adaptive_preferences WHERE user_id=?")
-        .run(u.id);
-      return view(u.id);
+        .run(u.id));
+      return (await view(u.id));
     }
-    const s = sessionOwned(u.id, String(b.session_id || ""));
+    const s = (await sessionOwned(u.id, String(b.session_id || "")));
     if (s.week !== weekKey()) fail("Start this week’s check-in.", 409);
-    const d = db()
+    const d = (await db()
       .prepare("SELECT * FROM adaptive_decisions WHERE id=? AND session_id=?")
-      .get(String(b.decision_id || ""), s.id) as any;
+      .get(String(b.decision_id || ""), s.id)) as any;
     if (!d) fail("Question not found.", 404);
     if (action === "exposure") {
       if (d.status !== "selected") return { ok: true };
-      db()
+      (await db()
         .prepare(
           "UPDATE adaptive_decisions SET exposed_at=COALESCE(exposed_at,?) WHERE id=?",
         )
-        .run(timestamp(), d.id);
+        .run(timestamp(), d.id));
       return { ok: true };
     }
     if (!["answer", "skip"].includes(action))
@@ -485,7 +486,7 @@ export function adaptive(u: User, action: string, b: any) {
           d.answer === b.value) ||
         (action === "skip" && d.status === "skipped")
       )
-        return view(u.id);
+        return (await view(u.id));
       fail("This question already has a response.", 409);
     }
     const q = JSON.parse(d.snapshot);
@@ -494,7 +495,7 @@ export function adaptive(u: User, action: string, b: any) {
       !q.options.some((o: Option) => o.value === b.value)
     )
       fail("Choose one of the offered answers.");
-    db()
+    (await db()
       .prepare(
         "UPDATE adaptive_decisions SET status=?,answer=?,answered_at=? WHERE id=?",
       )
@@ -503,8 +504,8 @@ export function adaptive(u: User, action: string, b: any) {
         action === "answer" ? b.value : null,
         timestamp(),
         d.id,
-      );
-    if (action === "answer") fact(u.id, q.field, b.value, "self_report");
-    return view(u.id);
-  });
+      ));
+    if (action === "answer") (await fact(u.id, q.field, b.value, "self_report"));
+    return (await view(u.id));
+  }));
 }

@@ -1,6 +1,8 @@
+import { db } from "./db";
 import { spawn } from "node:child_process";
 import { resolve, dirname } from "node:path";
 export function quant(input: unknown): Promise<any> {
+  if (process.env.CEC_STORAGE === "postgres" && !process.env.CEC_QUANT_DATABASE) return Promise.reject(Object.assign(new Error("Analytics worker is not configured on this host."), {status:503}));
   return new Promise((yes, no) => {
     const script =
       process.env.CEC_QUANT_SCRIPT ||
@@ -8,7 +10,7 @@ export function quant(input: unknown): Promise<any> {
     const child = spawn(process.env.PYTHON_BINARY || "python3", [script], {
       env: {
         ...process.env,
-        CEC_QUANT_DATABASE: resolve(
+        CEC_QUANT_DATABASE: process.env.CEC_QUANT_DATABASE || resolve(
           dirname(
             process.env.CEC_DATABASE ||
               resolve(process.cwd(), ".data/cec.sqlite"),
@@ -48,6 +50,10 @@ export function quant(input: unknown): Promise<any> {
 }
 let flushing: Promise<void> | null = null;
 export async function flush(force = false) {
+  if (process.env.CEC_STORAGE === "postgres") {
+    if (force) await db().prepare("DELETE FROM pipeline_retry WHERE id IN (SELECT id FROM outbox WHERE delivered=0)").run();
+    return; // The worker drains committed outbox rows; an API request must not wait on its own transaction.
+  }
   if (flushing) return flushing;
   flushing = new Promise<void>((yes, no) => {
     const child = spawn(process.env.PYTHON_BINARY || "python3", [

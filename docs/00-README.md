@@ -110,3 +110,5 @@ documented functionality and [MVP system scope](24-mvp-system.md) for proposed l
   selected email, documents and channel announcement scopes and acceptance gates.
 - [Officer workspace workflows](32-officer-workflows.md): implemented CSV imports,
   meeting follow-ups, overview, handoff packets and calendar subscriptions.
+
+- [Supabase runtime, migration and deployment](33-postgres-migration.md)

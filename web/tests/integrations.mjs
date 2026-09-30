@@ -1,3 +1,4 @@
+import { asyncMap } from "../lib/cec/async";
 // The integration framework, against a real database.
 // Run: node --experimental-strip-types --import ./tests/ts-resolve-register.mjs tests/integrations.mjs
 //
@@ -77,13 +78,13 @@ delete process.env[KEY_ENV];
 
 const KEY_A = randomBytes(32).toString("hex");
 const KEY_B = randomBytes(32).toString("hex");
-const officerUser = (() => {
+const officerUser = (await (async () => {
   const id = randomUUID();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO users(id,name,email,password,role,interests,shared) VALUES (?,?,?,?,?,'',0)",
     )
-    .run(id, "Maya, President", `${id}@example.test`, "x:unusable", "officer");
+    .run(id, "Maya, President", `${id}@example.test`, "x:unusable", "officer"));
   return {
     id,
     name: "Maya, President",
@@ -92,7 +93,7 @@ const officerUser = (() => {
     interests: "",
     shared: 0,
   };
-})();
+})());
 const applicant = { ...officerUser, id: randomUUID(), role: "applicant" };
 
 const jsonResponse = (status, body) => ({
@@ -117,7 +118,7 @@ const googleConfigured = () => {
 };
 const REDIRECT = "https://clubos.test/api/cec/integrations/google/callback";
 
-integrationsInit();
+(await integrationsInit());
 
 // --- 1. the registry is honest about what it asks for -----------------------
 
@@ -197,7 +198,7 @@ for (const i of INTEGRATIONS)
 
 // --- 2. nothing is connected before anyone does anything --------------------
 
-let all = integrationStatus();
+let all = (await integrationStatus());
 eq(all.length, INTEGRATIONS.length, "status covers every integration");
 ok(
   all.every((s) => s.connected === false),
@@ -220,19 +221,19 @@ ok(
   "every status says when it was computed",
 );
 eq(
-  integrationSummary().connected,
+  (await integrationSummary()).connected,
   0,
   "the headline count agrees: nothing is connected",
 );
 ok(
-  /No integrations are connected/.test(integrationSummary().statement),
+  /No integrations are connected/.test((await integrationSummary()).statement),
   "the headline says so in words",
 );
 
 // A partially configured integration is still not configured, and above all is
 // still not connected.
 process.env.CEC_GOOGLE_CLIENT_ID = "test-client-id.apps.googleusercontent.com";
-let cal = statusOf("google_calendar");
+let cal = (await statusOf("google_calendar"));
 eq(cal.state, "not_configured", "one of three variables is not configured");
 ok(!cal.connected, "a half-configured integration is never connected");
 ok(
@@ -246,7 +247,7 @@ ok(
 );
 delete process.env.CEC_GOOGLE_CLIENT_ID;
 eq(
-  statusOf("google_calendar").state,
+  (await statusOf("google_calendar")).state,
   "not_configured",
   "removing the variable again reports not_configured",
 );
@@ -255,14 +256,14 @@ eq(
 
 googleConfigured();
 process.env[KEY_ENV] = KEY_A;
-cal = statusOf("google_calendar");
+cal = (await statusOf("google_calendar"));
 eq(cal.state, "configured_not_connected", "credentials present, consent not given");
 ok(!cal.connected, "configured is not connected");
 ok(
   /not connected/i.test(cal.summary),
   "the sentence an officer reads says not connected",
 );
-eq(tokenRow("google_calendar"), null, "no token exists yet");
+eq((await tokenRow("google_calendar")), null, "no token exists yet");
 
 // --- 4. PKCE round-trips and the challenge is really S256 -------------------
 
@@ -279,7 +280,7 @@ ok(createVerifier() !== createVerifier(), "verifiers are random per flow");
 
 // --- 5. the authorization URL is built from the registry --------------------
 
-const begun = beginAuthorization(officerUser, "google_calendar", REDIRECT);
+const begun = (await beginAuthorization(officerUser, "google_calendar", REDIRECT));
 const authUrl = new URL(begun.url);
 eq(authUrl.origin + authUrl.pathname, "https://accounts.google.com/o/oauth2/v2/auth", "authorize endpoint comes from the registry");
 eq(authUrl.searchParams.get("code_challenge_method"), "S256", "PKCE method is S256");
@@ -300,7 +301,7 @@ ok(
   "a real challenge travels in the URL",
 );
 const inFlight = decrypt(
-  db().prepare("SELECT verifier FROM integration_oauth_states").get().verifier,
+  (await db().prepare("SELECT verifier FROM integration_oauth_states").get()).verifier,
 );
 ok(
   inFlight && !begun.url.includes(inFlight),
@@ -311,54 +312,54 @@ eq(
   authUrl.searchParams.get("code_challenge"),
   "the URL carries the S256 challenge of the stored verifier",
 );
-assert.throws(
-  () => beginAuthorization(applicant, "google_calendar", REDIRECT),
+(await assert.rejects(
+  async () => (await beginAuthorization(applicant, "google_calendar", REDIRECT)),
   /Officer access required/,
   "a club integration is an officer action",
-);
+));
 checks++;
-assert.throws(
-  () => beginAuthorization(officerUser, "stripe", REDIRECT),
+(await assert.rejects(
+  async () => (await beginAuthorization(officerUser, "stripe", REDIRECT)),
   /does not use OAuth/,
   "a key-based integration has no OAuth flow to start",
-);
+));
 checks++;
 
 // --- 6. state is single-use and rejects replay ------------------------------
 
-const pending = consumeState(begun.state);
+const pending = (await consumeState(begun.state));
 eq(pending.integrationId, "google_calendar", "the state remembers its integration");
 eq(pending.redirectUri, REDIRECT, "the state remembers its redirect URI");
 ok(verifyChallenge(pending.verifier, authUrl.searchParams.get("code_challenge")), "the stored verifier matches the challenge that was sent");
-assert.throws(
-  () => consumeState(begun.state),
+(await assert.rejects(
+  async () => (await consumeState(begun.state)),
   /already been used/,
   "replaying a consumed state is refused",
-);
+));
 checks++;
-assert.throws(
-  () => consumeState("never-issued-state"),
+(await assert.rejects(
+  async () => (await consumeState("never-issued-state")),
   /already been used|not started here/,
   "an invented state is refused",
-);
+));
 checks++;
 // An expired state is refused even though the row is present.
-const stale = beginAuthorization(officerUser, "google_calendar", REDIRECT);
-db()
+const stale = (await beginAuthorization(officerUser, "google_calendar", REDIRECT));
+(await db()
   .prepare("UPDATE integration_oauth_states SET expires_at=? WHERE expires_at>?")
-  .run(Date.now() - 1000, 0);
-assert.throws(
-  () => consumeState(stale.state),
+  .run(Date.now() - 1000, 0));
+(await assert.rejects(
+  async () => (await consumeState(stale.state)),
   /expired/,
   "an expired state cannot be completed",
-);
+));
 checks++;
 
 // The verifier is not sitting in the database in the clear once a key exists.
-const freshFlow = beginAuthorization(officerUser, "google_calendar", REDIRECT);
-const storedVerifier = db()
+const freshFlow = (await beginAuthorization(officerUser, "google_calendar", REDIRECT));
+const storedVerifier = (await db()
   .prepare("SELECT verifier FROM integration_oauth_states LIMIT 1")
-  .get().verifier;
+  .get()).verifier;
 ok(storedVerifier.startsWith("gcm:"), "the in-flight verifier is encrypted at rest");
 
 // --- 7. a full exchange stores a token and returns none ---------------------
@@ -394,18 +395,18 @@ const sentBody = google.calls[0].init.body;
 ok(sentBody.includes("code_verifier="), "PKCE verifier is sent on exchange");
 ok(sentBody.includes("grant_type=authorization_code"), "correct grant type");
 eq(google.calls[0].url, "https://oauth2.googleapis.com/token", "token endpoint from the registry");
-eq(statusOf("google_calendar").state, "connected", "now it really is connected");
-ok(statusOf("google_calendar").connected, "and says so");
-eq(accessTokenFor("google_calendar"), ACCESS, "the token is retrievable for a provider call");
+eq((await statusOf("google_calendar")).state, "connected", "now it really is connected");
+ok((await statusOf("google_calendar")).connected, "and says so");
+eq((await accessTokenFor("google_calendar")), ACCESS, "the token is retrievable for a provider call");
 
 // --- 8. the token is nowhere it should not be -------------------------------
 
 const everything = JSON.stringify({
-  status: integrationStatus(),
-  summary: integrationSummary(),
-  setup: INTEGRATIONS.map((i) => setupInstructions(i.id)),
-  connection: connectionSummary("google_calendar"),
-  router: integrations(officerUser, "status", {}),
+  status: (await integrationStatus()),
+  summary: (await integrationSummary()),
+  setup: (await asyncMap(INTEGRATIONS, async (i) => (await setupInstructions(i.id)))),
+  connection: (await connectionSummary("google_calendar")),
+  router: (await integrations(officerUser, "status", {})),
 });
 ok(!everything.includes(ACCESS), "no status payload contains the access token");
 ok(!everything.includes(REFRESH), "no status payload contains the refresh token");
@@ -419,20 +420,20 @@ ok(
   "no status payload leaks even the ciphertext column",
 );
 ok(
-  integrationStatus().every((s) => !("token" in s) && !("accessToken" in s)),
+  (await integrationStatus()).every((s) => !("token" in s) && !("accessToken" in s)),
   "the status type has no token-shaped field at all",
 );
 // The audit trail records that a connection happened, never what with.
-const auditRows = db().prepare("SELECT details FROM audit").all();
+const auditRows = (await db().prepare("SELECT details FROM audit").all());
 ok(auditRows.length > 0, "connections are audited");
 ok(
   auditRows.every((r) => !r.details.includes(ACCESS) && !r.details.includes(REFRESH)),
   "no audit row contains a token",
 );
 // And it is genuinely encrypted on disk, not merely absent from the API.
-const raw = db()
+const raw = (await db()
   .prepare("SELECT access_enc,refresh_enc FROM integration_tokens WHERE integration_id=?")
-  .get("google_calendar");
+  .get("google_calendar"));
 ok(!raw.access_enc.includes(ACCESS), "the access token is ciphertext on disk");
 ok(!raw.refresh_enc.includes(REFRESH), "the refresh token is ciphertext on disk");
 ok(raw.access_enc.startsWith("gcm:"), "AES-256-GCM, with its IV and tag");
@@ -457,9 +458,9 @@ const leaky = provider(() =>
     error_description: `rejected access_token=${ACCESS} for client_secret ${process.env.CEC_GOOGLE_CLIENT_SECRET}`,
   }),
 );
-const leakyFlow = beginAuthorization(officerUser, "google_calendar", REDIRECT);
+const leakyFlow = (await beginAuthorization(officerUser, "google_calendar", REDIRECT));
 await assert.rejects(
-  () => exchangeCode(officerUser, { state: leakyFlow.state, code: "bad" }, leaky),
+  async () => (await exchangeCode(officerUser, { state: leakyFlow.state, code: "bad" }, leaky)),
   (e) => {
     ok(!e.message.includes(ACCESS), "a provider error does not echo a token");
     ok(
@@ -484,7 +485,7 @@ ok(
   "scrubSecrets leaves an innocent message alone",
 );
 // A failed exchange must not have left the flow usable.
-assert.throws(() => consumeState(leakyFlow.state), /already been used/, "a failed exchange still burns its state");
+(await assert.rejects(async () => (await consumeState(leakyFlow.state)), /already been used/, "a failed exchange still burns its state"));
 checks++;
 
 // --- 10. expiry and key rotation both read as not connected -----------------
@@ -492,37 +493,37 @@ checks++;
 const expiring = provider(() =>
   jsonResponse(200, { access_token: "expired-token-value", expires_in: -60 }),
 );
-const expiringFlow = beginAuthorization(officerUser, "google_calendar", REDIRECT);
+const expiringFlow = (await beginAuthorization(officerUser, "google_calendar", REDIRECT));
 await exchangeCode(officerUser, { state: expiringFlow.state, code: "c" }, expiring);
-const expiredStatus = statusOf("google_calendar");
+const expiredStatus = (await statusOf("google_calendar"));
 eq(expiredStatus.state, "expired", "an elapsed token reports expired");
 ok(!expiredStatus.connected, "expired is not connected");
-eq(accessTokenFor("google_calendar"), null, "an expired token is not handed out");
+eq((await accessTokenFor("google_calendar")), null, "an expired token is not handed out");
 
 const renewer = provider(() =>
   jsonResponse(200, { access_token: "renewed-token-value", expires_in: 3600 }),
 );
-storeToken(officerUser, "google_calendar", {
+(await storeToken(officerUser, "google_calendar", {
   accessToken: "old",
   refreshToken: "refresh-me",
   expiresInSeconds: -1,
-});
+}));
 await refreshConnection(officerUser, "google_calendar", renewer);
-eq(statusOf("google_calendar").state, "connected", "a refresh restores the connection");
-eq(accessTokenFor("google_calendar"), "renewed-token-value", "with the new token");
+eq((await statusOf("google_calendar")).state, "connected", "a refresh restores the connection");
+eq((await accessTokenFor("google_calendar")), "renewed-token-value", "with the new token");
 ok(
-  connectionSummary("google_calendar").renewable,
+  (await connectionSummary("google_calendar")).renewable,
   "the refresh token is kept when the provider does not send a new one",
 );
 
 process.env[KEY_ENV] = KEY_B;
-const rotated = statusOf("google_calendar");
+const rotated = (await statusOf("google_calendar"));
 eq(rotated.state, "unreadable", "a rotated key makes the row unreadable");
 ok(!rotated.connected, "unreadable is never connected");
 ok(/decrypt/.test(rotated.summary), "and the summary says why");
-eq(accessTokenFor("google_calendar"), null, "no token comes out under the wrong key");
+eq((await accessTokenFor("google_calendar")), null, "no token comes out under the wrong key");
 process.env[KEY_ENV] = KEY_A;
-eq(statusOf("google_calendar").state, "connected", "restoring the key restores the truth");
+eq((await statusOf("google_calendar")).state, "connected", "restoring the key restores the truth");
 
 // --- 11. revocation actually clears the token -------------------------------
 
@@ -530,27 +531,27 @@ const revoker = provider(() => ({ ok: true, status: 200, text: async () => "{}" 
 const revoked = await revokeConnection(officerUser, "google_calendar", revoker);
 eq(revoked.cleared, true, "revocation reports that it cleared the row");
 eq(revoked.providerNotified, true, "and that the provider was told");
-eq(tokenRow("google_calendar"), null, "the token row is gone");
-eq(accessTokenFor("google_calendar"), null, "no token can be retrieved after revocation");
-eq(connectionSummary("google_calendar"), null, "no connection summary survives");
+eq((await tokenRow("google_calendar")), null, "the token row is gone");
+eq((await accessTokenFor("google_calendar")), null, "no token can be retrieved after revocation");
+eq((await connectionSummary("google_calendar")), null, "no connection summary survives");
 eq(
-  statusOf("google_calendar").state,
+  (await statusOf("google_calendar")).state,
   "configured_not_connected",
   "and the status drops straight back to not connected",
 );
 ok(
-  !JSON.stringify(integrationStatus()).includes("renewed-token-value"),
+  !JSON.stringify((await integrationStatus())).includes("renewed-token-value"),
   "the revoked token is not lingering in any payload",
 );
 // Revocation is local-first: a provider that refuses still leaves us clean.
-storeToken(officerUser, "google_calendar", { accessToken: "second-token", expiresInSeconds: 3600 });
+(await storeToken(officerUser, "google_calendar", { accessToken: "second-token", expiresInSeconds: 3600 }));
 const refuser = provider(() => {
   throw new Error("provider unreachable");
 });
 const refused = await revokeConnection(officerUser, "google_calendar", refuser);
 eq(refused.cleared, true, "the local row goes even when the provider call fails");
 eq(refused.providerNotified, false, "and we say the provider was not told");
-eq(tokenRow("google_calendar"), null, "nothing is left behind");
+eq((await tokenRow("google_calendar")), null, "nothing is left behind");
 
 // --- 12. identity providers are never stored --------------------------------
 
@@ -558,7 +559,7 @@ let identitySeen = "";
 const idp = provider(() =>
   jsonResponse(200, { access_token: "identity-token-xyz", expires_in: 3600, scope: "openid" }),
 );
-const idFlow = beginAuthorization(officerUser, "google", REDIRECT);
+const idFlow = (await beginAuthorization(officerUser, "google", REDIRECT));
 const idResult = await exchangeCode(
   officerUser,
   {
@@ -572,16 +573,16 @@ const idResult = await exchangeCode(
 );
 eq(identitySeen, "identity-token-xyz", "the sign-in handler sees the token once");
 eq(idResult.stored, false, "and nothing is stored");
-eq(tokenRow("google"), null, "an identity provider leaves no row");
+eq((await tokenRow("google")), null, "an identity provider leaves no row");
 ok(!persistsToken(findIntegration("google")), "the registry says identity does not persist");
-assert.throws(
-  () => storeToken(officerUser, "google", { accessToken: "x" }),
+(await assert.rejects(
+  async () => (await storeToken(officerUser, "google", { accessToken: "x" })),
   /read once at sign-in and never stored/,
   "storing an identity token is refused outright",
-);
+));
 checks++;
 ok(
-  !JSON.stringify(integrationStatus()).includes("identity-token-xyz"),
+  !JSON.stringify((await integrationStatus())).includes("identity-token-xyz"),
   "the identity token is in no payload",
 );
 
@@ -589,19 +590,19 @@ ok(
 
 delete process.env[KEY_ENV];
 ok(!encryptionAvailable(), "the key is gone");
-assert.throws(
-  () => storeToken(officerUser, "google_calendar", { accessToken: "x" }),
+(await assert.rejects(
+  async () => (await storeToken(officerUser, "google_calendar", { accessToken: "x" })),
   /Refusing to store a token/,
   "a token is never written in the clear",
-);
+));
 checks++;
-assert.throws(
-  () => beginAuthorization(officerUser, "google_calendar", REDIRECT),
+(await assert.rejects(
+  async () => (await beginAuthorization(officerUser, "google_calendar", REDIRECT)),
   new RegExp(KEY_ENV),
   "and the flow refuses to start before the consent screen, not after",
-);
+));
 checks++;
-const keyless = statusOf("google_calendar");
+const keyless = (await statusOf("google_calendar"));
 ok(!keyless.connected, "no key, not connected");
 ok(
   keyless.blockers.some((b) => b.includes(KEY_ENV)),
@@ -614,7 +615,7 @@ process.env[KEY_ENV] = KEY_A;
 const STRIPE_KEY = "rk_test_FAKE_RESTRICTED_KEY_0099";
 process.env.CEC_STRIPE_SECRET_KEY = STRIPE_KEY;
 process.env.CEC_STRIPE_WEBHOOK_SECRET = "whsec_FAKE_0099";
-let stripe = statusOf("stripe");
+let stripe = (await statusOf("stripe"));
 eq(stripe.state, "configured_not_connected", "an unverified key is only configured");
 ok(!stripe.connected, "typing a key into a file does not connect anything");
 ok(/not proof/.test(stripe.summary), "and the summary explains why");
@@ -624,18 +625,18 @@ ok(
 );
 ok(stripe.presentEnv.includes("CEC_STRIPE_SECRET_KEY"), "it names the variable");
 
-recordCheck(officerUser, "stripe", true, "created a test checkout session");
-stripe = statusOf("stripe");
+(await recordCheck(officerUser, "stripe", true, "created a test checkout session"));
+stripe = (await statusOf("stripe"));
 eq(stripe.state, "connected", "a successful provider call is what connects it");
 ok(stripe.lastVerifiedAt, "and the status says when that was");
 
-recordCheck(officerUser, "stripe", false, "401 invalid_api_key");
-stripe = statusOf("stripe");
+(await recordCheck(officerUser, "stripe", false, "401 invalid_api_key"));
+stripe = (await statusOf("stripe"));
 ok(!stripe.connected, "a failed check disconnects it again");
 eq(stripe.state, "configured_not_connected", "back to configured only");
 
 // A success that is a week old is not a claim about now.
-db()
+(await db()
   .prepare("UPDATE settings SET value=? WHERE key=?")
   .run(
     JSON.stringify({
@@ -644,14 +645,14 @@ db()
       detail: "old",
     }),
     "integration.check:stripe",
-  );
-stripe = statusOf("stripe");
+  ));
+stripe = (await statusOf("stripe"));
 ok(!stripe.connected, "a stale success does not report connected");
 ok(/more than a day ago/.test(stripe.summary), "and says exactly how stale it is");
 
 // --- 15. setup instructions are a real checklist ----------------------------
 
-const instructions = setupInstructions("stripe");
+const instructions = (await setupInstructions("stripe"));
 ok(instructions.steps.length >= 3, "stripe has real human steps");
 ok(
   instructions.steps.every((s) => s.what && s.where),
@@ -677,24 +678,24 @@ ok(
   instructions.forbiddenScopes.length > 0,
   "and they publish what we refuse to ask for",
 );
-const canvasSetup = setupInstructions("canvas");
+const canvasSetup = (await setupInstructions("canvas"));
 ok(
   canvasSetup.steps.some((s) => s.by === "university"),
   "canvas names the steps only the university can take",
 );
-const ssoSetup = setupInstructions("cornell_sso");
+const ssoSetup = (await setupInstructions("cornell_sso"));
 ok(
   ssoSetup.blockers.some((b) => /agreement|review|sponsor/i.test(b)),
   "cornell SSO names the agreement nobody can write in code",
 );
-assert.throws(() => setupInstructions("nope"), /Unknown integration/, "unknown ids are refused");
+(await assert.rejects(async () => (await setupInstructions("nope")), /Unknown integration/, "unknown ids are refused"));
 checks++;
-assert.throws(() => statusOf("nope"), /Unknown integration/, "and so are unknown statuses");
+(await assert.rejects(async () => (await statusOf("nope")), /Unknown integration/, "and so are unknown statuses"));
 checks++;
 
 // --- 16. the final sweep ----------------------------------------------------
 
-all = integrationStatus();
+all = (await integrationStatus());
 ok(
   all.every((s) => s.connected === (s.state === "connected")),
   "after every scenario, connected still means exactly one thing",
@@ -707,11 +708,11 @@ ok(
   !JSON.stringify(all).includes(ACCESS) && !JSON.stringify(all).includes(REFRESH),
   "no token survives anywhere in the final payload",
 );
-assert.throws(
-  () => integrations(applicant, "status", {}),
+(await assert.rejects(
+  async () => (await integrations(applicant, "status", {})),
   /Officer access required/,
   "the status router is officer-only",
-);
+));
 checks++;
 
 console.log(`integrations: ${checks} checks passed`);

@@ -122,9 +122,9 @@ export function snapshot(
 
 let ready = false;
 
-export function campaignsInit() {
+export async function campaignsInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS sponsors(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -234,13 +234,13 @@ CREATE TABLE IF NOT EXISTS campaign_experiments(
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS campaign_experiment_campaign ON campaign_experiments(campaign_id);
-`);
+`));
   // Additive migration for databases created before evidence_level existed.
-  const cols = db().prepare("PRAGMA table_info(campaign_outcomes)").all() as { name: string }[];
+  const cols = (await db().prepare("PRAGMA table_info(campaign_outcomes)").all()) as { name: string }[];
   if (!cols.some((c) => c.name === "evidence_level"))
-    db().exec(
+    (await db().exec(
       "ALTER TABLE campaign_outcomes ADD COLUMN evidence_level TEXT NOT NULL DEFAULT 'counterparty_confirmed'",
-    );
+    ));
   ready = true;
 }
 
@@ -256,11 +256,11 @@ const parse = <T>(raw: unknown, fallback: T): T => {
   }
 };
 
-export function registerSponsor(u: User, p: SponsorProfile): SponsorProfile {
-  officer(u);
-  campaignsInit();
+export async function registerSponsor(u: User, p: SponsorProfile): Promise<SponsorProfile> {
+  (await officer(u));
+  (await campaignsInit());
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO sponsors(id,name,category,geographies,budget,minimum_audience,activation_types,windows,brand_safety,wants_member_data,history,created_at,updated_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -285,14 +285,14 @@ export function registerSponsor(u: User, p: SponsorProfile): SponsorProfile {
       JSON.stringify(p.history ?? {}),
       now,
       now,
-    );
-  audit(u, "campaign.sponsor.register", p.id, { category: p.category });
+    ));
+  (await audit(u, "campaign.sponsor.register", p.id, { category: p.category }));
   return p;
 }
 
-export function sponsorProfile(sponsorId: string): SponsorProfile | null {
-  campaignsInit();
-  const r = db().prepare("SELECT * FROM sponsors WHERE id=?").get(sponsorId) as
+export async function sponsorProfile(sponsorId: string): Promise<SponsorProfile | null> {
+  (await campaignsInit());
+  const r = (await db().prepare("SELECT * FROM sponsors WHERE id=?").get(sponsorId)) as
     | Record<string, unknown>
     | undefined;
   if (!r) return null;
@@ -331,7 +331,7 @@ export type Campaign = {
   createdAt: string;
 };
 
-export function createCampaign(
+export async function createCampaign(
   u: User,
   input: {
     sponsorId: string;
@@ -341,10 +341,10 @@ export function createCampaign(
     startsAt: string;
     endsAt: string;
   },
-): Campaign {
-  officer(u);
-  campaignsInit();
-  if (!sponsorProfile(input.sponsorId)) fail("Unknown sponsor.", 404);
+): Promise<Campaign> {
+  (await officer(u));
+  (await campaignsInit());
+  if (!(await sponsorProfile(input.sponsorId))) fail("Unknown sponsor.", 404);
   if (input.startsAt > input.endsAt) fail("A campaign cannot end before it starts.", 422);
   const c: Campaign = {
     id: id(),
@@ -357,7 +357,7 @@ export function createCampaign(
     status: "draft",
     createdAt: timestamp(),
   };
-  db()
+  (await db()
     .prepare(
       "INSERT INTO campaigns(id,sponsor_id,name,objective,budget,starts_at,ends_at,status,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
     )
@@ -371,14 +371,14 @@ export function createCampaign(
       c.endsAt,
       c.status,
       c.createdAt,
-    );
-  audit(u, "campaign.create", c.id, { sponsor: c.sponsorId });
+    ));
+  (await audit(u, "campaign.create", c.id, { sponsor: c.sponsorId }));
   return c;
 }
 
-export function campaign(campaignId: string): Campaign | null {
-  campaignsInit();
-  const r = db().prepare("SELECT * FROM campaigns WHERE id=?").get(campaignId) as
+export async function campaign(campaignId: string): Promise<Campaign | null> {
+  (await campaignsInit());
+  const r = (await db().prepare("SELECT * FROM campaigns WHERE id=?").get(campaignId)) as
     | Record<string, unknown>
     | undefined;
   if (!r) return null;
@@ -425,14 +425,14 @@ export type CandidateRecord = {
  * is the exact artefact this system exists to avoid producing, and letting one
  * in "temporarily" is how it becomes permanent.
  */
-export function recordCandidate(c: CandidateRecord): string {
-  campaignsInit();
+export async function recordCandidate(c: CandidateRecord): Promise<string> {
+  (await campaignsInit());
   const hasExplanation =
     c.explanation && typeof c.explanation === "object" && Object.keys(c.explanation).length > 0;
   if (!hasExplanation)
     fail("A ranked candidate must carry an explanation. An unexplained ranking is not recorded.", 422);
   const rowId = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO campaign_candidates(id,campaign_id,club_id,inventory_id,activation_type,rank,score,sponsor_value,club_value,member_relevance,operational_burden,sponsor_fatigue,risk,explanation,eligibility,context_snapshot_id,factors,as_of,created_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -457,21 +457,21 @@ export function recordCandidate(c: CandidateRecord): string {
       JSON.stringify(c.snapshot.factors),
       c.asOf,
       timestamp(),
-    );
+    ));
   return rowId;
 }
 
-export function recordPrediction(input: {
+export async function recordPrediction(input: {
   campaignId: string;
   candidateId?: string | null;
   clubId: string;
   outcome: PredictedOutcome;
   prediction: Prediction<number | null>;
-}): string {
-  campaignsInit();
+}): Promise<string> {
+  (await campaignsInit());
   const p = input.prediction;
   const rowId = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO campaign_predictions(id,campaign_id,candidate_id,club_id,outcome,value,lo,hi,interval_mass,sample_size,model_name,model_version,feature_version,status,drivers,assumptions,limitations,reading,as_of,computed_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -497,22 +497,22 @@ export function recordPrediction(input: {
       p.reading ?? "",
       p.asOf,
       timestamp(),
-    );
+    ));
   return rowId;
 }
 
-export function predictionsFor(campaignId: string, clubId?: string) {
-  campaignsInit();
+export async function predictionsFor(campaignId: string, clubId?: string) {
+  (await campaignsInit());
   const rows = (
     clubId
-      ? db()
+      ? (await db()
           .prepare(
             "SELECT * FROM campaign_predictions WHERE campaign_id=? AND club_id=? ORDER BY outcome",
           )
-          .all(campaignId, clubId)
-      : db()
+          .all(campaignId, clubId))
+      : (await db()
           .prepare("SELECT * FROM campaign_predictions WHERE campaign_id=? ORDER BY club_id,outcome")
-          .all(campaignId)
+          .all(campaignId))
   ) as Record<string, unknown>[];
   return rows.map((r) => ({
     outcome: String(r.outcome) as PredictedOutcome,
@@ -554,15 +554,15 @@ export type StageRecord = {
  * passes an empty snapshot with a note saying so, which is an honest record of
  * ignorance rather than a hidden one.
  */
-export function recordStage(s: StageRecord): string {
-  campaignsInit();
+export async function recordStage(s: StageRecord): Promise<string> {
+  (await campaignsInit());
   if (!FUNNEL_STAGES.includes(s.stage)) fail(`Unknown funnel stage "${s.stage}".`, 422);
   if (!s.snapshot) fail("A funnel stage must record the context that was live at the time.", 422);
   const observedAt = s.observedAt || s.occurredAt;
   if (s.occurredAt > observedAt)
     fail("A stage cannot be observed before it happened.", 422);
   const rowId = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO campaign_outcomes(id,campaign_id,club_id,candidate_id,stage,value,n,occurred_at,observed_at,source,evidence_level,context_snapshot_id,factors,context,recorded_by)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -584,7 +584,7 @@ export function recordStage(s: StageRecord): string {
       JSON.stringify(s.snapshot.factors),
       JSON.stringify({ ...(s.context ?? {}), snapshot_note: s.snapshot.note }),
       s.recordedBy ?? "system",
-    );
+    ));
   return rowId;
 }
 
@@ -606,14 +606,14 @@ export type FunnelRow = {
  * wants; the rows are what a model needs, and collapsing here would throw away
  * exactly the thing this table exists to keep.
  */
-export function funnel(campaignId: string, clubId?: string): FunnelRow[] {
-  campaignsInit();
+export async function funnel(campaignId: string, clubId?: string): Promise<FunnelRow[]> {
+  (await campaignsInit());
   const rows = (
     clubId
-      ? db()
+      ? (await db()
           .prepare("SELECT * FROM campaign_outcomes WHERE campaign_id=? AND club_id=?")
-          .all(campaignId, clubId)
-      : db().prepare("SELECT * FROM campaign_outcomes WHERE campaign_id=?").all(campaignId)
+          .all(campaignId, clubId))
+      : (await db().prepare("SELECT * FROM campaign_outcomes WHERE campaign_id=?").all(campaignId))
   ) as Record<string, unknown>[];
   const order = new Map(FUNNEL_STAGES.map((s, i) => [s, i]));
   return rows
@@ -639,14 +639,14 @@ export function funnel(campaignId: string, clubId?: string): FunnelRow[] {
  * `incrementalLift`, which is the function that answers the causal question and
  * frequently refuses to.
  */
-export function rawConversions(campaignId: string): {
+export async function rawConversions(campaignId: string): Promise<{
   stage: FunnelStage;
   clubs: number;
   rows: number;
   units: number;
   caveat: string;
-}[] {
-  const rows = funnel(campaignId);
+}[]> {
+  const rows = (await funnel(campaignId));
   const byStage = new Map<FunnelStage, FunnelRow[]>();
   for (const r of rows) {
     if (!byStage.has(r.stage)) byStage.set(r.stage, []);
@@ -684,7 +684,7 @@ export type Experiment = {
   notes: string;
 };
 
-export function createExperiment(
+export async function createExperiment(
   u: User,
   input: {
     campaignId: string;
@@ -697,9 +697,9 @@ export function createExperiment(
     outcomeStage: FunnelStage;
     notes?: string;
   },
-): Experiment {
-  officer(u);
-  campaignsInit();
+): Promise<Experiment> {
+  (await officer(u));
+  (await campaignsInit());
   if (!EXPERIMENT_DESIGNS.includes(input.design)) fail("Unknown experiment design.", 422);
   if (!FUNNEL_STAGES.includes(input.outcomeStage)) fail("Unknown outcome stage.", 422);
   const overlap = input.treatment.filter((c) => input.holdout.includes(c));
@@ -721,7 +721,7 @@ export function createExperiment(
     outcomeStage: input.outcomeStage,
     notes: input.notes ?? "",
   };
-  db()
+  (await db()
     .prepare(
       `INSERT INTO campaign_experiments(id,campaign_id,name,design,unit,treatment,holdout,matching_covariates,assigned_at,outcome_stage,notes,created_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -739,14 +739,14 @@ export function createExperiment(
       e.outcomeStage,
       e.notes,
       timestamp(),
-    );
-  audit(u, "campaign.experiment.create", e.id, { design: e.design, campaign: e.campaignId });
+    ));
+  (await audit(u, "campaign.experiment.create", e.id, { design: e.design, campaign: e.campaignId }));
   return e;
 }
 
-export function experiment(experimentId: string): Experiment | null {
-  campaignsInit();
-  const r = db().prepare("SELECT * FROM campaign_experiments WHERE id=?").get(experimentId) as
+export async function experiment(experimentId: string): Promise<Experiment | null> {
+  (await campaignsInit());
+  const r = (await db().prepare("SELECT * FROM campaign_experiments WHERE id=?").get(experimentId)) as
     | Record<string, unknown>
     | undefined;
   if (!r) return null;
@@ -817,9 +817,9 @@ export type LiftResult = {
  * exactly why MIN_ARM_N exists, and the limitation is stated in `reading`
  * rather than hidden.
  */
-export function incrementalLift(experimentId: string, stage?: FunnelStage): LiftResult {
-  campaignsInit();
-  const e = experiment(experimentId);
+export async function incrementalLift(experimentId: string, stage?: FunnelStage): Promise<LiftResult> {
+  (await campaignsInit());
+  const e = (await experiment(experimentId));
   const empty = { n: 0, converted: 0, rate: null as number | null };
   if (!e)
     return {
@@ -836,12 +836,12 @@ export function incrementalLift(experimentId: string, stage?: FunnelStage): Lift
     };
 
   const target = stage ?? e.outcomeStage;
-  const rows = db()
+  const rows = (await db()
     .prepare(
       `SELECT DISTINCT club_id FROM campaign_outcomes
        WHERE campaign_id=? AND stage=? AND occurred_at>=?`,
     )
-    .all(e.campaignId, target, e.assignedAt) as { club_id: string }[];
+    .all(e.campaignId, target, e.assignedAt)) as { club_id: string }[];
   const converted = new Set(rows.map((r) => r.club_id));
 
   const arm = (clubs: string[]) => {

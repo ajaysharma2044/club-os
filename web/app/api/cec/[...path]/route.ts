@@ -1,3 +1,5 @@
+import { databaseRequest } from "@/lib/cec/postgres/runtime";
+import { asyncFilter } from "../../../../lib/cec/async";
 import { toolsState, toolsAction, clubCalendar } from '@/lib/cec/officer-tools';
 import { emailState, emailAction, requestReset, consumeEmailToken } from '@/lib/cec/email';
 import { recordServerError } from "@/lib/cec/operations";
@@ -46,9 +48,9 @@ function response(value: unknown, status = 200) {
     headers: { "Cache-Control": "no-store" },
   });
 }
-function error(e: any) {
+async function error(e: any) {
   const status = e.status || 500;
-  if (status >= 500) recordServerError();
+  if (status >= 500) (await recordServerError());
   return response(
     {
       error:
@@ -59,24 +61,24 @@ function error(e: any) {
     status,
   );
 }
-function principal(req: NextRequest) {
-  return user(req.cookies.get("cec_session")?.value);
+async function principal(req: NextRequest) {
+  return (await user(req.cookies.get("cec_session")?.value));
 }
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
   try {
     const path = (await params).path.join("/");
-    if (path === "club-calendar") return new NextResponse(clubCalendar(req.nextUrl.searchParams.get("token")||""),{headers:{"Content-Type":"text/calendar; charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
+    if (path === "club-calendar") return new NextResponse((await clubCalendar(req.nextUrl.searchParams.get("token")||"")),{headers:{"Content-Type":"text/calendar; charset=utf-8","Cache-Control":"no-store","Referrer-Policy":"no-referrer"}});
     if (path === "health") {
-      db().prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get();
-      return response({ok:true});
+      (await db().prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1").get());
+      return response({ok:true,storage:process.env.CEC_STORAGE === "postgres" ? "postgres" : "sqlite"});
     }
-    const u = principal(req);
+    const u = (await principal(req));
     if (path === "calendar/feed")
       return new NextResponse(
-        calendarFeed(req.nextUrl.searchParams.get("token") || ""),
+        (await calendarFeed(req.nextUrl.searchParams.get("token") || "")),
         {
           headers: {
             "Content-Type": "text/calendar; charset=utf-8",
@@ -86,23 +88,21 @@ export async function GET(
         },
       );
     if (path === "invite")
-      return response(inviteInfo(req.nextUrl.searchParams.get("code") || ""));
-    if (path === "state") return response(state(u));
+      return response((await inviteInfo(req.nextUrl.searchParams.get("code") || "")));
+    if (path === "state") return response((await state(u)));
     if (path === "directory")
       return response({
-        people: db()
+        people: (await db()
           .prepare(
             "SELECT id,name,interests FROM users WHERE shared=1 AND role IN ('member','officer')",
           )
-          .all(),
-        projects: items("project")
-          .filter(
-            (r) =>
+          .all()),
+        projects: (await asyncFilter((await items("project")), async (r) =>
               r.data.shared &&
-              db()
+              (await db()
                 .prepare("SELECT 1 FROM users WHERE id=? AND shared=1")
-                .get(r.owner),
-          )
+                .get(r.owner)),
+          ))
           .map((r) => ({
             id: r.id,
             owner: r.owner,
@@ -114,7 +114,7 @@ export async function GET(
       });
     if (path === "calendar") {
       const eventId = req.nextUrl.searchParams.get("event");
-      const events = items("event").filter(
+      const events = (await items("event")).filter(
         (r) => r.data.status === "published" && (!eventId || r.id === eventId),
       );
       const esc = (s: string) =>
@@ -168,27 +168,27 @@ export async function GET(
       });
     }
     if (!u) fail("Sign in to continue.", 401);
-    if (path === "officer-tools/state") return response(toolsState(u));
-    if (path === "email/state") return response(emailState(u));
-    if (path === "memberships/state") return response(membershipState(u));
-    if (path === "schedule/state") return response(scheduleState(u));
+    if (path === "officer-tools/state") return response((await toolsState(u)));
+    if (path === "email/state") return response((await emailState(u)));
+    if (path === "memberships/state") return response((await membershipState(u)));
+    if (path === "schedule/state") return response((await scheduleState(u)));
     if (path === "interviews/state") {
-      interviewsInit();
-      return response(interviewState(u));
+      (await interviewsInit());
+      return response((await interviewState(u)));
     }
-    if (path === "behavior/self") return response(behaviorState(u));
-    if (path === "factors/state") return response(factorState(u));
-    if (path === "planning/readiness") return response(planningReadiness(u));
-    if (path === "messaging/state") return response(messagingState(u));
+    if (path === "behavior/self") return response((await behaviorState(u)));
+    if (path === "factors/state") return response((await factorState(u)));
+    if (path === "planning/readiness") return response((await planningReadiness(u)));
+    if (path === "messaging/state") return response((await messagingState(u)));
     if (path === "upnext") {
-      const base = upNext(u);
+      const base = (await upNext(u));
       // The caller's OWN unread, shown to the caller. That is the mirror test
       // satisfied, not a breach of the messaging wall: the wall stops private
       // conversation becoming evidence or signal, not a person seeing their
       // own inbox. Nothing here is stored, scored or shown to anyone else.
-      messagingInit();
-      deliveryInit();
-      const inbox = inboxSummary(u);
+      (await messagingInit());
+      (await deliveryInit());
+      const inbox = (await inboxSummary(u));
       return response({
         ...base,
         directed: {
@@ -198,23 +198,23 @@ export async function GET(
         ambient: inbox.total_unread > 0,
       });
     }
-    if (path === "invites/state") return response(inviteState(u));
-    if (path === "assets/state") return response(assetState(u));
+    if (path === "invites/state") return response((await inviteState(u)));
+    if (path === "assets/state") return response((await assetState(u)));
     if (path.startsWith("attendance/")) {
       const eventId = path.slice(11);
-      return response(attendanceState(u, eventId));
+      return response((await attendanceState(u, eventId)));
     }
-    if (path === "behavior/registry") return response({ rows: registryLatest(u) });
-    if (path === "opportunities/state") return response(opportunityState(u));
-    if (path === "evidence") return response(evidenceRead(u));
+    if (path === "behavior/registry") return response({ rows: (await registryLatest(u)) });
+    if (path === "opportunities/state") return response((await opportunityState(u)));
+    if (path === "evidence") return response((await evidenceRead(u)));
     if (path.startsWith("adaptive/"))
-      return response(adaptiveRead(u, path.slice(9)));
+      return response((await adaptiveRead(u, path.slice(9))));
     if (path === "export") {
       const data = {
-        ...state(u),
-        adaptive: adaptiveRead(u, "me"),
+        ...(await state(u)),
+        adaptive: (await adaptiveRead(u, "me")),
         ...(u.role !== "applicant"
-          ? { schedule: scheduleState(u), evidence: evidenceRead(u) }
+          ? { schedule: (await scheduleState(u)), evidence: (await evidenceRead(u)) }
           : {}),
       };
       return new NextResponse(JSON.stringify(data, null, 2), {
@@ -227,10 +227,10 @@ export async function GET(
     }
     fail("Not found.", 404);
   } catch (e) {
-    return error(e);
+    return (await error(e));
   }
 }
-export async function POST(
+async function handlePOST(
   req: NextRequest,
   { params }: { params: Promise<{ path: string[] }> },
 ) {
@@ -267,11 +267,11 @@ export async function POST(
     if (!b || typeof b !== "object" || Array.isArray(b))
       fail("JSON object required.");
     const path = (await params).path.join("/");
-    if (path === "email/reset/request") return response(requestReset(b));
-    if (path === "email/reset/confirm") return response(consumeEmailToken("reset",b));
-    if (path === "email/verify/confirm") return response(consumeEmailToken("verify",b));
+    if (path === "email/reset/request") return response((await requestReset(b)));
+    if (path === "email/reset/confirm") return response((await consumeEmailToken("reset",b)));
+    if (path === "email/verify/confirm") return response((await consumeEmailToken("verify",b)));
     if (path === "invite/claim") {
-      const result = claim(b);
+      const result = (await claim(b));
       const r = response({ ok: true, name: result.name });
       r.cookies.set("cec_session", result.token, {
         httpOnly: true,
@@ -283,17 +283,17 @@ export async function POST(
       return r;
     }
     if (path.startsWith("auth/")) {
-      throttle("auth:global", 200);
+      (await throttle("auth:global", 200));
       const action = path.slice(5);
       if (action === "logout") {
         const token = req.cookies.get("cec_session")?.value;
         if (token)
-          db().prepare("DELETE FROM sessions WHERE token=?").run(hash(token));
+          (await db().prepare("DELETE FROM sessions WHERE token=?").run(hash(token)));
         const r = response({ ok: true });
         r.cookies.delete("cec_session");
         return r;
       }
-      const result = auth(action, b);
+      const result = (await auth(action, b));
       const r = response({ ok: true });
       if (result.token)
         r.cookies.set("cec_session", result.token, {
@@ -305,56 +305,56 @@ export async function POST(
         });
       return r;
     }
-    const u = principal(req);
+    const u = (await principal(req));
     if (!u) fail("Sign in to continue.", 401);
-    throttle("mutate:" + u.id, 500);
-    if (path.startsWith("officer-tools/")) { const result=toolsAction(u,path.slice(14),b); await flush(); return response(result); }
-    if (path.startsWith("email/")) return response(emailAction(u,path.slice(6),b));
-    if (path === "memberships/change") return response(changeMembership(u,b));
+    (await throttle("mutate:" + u.id, 500));
+    if (path.startsWith("officer-tools/")) { const result=(await toolsAction(u,path.slice(14),b)); await flush(); return response(result); }
+    if (path.startsWith("email/")) return response((await emailAction(u,path.slice(6),b)));
+    if (path === "memberships/change") return response((await changeMembership(u,b)));
     if (path.startsWith("interviews/")) {
-      interviewsInit();
-      return response(interviews(u, path.slice(11), b));
+      (await interviewsInit());
+      return response((await interviews(u, path.slice(11), b)));
     }
-    if (path.startsWith("assets/")) return response(assets(u, path.slice(7), b));
-    if (path.startsWith("checkin/")) return response(checkin(u, path.slice(8), b));
+    if (path.startsWith("assets/")) return response((await assets(u, path.slice(7), b)));
+    if (path.startsWith("checkin/")) return response((await checkin(u, path.slice(8), b)));
     if (path.startsWith("invites/"))
-      return response(invites(u, path.slice(8), b));
+      return response((await invites(u, path.slice(8), b)));
     if (path.startsWith("opportunities/"))
-      return response(opportunities(u, path.slice(14), b));
+      return response((await opportunities(u, path.slice(14), b)));
     if (path.startsWith("outcomes/"))
-      return response(outcomes(u, path.slice(9), b));
+      return response((await outcomes(u, path.slice(9), b)));
     if (path.startsWith("behavior/"))
-      return response(behavior(u, path.slice(9), b));
+      return response((await behavior(u, path.slice(9), b)));
     if (path.startsWith("schedule/"))
-      return response(schedule(u, path.slice(9), b));
+      return response((await schedule(u, path.slice(9), b)));
     if (path.startsWith("evidence/"))
-      return response(evidenceAction(u, path.slice(9), b));
+      return response((await evidenceAction(u, path.slice(9), b)));
     if (path.startsWith("adaptive/"))
-      return response(adaptive(u, path.slice(9), b));
+      return response((await adaptive(u, path.slice(9), b)));
     if (path.startsWith("integrations/"))
-      return response(integrations(u, path.slice(13), b));
+      return response((await integrations(u, path.slice(13), b)));
     if (path.startsWith("messaging/"))
-      return response(messaging(u, path.slice(10), b));
+      return response((await messaging(u, path.slice(10), b)));
     if (path.startsWith("planning/"))
       return response(await planning(u, path.slice(9), b));
     if (path.startsWith("recommendations/"))
-      return response(recommendations(u, path.slice(16), b));
+      return response((await recommendations(u, path.slice(16), b)));
     if (path === "quant/retry") {
-      officer(u);
+      (await officer(u));
       await flush(true);
       return response({ ok: true });
     }
     if (path === "quant/forecast") {
-      officer(u);
-      const event = item(String(b.event_id), "event");
+      (await officer(u));
+      const event = (await item(String(b.event_id), "event"));
       if (event.data.status !== "published")
         fail("Publish this event before forecasting.");
       await flush();
       if (
         (
-          db()
+          (await db()
             .prepare("SELECT COUNT(*) n FROM outbox WHERE delivered=0")
-            .get() as any
+            .get()) as any
         ).n
       )
         fail(
@@ -364,13 +364,22 @@ export async function POST(
       return response(await quant({ action: "forecast", event_id: event.id }));
     }
     if (path === "quant/plan") {
-      officer(u);
+      (await officer(u));
       return response(await quant({ action: "plan", input: b }));
     }
-    const result = mutate(u, path, b);
+    const result = (await mutate(u, path, b));
     await flush();
     return response({ ...result, ok: true });
   } catch (e) {
-    return error(e);
+    return (await error(e));
   }
+}
+
+export async function GET(req: NextRequest, context: {params: Promise<{path: string[]}>}) {
+  try { return await databaseRequest(() => handleGET(req, context)); }
+  catch { return response({error: "Database unavailable. Please try again shortly."}, 503); }
+}
+export async function POST(req: NextRequest, context: {params: Promise<{path: string[]}>}) {
+  try { return await databaseRequest(() => handlePOST(req, context)); }
+  catch { return response({error: "Database unavailable. Please try again shortly."}, 503); }
 }

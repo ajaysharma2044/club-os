@@ -105,7 +105,8 @@ is not yet a general multi-club deployment.
 
 ## Architecture and storage
 
-`web/lib/cec/db.ts`: SQLite schema and durable transactions.
+`web/lib/cec/db.ts`: storage selection and async transactions.
+`web/lib/cec/postgres/`: verified TLS, request transactions and SQL compatibility.
 `web/lib/cec/service.ts`: authenticated domain actions.
 `web/app/api/cec/[...path]/route.ts`: HTTP boundary and origin protection.
 `web/lib/cec/quant.ts`: trusted subprocess interface and outbox replay.
@@ -114,20 +115,18 @@ is not yet a general multi-club deployment.
 `web/lib/cec/evidence.ts`: transactional episode events, blockers and feature snapshots.
 `services/quant/bridge.py`: existing quant service integration.
 
-Application data is in `web/.data/cec.sqlite`; the derived quant record is in
-`web/.data/quant.sqlite`. Both databases and their WAL files require a persistent
-volume and coordinated backups. No user data belongs in git. Outbox delivery occurs
-after mutations and can be retried from The record. A separate Python worker adds
-automatic retries, bounded backoff, status reporting and daily SQLite backups.
-Start it with `npm run pipeline:work` from `web/`; it is not started by Next.js.
-See [pipeline operations and recovery](docs/26-pipeline-operations.md). Push
-synchronization and notification workers are not yet implemented.
+With `CEC_STORAGE=postgres`, operational data lives in the private Supabase `club_os`
+schema. The async API preserves organization permissions and atomic history/outbox writes.
+SQLite remains available for offline development with `CEC_STORAGE=sqlite`; its database
+is `web/.data/cec.sqlite` and requires persistent disk.
 
-The published frontend had no configured Convex deployment. This implementation is
-an executable **single-server SQLite edition**, not a claimed Convex deployment.
-Migrating to Convex or Postgres requires preserving transaction, identity, authorization,
-outbox and historical-query invariants. Do not deploy it onto ephemeral serverless
-storage or run horizontally against separate local databases.
+The derived quant store remains `web/.data/quant.sqlite` on a durable worker host.
+Start `npm run pipeline:postgres` from `web/` for the Supabase outbox, or
+`npm run pipeline:work` for SQLite. Neither worker starts automatically with Next.js.
+See [Supabase configuration, migration and recovery](docs/33-postgres-migration.md).
+Use Supabase backups for operational data and separate backups for the quant store.
+The existing Compose stack and [pipeline operations](docs/26-pipeline-operations.md)
+describe the SQLite deployment; they do not automatically provision a Supabase worker.
 
 ## Hosting
 
@@ -194,3 +193,10 @@ with linked task assignment, action overview, handoff packets/acceptance/export 
 revocable club calendar subscription. See [workflow guide](docs/32-officer-workflows.md).
 Calendar publishing uses ICS polling, not direct Google/Outlook writes; external clients
 need a reachable hosted URL. Email remains disabled while domain setup is deferred.
+
+## Hosted database
+
+The API supports Supabase PostgreSQL with `CEC_STORAGE=postgres`; SQLite remains
+available for local/offline use. Existing accounts and club workflows are retained.
+See [configuration, migration, workers and limitations](docs/33-postgres-migration.md).
+The Python quant store still requires a durable worker host; it is not a Netlify function.

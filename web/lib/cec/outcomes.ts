@@ -22,9 +22,9 @@ export const OUTCOME_KINDS = [
 export type OutcomeKind = (typeof OUTCOME_KINDS)[number];
 
 let ready = false;
-export function outcomesInit() {
+export async function outcomesInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS outcomes(
   id TEXT PRIMARY KEY,
   subject_type TEXT NOT NULL,
@@ -40,11 +40,11 @@ CREATE TABLE IF NOT EXISTS outcomes(
   context TEXT NOT NULL DEFAULT '{}',
   UNIQUE(subject_type,subject_id,kind,horizon_start));
 CREATE INDEX IF NOT EXISTS outcome_kind ON outcomes(kind,subject_type,observed_at);
-`);
+`));
   ready = true;
 }
 
-export function label(
+export async function label(
   u: User,
   o: {
     subjectType: "person" | "episode" | "event" | "candidate" | "team";
@@ -57,12 +57,12 @@ export function label(
     evidenceLevel?: string;
     context?: Record<string, unknown>;
   },
-): string {
-  outcomesInit();
+): Promise<string> {
+  (await outcomesInit());
   if (!OUTCOME_KINDS.includes(o.kind)) fail("Unknown outcome kind.");
   const key = id();
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO outcomes(id,subject_type,subject_id,kind,value,horizon_start,occurred_at,observed_at,source,evidence_level,recorded_by,context)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
@@ -81,12 +81,12 @@ export function label(
       o.evidenceLevel || "counterparty_confirmed",
       u.id,
       JSON.stringify(o.context || {}),
-    );
+    ));
   // Coarse label only. The quant store deliberately refuses raw scores.
-  emit(u, "outcome", o.subjectId, key, {
+  (await emit(u, "outcome", o.subjectId, key, {
     status: o.value >= 0.5 ? "positive" : "negative",
     measure: o.kind,
-  });
+  }));
   return key;
 }
 
@@ -104,13 +104,13 @@ export type OutcomeRow = {
 };
 
 /** Person-level outcomes of a kind, oldest first. */
-export function personOutcomes(kind: OutcomeKind): OutcomeRow[] {
-  outcomesInit();
-  return db()
+export async function personOutcomes(kind: OutcomeKind): Promise<OutcomeRow[]> {
+  (await outcomesInit());
+  return (await db()
     .prepare(
       "SELECT * FROM outcomes WHERE kind=? AND subject_type='person' ORDER BY horizon_start",
     )
-    .all(kind) as OutcomeRow[];
+    .all(kind)) as OutcomeRow[];
 }
 
 /**
@@ -118,18 +118,18 @@ export function personOutcomes(kind: OutcomeKind): OutcomeRow[] {
  * closed episodes finished with every deadlined task completed on time.
  * Labelled system_derived so its provenance is never mistaken for a human call.
  */
-export function deriveOutcomes(u: User): number {
-  outcomesInit();
-  const episodes = db()
+export async function deriveOutcomes(u: User): Promise<number> {
+  (await outcomesInit());
+  const episodes = (await db()
     .prepare(
       "SELECT id,owner,created_at,status FROM episodes WHERE status<>'active'",
     )
-    .all() as { id: string; owner: string; created_at: string; status: string }[];
-  const events = db()
+    .all()) as { id: string; owner: string; created_at: string; status: string }[];
+  const events = (await db()
     .prepare(
       "SELECT episode_id,event_type,object_id,occurred_at,context FROM activity_events WHERE object_type='task'",
     )
-    .all() as {
+    .all()) as {
     episode_id: string;
     event_type: string;
     object_id: string;
@@ -164,9 +164,9 @@ export function deriveOutcomes(u: User): number {
       }
     }
     const before = (
-      db().prepare("SELECT COUNT(*) n FROM outcomes").get() as { n: number }
+      (await db().prepare("SELECT COUNT(*) n FROM outcomes").get()) as { n: number }
     ).n;
-    label(u, {
+    (await label(u, {
       subjectType: "person",
       subjectId: ep.owner,
       kind: "owned_episode_completed_on_time",
@@ -175,20 +175,20 @@ export function deriveOutcomes(u: User): number {
       source: "system",
       evidenceLevel: "system_derived",
       context: { episode_id: ep.id },
-    });
+    }));
     const after = (
-      db().prepare("SELECT COUNT(*) n FROM outcomes").get() as { n: number }
+      (await db().prepare("SELECT COUNT(*) n FROM outcomes").get()) as { n: number }
     ).n;
     n += after - before;
   }
-  if (n) audit(u, "outcome.derive", "batch", { count: n });
+  if (n) (await audit(u, "outcome.derive", "batch", { count: n }));
   return n;
 }
 
-export function outcomes(u: User, action: string, b: any) {
-  officer(u);
+export async function outcomes(u: User, action: string, b: any) {
+  (await officer(u));
   if (action === "label") {
-    const key = label(u, {
+    const key = (await label(u, {
       subjectType: text(b.subject_type, 16) as any,
       subjectId: text(b.subject_id, 64),
       kind: text(b.kind, 48) as OutcomeKind,
@@ -197,10 +197,10 @@ export function outcomes(u: User, action: string, b: any) {
       occurredAt: b.occurred_at ? text(b.occurred_at, 40) : undefined,
       source: b.source ? text(b.source, 32) : undefined,
       context: typeof b.context === "object" && b.context ? b.context : {},
-    });
-    audit(u, "outcome.label", key, { kind: b.kind, value: b.value });
+    }));
+    (await audit(u, "outcome.label", key, { kind: b.kind, value: b.value }));
     return { id: key };
   }
-  if (action === "derive") return { derived: deriveOutcomes(u) };
+  if (action === "derive") return { derived: (await deriveOutcomes(u)) };
   fail("Unknown outcome action.", 404);
 }

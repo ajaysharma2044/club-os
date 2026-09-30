@@ -36,9 +36,9 @@ import {
 
 let ready = false;
 
-export function factorStoreInit() {
+export async function factorStoreInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS factor_values(
   id TEXT PRIMARY KEY,
   factor TEXT NOT NULL,
@@ -80,15 +80,15 @@ CREATE TABLE IF NOT EXISTS factor_evaluations(
   policy TEXT NOT NULL,
   computed_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS factor_eval_latest ON factor_evaluations(factor,seq);
-`);
+`));
   // Additive migration for databases created before distinct_subjects existed.
-  const cols = db()
+  const cols = (await db()
     .prepare("PRAGMA table_info(factor_evaluations)")
-    .all() as { name: string }[];
+    .all()) as { name: string }[];
   if (!cols.some((c) => c.name === "distinct_subjects"))
-    db().exec(
+    (await db().exec(
       "ALTER TABLE factor_evaluations ADD COLUMN distinct_subjects INTEGER NOT NULL DEFAULT 0",
-    );
+    ));
   ready = true;
 }
 
@@ -104,18 +104,18 @@ export const FACTOR_POLICY = "factor-registry-v1";
  * coincide. For one computed from an ingested feed they do not, and passing
  * them separately is what keeps a replay honest.
  */
-export function writeFactorValue(
+export async function writeFactorValue(
   v: FactorValue,
   opts: { occurredAt?: string; observedAt?: string } = {},
-): string {
-  factorStoreInit();
+): Promise<string> {
+  (await factorStoreInit());
   const now = timestamp();
   const occurredAt = opts.occurredAt || v.asOf;
   const observedAt = opts.observedAt || v.asOf;
   if (occurredAt > observedAt)
     fail("A factor cannot be observed before the moment it describes.", 422);
   const rowId = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO factor_values(id,factor,entity_type,entity_id,value,value_type,n,status,occurred_at,observed_at,computed_at,model_version,drivers,basis,reading)
        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -137,20 +137,20 @@ export function writeFactorValue(
       JSON.stringify(v.drivers ?? []),
       JSON.stringify(v.basis ?? {}),
       v.reading ?? "",
-    );
+    ));
   return rowId;
 }
 
 /** Compute a factor and persist the result in one step, refusal included. */
-export function computeAndStore<I>(
+export async function computeAndStore<I>(
   def: FactorDef<I>,
   entityId: string,
   input: I,
   asOf: string,
   opts: { occurredAt?: string; observedAt?: string } = {},
-): FactorValue {
+): Promise<FactorValue> {
   const value = computeFactor(def, entityId, input, asOf);
-  writeFactorValue(value, opts);
+  (await writeFactorValue(value, opts));
   return value;
 }
 
@@ -200,15 +200,15 @@ const hydrate = (r: any): StoredFactor => ({
  * The latest row per factor wins, by observed_at then computed_at, so a
  * recomputation supersedes without deleting the earlier row.
  */
-export function factorsAsOf(input: {
+export async function factorsAsOf(input: {
   entityType: EntityType;
   entityId: string;
   asOf: string;
   use: Use;
   /** the registry entries in play; anything not supplied is not returned */
   registry: FactorDef<any>[];
-}): { factors: StoredFactor[]; omitted: { factor: string; reason: string }[] } {
-  factorStoreInit();
+}): Promise<{ factors: StoredFactor[]; omitted: { factor: string; reason: string }[] }> {
+  (await factorStoreInit());
   const allowed = new Map<string, FactorDef<any>>();
   const omitted: { factor: string; reason: string }[] = [];
   for (const def of input.registry) {
@@ -218,13 +218,13 @@ export function factorsAsOf(input: {
   }
   if (!allowed.size) return { factors: [], omitted };
 
-  const rows = db()
+  const rows = (await db()
     .prepare(
       `SELECT * FROM factor_values
        WHERE entity_type=? AND entity_id=? AND observed_at<=?
        ORDER BY observed_at DESC, computed_at DESC`,
     )
-    .all(input.entityType, input.entityId, input.asOf) as any[];
+    .all(input.entityType, input.entityId, input.asOf)) as any[];
 
   const latest = new Map<string, StoredFactor>();
   for (const r of rows) {
@@ -249,24 +249,24 @@ export function explainOmissions(
 }
 
 /** The full history of one factor for one entity, for replay and for charts. */
-export function factorHistory(
+export async function factorHistory(
   factor: string,
   entityType: EntityType,
   entityId: string,
   asOf?: string,
-): StoredFactor[] {
-  factorStoreInit();
+): Promise<StoredFactor[]> {
+  (await factorStoreInit());
   const rows = asOf
-    ? db()
+    ? (await db()
         .prepare(
           "SELECT * FROM factor_values WHERE factor=? AND entity_type=? AND entity_id=? AND observed_at<=? ORDER BY occurred_at",
         )
-        .all(factor, entityType, entityId, asOf)
-    : db()
+        .all(factor, entityType, entityId, asOf))
+    : (await db()
         .prepare(
           "SELECT * FROM factor_values WHERE factor=? AND entity_type=? AND entity_id=? ORDER BY occurred_at",
         )
-        .all(factor, entityType, entityId);
+        .all(factor, entityType, entityId));
   return (rows as any[]).map(hydrate);
 }
 
@@ -278,28 +278,28 @@ export function factorHistory(
  * latest value regardless of time is the single easiest way to produce a
  * beautiful backtest that means nothing.
  */
-export function factorAtHorizon(
+export async function factorAtHorizon(
   factor: string,
   entityType: EntityType,
   entityId: string,
   horizonStart: string,
-): StoredFactor | null {
-  factorStoreInit();
-  const row = db()
+): Promise<StoredFactor | null> {
+  (await factorStoreInit());
+  const row = (await db()
     .prepare(
       `SELECT * FROM factor_values
        WHERE factor=? AND entity_type=? AND entity_id=? AND observed_at<=? AND value IS NOT NULL
        ORDER BY observed_at DESC, computed_at DESC LIMIT 1`,
     )
-    .get(factor, entityType, entityId, horizonStart) as any;
+    .get(factor, entityType, entityId, horizonStart)) as any;
   return row ? hydrate(row) : null;
 }
 
 // =============================================================== evaluation
 
-export function writeEvaluation(e: FactorEvaluation, distinctSubjects = 0): void {
-  factorStoreInit();
-  db()
+export async function writeEvaluation(e: FactorEvaluation, distinctSubjects = 0): Promise<void> {
+  (await factorStoreInit());
+  (await db()
     .prepare(
       `INSERT INTO factor_evaluations(factor,outcome,pairs,distinct_subjects,windows,ic,ir,sign_agrees,verdict,policy,computed_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
@@ -316,21 +316,21 @@ export function writeEvaluation(e: FactorEvaluation, distinctSubjects = 0): void
       e.verdict,
       FACTOR_POLICY,
       e.computedAt,
-    );
+    ));
 }
 
 export type EvaluationRow = FactorEvaluation & { distinctSubjects: number };
 
 /** The most recent evaluation per factor. Append-only; nothing is overwritten. */
-export function latestEvaluations(): EvaluationRow[] {
-  factorStoreInit();
-  const rows = db()
+export async function latestEvaluations(): Promise<EvaluationRow[]> {
+  (await factorStoreInit());
+  const rows = (await db()
     .prepare(
       `SELECT * FROM factor_evaluations
        WHERE seq IN (SELECT MAX(seq) FROM factor_evaluations GROUP BY factor,outcome)
        ORDER BY factor`,
     )
-    .all() as any[];
+    .all()) as any[];
   return rows.map((r) => ({
     factor: r.factor,
     outcome: r.outcome,
@@ -354,19 +354,19 @@ export function latestEvaluations(): EvaluationRow[] {
  * member's own view. A member's own factors are served through their own
  * signal view, which applies the mirror test.
  */
-export function factorState(u: User) {
-  officer(u);
-  factorStoreInit();
-  const counts = db()
+export async function factorState(u: User) {
+  (await officer(u));
+  (await factorStoreInit());
+  const counts = (await db()
     .prepare(
       "SELECT factor, status, COUNT(*) n FROM factor_values GROUP BY factor, status ORDER BY factor",
     )
-    .all() as any[];
+    .all()) as any[];
   return {
     policy: FACTOR_POLICY,
     as_of: timestamp(),
     counts,
-    evaluations: latestEvaluations(),
+    evaluations: (await latestEvaluations()),
     note: "A row with a null value is a recorded refusal, not a gap. It means the model was asked and declined to answer.",
   };
 }

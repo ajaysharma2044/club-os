@@ -1,10 +1,11 @@
+import { asyncMap, asyncSome } from "./async";
 import * as chrono from "chrono-node";
 import { randomBytes } from "node:crypto";
 import { evidenceInit, ensureEpisode, recordEvidence } from "./evidence";
 import {
   db,
   tx,
-  User,
+  type User,
   member,
   fail,
   id,
@@ -15,14 +16,14 @@ import {
   audit,
 } from "./db";
 const POLICY = "chat-schedule-proposal-v1";
-export function scheduleInit() {
-  evidenceInit();
-  db().exec(`
+export async function scheduleInit() {
+  (await evidenceInit());
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS schedule_proposals(id TEXT PRIMARY KEY,owner TEXT NOT NULL REFERENCES accounts(id),source_ids TEXT NOT NULL,draft TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'proposed',created_at TEXT NOT NULL,policy TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS scheduled_meetings(id TEXT PRIMARY KEY,proposal_id TEXT UNIQUE NOT NULL REFERENCES schedule_proposals(id),owner TEXT NOT NULL REFERENCES accounts(id),title TEXT NOT NULL,starts_at TEXT NOT NULL,ends_at TEXT NOT NULL,location TEXT NOT NULL,status TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS meeting_participants(meeting_id TEXT REFERENCES scheduled_meetings(id),user_id TEXT REFERENCES accounts(id),status TEXT NOT NULL,ever_accepted INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(meeting_id,user_id));
 CREATE TABLE IF NOT EXISTS calendar_preferences(user_id TEXT PRIMARY KEY REFERENCES accounts(id),token_hash TEXT,auto_add INTEGER NOT NULL DEFAULT 0);
-`);
+`));
 }
 function parts(d: Date) {
   return Object.fromEntries(
@@ -103,33 +104,33 @@ function draftFromMessages(messages: any[]) {
     policy: POLICY,
   };
 }
-export function scheduleState(u: User) {
-  member(u);
-  scheduleInit();
+export async function scheduleState(u: User) {
+  (await member(u));
+  (await scheduleInit());
   return {
-    meetings: db()
+    meetings: (await db()
       .prepare(
         "SELECT m.*,p.status participant_status FROM scheduled_meetings m JOIN meeting_participants p ON p.meeting_id=m.id WHERE p.user_id=? ORDER BY m.starts_at",
       )
-      .all(u.id) as any[],
-    preferences: db()
+      .all(u.id)) as any[],
+    preferences: (await db()
       .prepare(
         "SELECT auto_add,token_hash IS NOT NULL AS has_feed FROM calendar_preferences WHERE user_id=?",
       )
-      .get(u.id) || { auto_add: 0, has_feed: 0 },
+      .get(u.id)) || { auto_add: 0, has_feed: 0 },
     proposals: (
-      db()
+      (await db()
         .prepare(
           "SELECT * FROM schedule_proposals WHERE owner=? AND status='proposed' ORDER BY created_at DESC LIMIT 10",
         )
-        .all(u.id) as any[]
+        .all(u.id)) as any[]
     ).map((p) => ({ ...p, draft: JSON.parse(p.draft) })),
   };
 }
-export function schedule(u: User, action: string, b: any) {
-  member(u);
-  scheduleInit();
-  return tx(() => {
+export async function schedule(u: User, action: string, b: any) {
+  (await member(u));
+  (await scheduleInit());
+  return (await tx(async () => {
     if (action === "propose") {
       if (
         !Array.isArray(b.message_ids) ||
@@ -138,14 +139,13 @@ export function schedule(u: User, action: string, b: any) {
       )
         fail("Select 1–12 messages.");
       const ids = [...new Set<string>(b.message_ids.map(String))];
-      const messages = ids.map(
-        (mid) =>
-          db()
+      const messages = (await asyncMap(ids, async (mid) =>
+          (await db()
             .prepare(
               "SELECT * FROM messages WHERE id=? AND channel IN ('general','events','builders')",
             )
-            .get(mid) as any,
-      );
+            .get(mid)) as any,
+      ));
       if (
         messages.some((m) => !m) ||
         new Set(messages.map((m) => m.channel)).size !== 1
@@ -153,45 +153,45 @@ export function schedule(u: User, action: string, b: any) {
         fail("Select messages from one accessible club channel.");
       messages.sort((a, b) => a.created_at.localeCompare(b.created_at));
       const source = JSON.stringify(messages.map((m) => m.id));
-      const existing = db()
+      const existing = (await db()
         .prepare(
           "SELECT * FROM schedule_proposals WHERE owner=? AND source_ids=? AND status='proposed'",
         )
-        .get(u.id, source) as any;
+        .get(u.id, source)) as any;
       if (existing)
         return { id: existing.id, draft: JSON.parse(existing.draft) };
       const draft = draftFromMessages(messages),
         pid = id();
-      db()
+      (await db()
         .prepare(
           "INSERT INTO schedule_proposals(id,owner,source_ids,draft,created_at,policy) VALUES(?,?,?,?,?,?)",
         )
-        .run(pid, u.id, source, JSON.stringify(draft), timestamp(), POLICY);
-      audit(u, "schedule.proposed", pid, { source_ids: ids, policy: POLICY });
+        .run(pid, u.id, source, JSON.stringify(draft), timestamp(), POLICY));
+      (await audit(u, "schedule.proposed", pid, { source_ids: ids, policy: POLICY }));
       return { id: pid, draft };
     }
     if (action === "dismiss") {
-      const p = db()
+      const p = (await db()
         .prepare("SELECT * FROM schedule_proposals WHERE id=? AND owner=?")
-        .get(String(b.proposal_id), u.id) as any;
+        .get(String(b.proposal_id), u.id)) as any;
       if (!p) fail("Proposal not found.", 404);
       if (p.status !== "proposed") fail("Proposal is already resolved.", 409);
-      db()
+      (await db()
         .prepare("UPDATE schedule_proposals SET status='dismissed' WHERE id=?")
-        .run(p.id);
-      audit(u, "schedule.dismissed", p.id);
+        .run(p.id));
+      (await audit(u, "schedule.dismissed", p.id));
       return { ok: true };
     }
     if (action === "confirm") {
-      const p = db()
+      const p = (await db()
         .prepare("SELECT * FROM schedule_proposals WHERE id=? AND owner=?")
-        .get(String(b.proposal_id), u.id) as any;
+        .get(String(b.proposal_id), u.id)) as any;
       if (!p) fail("Proposal not found.", 404);
       if (p.status === "confirmed")
         return {
-          meeting: db()
+          meeting: (await db()
             .prepare("SELECT * FROM scheduled_meetings WHERE proposal_id=?")
-            .get(p.id),
+            .get(p.id)),
         };
       if (p.status !== "proposed") fail("Proposal is no longer active.", 409);
       if (b.confirmed !== true) fail("Confirm the meeting details.");
@@ -209,16 +209,16 @@ export function schedule(u: User, action: string, b: any) {
         fail("Choose up to 50 participants.");
       const participants = [...new Set([u.id, ...b.participants.map(String)])];
       if (
-        participants.some(
-          (uid) =>
-            !db()
+        (await asyncSome(participants,
+          async (uid) =>
+            !(await db()
               .prepare("SELECT 1 FROM users WHERE id=? AND role IN ('member','officer')")
-              .get(uid),
-        )
+              .get(uid)),
+        ))
       )
         fail("Choose current club members.");
       const mid = id();
-      db()
+      (await db()
         .prepare(
           "INSERT INTO scheduled_meetings(id,proposal_id,owner,title,starts_at,ends_at,location,status,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
         )
@@ -232,38 +232,38 @@ export function schedule(u: User, action: string, b: any) {
           location,
           "confirmed",
           timestamp(),
-        );
+        ));
       for (const uid of participants) {
         const auto = (
-          db()
+          (await db()
             .prepare(
               "SELECT auto_add FROM calendar_preferences WHERE user_id=?",
             )
-            .get(uid) as any
+            .get(uid)) as any
         )?.auto_add;
         const accepted = uid === u.id || !!auto;
-        db()
+        (await db()
           .prepare("INSERT INTO meeting_participants VALUES(?,?,?,?)")
-          .run(mid, uid, accepted ? "accepted" : "pending", accepted ? 1 : 0);
+          .run(mid, uid, accepted ? "accepted" : "pending", accepted ? 1 : 0));
       }
-      db()
+      (await db()
         .prepare("UPDATE schedule_proposals SET status='confirmed' WHERE id=?")
-        .run(p.id);
-      const sourceKey = audit(u, "schedule.confirmed", mid, {
+        .run(p.id));
+      const sourceKey = (await audit(u, "schedule.confirmed", mid, {
         proposal_id: p.id,
         participants,
         starts_at: start,
         ends_at: end,
         location,
-      });
-      const episode = ensureEpisode(
+      }));
+      const episode = (await ensureEpisode(
         u,
         "scheduled_meeting",
         mid,
         title,
         "Meeting confirmed from selected club messages",
-      );
-      recordEvidence(u, {
+      ));
+      (await recordEvidence(u, {
         episode,
         sourceKey,
         family: "COORDINATE",
@@ -278,14 +278,14 @@ export function schedule(u: User, action: string, b: any) {
           ends_at: end,
           location,
         },
-      });
+      }));
       for (const uid of participants) {
-        const pstate = db()
+        const pstate = (await db()
           .prepare(
             "SELECT status FROM meeting_participants WHERE meeting_id=? AND user_id=?",
           )
-          .get(mid, uid) as any;
-        recordEvidence(u, {
+          .get(mid, uid)) as any;
+        (await recordEvidence(u, {
           episode,
           subject: uid,
           family: pstate.status === "accepted" ? "COMMIT" : "COORDINATE",
@@ -304,45 +304,45 @@ export function schedule(u: User, action: string, b: any) {
                   : "invitation_only",
             attendance: "unknown",
           },
-        });
+        }));
       }
       return {
-        meeting: db()
+        meeting: (await db()
           .prepare("SELECT * FROM scheduled_meetings WHERE id=?")
-          .get(mid),
+          .get(mid)),
       };
     }
     if (action === "respond") {
       if (!["accepted", "declined"].includes(b.status))
         fail("Choose accept or decline.");
-      const m = db()
+      const m = (await db()
         .prepare(
           "SELECT m.*,p.status participant_status FROM scheduled_meetings m JOIN meeting_participants p ON p.meeting_id=m.id WHERE m.id=? AND p.user_id=?",
         )
-        .get(String(b.meeting_id), u.id) as any;
+        .get(String(b.meeting_id), u.id)) as any;
       if (!m) fail("Meeting not found.", 404);
       if (m.status !== "confirmed") fail("Meeting was cancelled.", 409);
       if (m.participant_status === b.status) return { ok: true };
-      db()
+      (await db()
         .prepare(
           "UPDATE meeting_participants SET status=?,ever_accepted=MAX(ever_accepted,?) WHERE meeting_id=? AND user_id=?",
         )
-        .run(b.status, b.status === "accepted" ? 1 : 0, m.id, u.id);
-      db()
+        .run(b.status, b.status === "accepted" ? 1 : 0, m.id, u.id));
+      (await db()
         .prepare(
           "UPDATE scheduled_meetings SET version=version+1,updated_at=? WHERE id=?",
         )
-        .run(timestamp(), m.id);
-      const sourceKey = audit(u, "schedule." + b.status, m.id);
-      const episode = ensureEpisode(
+        .run(timestamp(), m.id));
+      const sourceKey = (await audit(u, "schedule." + b.status, m.id));
+      const episode = (await ensureEpisode(
         u,
         "scheduled_meeting",
         m.id,
         m.title,
         "Meeting confirmed from selected club messages",
         m.owner,
-      );
-      recordEvidence(u, {
+      ));
+      (await recordEvidence(u, {
         episode,
         sourceKey,
         family: b.status === "accepted" ? "COMMIT" : "REVISE",
@@ -350,35 +350,35 @@ export function schedule(u: User, action: string, b: any) {
         objectType: "scheduled_meeting",
         object: m.id,
         context: { basis: "participant_response", attendance: "unknown" },
-      });
+      }));
       return { ok: true };
     }
     if (action === "cancel") {
-      const m = db()
+      const m = (await db()
         .prepare("SELECT * FROM scheduled_meetings WHERE id=? AND owner=?")
-        .get(String(b.meeting_id), u.id) as any;
+        .get(String(b.meeting_id), u.id)) as any;
       if (!m) fail("Meeting not found.", 404);
       if (m.status !== "cancelled") {
-        db()
+        (await db()
           .prepare(
             "UPDATE scheduled_meetings SET status='cancelled',version=version+1,updated_at=? WHERE id=?",
           )
-          .run(timestamp(), m.id);
-        const sourceKey = audit(u, "schedule.cancelled", m.id);
-        const episode = ensureEpisode(
+          .run(timestamp(), m.id));
+        const sourceKey = (await audit(u, "schedule.cancelled", m.id));
+        const episode = (await ensureEpisode(
           u,
           "scheduled_meeting",
           m.id,
           m.title,
           "Meeting confirmed from selected club messages",
           m.owner,
-        );
-        db()
+        ));
+        (await db()
           .prepare(
             "UPDATE episodes SET status='cancelled',version=version+1 WHERE id=?",
           )
-          .run(episode);
-        recordEvidence(u, {
+          .run(episode));
+        (await recordEvidence(u, {
           episode,
           sourceKey,
           family: "OUTCOME",
@@ -386,54 +386,54 @@ export function schedule(u: User, action: string, b: any) {
           objectType: "scheduled_meeting",
           object: m.id,
           context: { reason: "organizer_cancelled", attendance: "unknown" },
-        });
+        }));
       }
       return { ok: true };
     }
     if (action === "preferences") {
       if (typeof b.auto_add !== "boolean")
         fail("Choose a calendar preference.");
-      db()
+      (await db()
         .prepare(
           "INSERT INTO calendar_preferences(user_id,auto_add) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET auto_add=excluded.auto_add",
         )
-        .run(u.id, b.auto_add ? 1 : 0);
+        .run(u.id, b.auto_add ? 1 : 0));
       return { ok: true };
     }
     if (action === "feed") {
       const token = randomBytes(32).toString("hex");
-      db()
+      (await db()
         .prepare(
           "INSERT INTO calendar_preferences(user_id,token_hash) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash",
         )
-        .run(u.id, hash(token));
+        .run(u.id, hash(token)));
       return { token };
     }
     if (action === "revoke") {
-      db()
+      (await db()
         .prepare(
           "UPDATE calendar_preferences SET token_hash=NULL WHERE user_id=?",
         )
-        .run(u.id);
+        .run(u.id));
       return { ok: true };
     }
     fail("Not found.", 404);
-  });
+  }));
 }
-export function calendarFeed(token: string) {
-  scheduleInit();
+export async function calendarFeed(token: string) {
+  (await scheduleInit());
   if (!/^[a-f0-9]{64}$/.test(token)) fail("Calendar link not found.", 404);
-  const p = db()
+  const p = (await db()
     .prepare(
       "SELECT p.user_id FROM calendar_preferences p JOIN users u ON u.id=p.user_id WHERE p.token_hash=? AND u.role IN ('member','officer')",
     )
-    .get(hash(token)) as any;
+    .get(hash(token))) as any;
   if (!p) fail("Calendar link not found.", 404);
-  const meetings = db()
+  const meetings = (await db()
     .prepare(
       "SELECT m.*,p.status participant_status FROM scheduled_meetings m JOIN meeting_participants p ON p.meeting_id=m.id WHERE p.user_id=? AND p.ever_accepted=1 ORDER BY m.starts_at",
     )
-    .all(p.user_id) as any[];
+    .all(p.user_id)) as any[];
   const esc = (s: string) =>
     s
       .replace(/\\/g, "\\\\")

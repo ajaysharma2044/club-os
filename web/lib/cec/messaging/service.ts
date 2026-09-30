@@ -35,71 +35,71 @@ import {
 import { deliveryInit, inboxSummary, notificationPrefs, setNotificationPrefs } from "./delivery";
 
 /** A member's inbox: unread counts, latest previews, mentions. */
-export function messagingState(u: User) {
-  member(u);
-  messagingInit();
-  deliveryInit();
+export async function messagingState(u: User) {
+  (await member(u));
+  (await messagingInit());
+  (await deliveryInit());
   return {
-    inbox: inboxSummary(u),
-    preferences: notificationPrefs(u.id),
+    inbox: (await inboxSummary(u)),
+    preferences: (await notificationPrefs(u.id)),
     note: "Direct messages are private to their participants. Officers have no read access, and nothing here feeds the record, the signals or the quant layer.",
   };
 }
 
-export function messaging(u: User, action: string, b: any): any {
-  member(u);
-  messagingInit();
-  deliveryInit();
+export async function messaging(u: User, action: string, b: any): Promise<any> {
+  (await member(u));
+  (await messagingInit());
+  (await deliveryInit());
 
-  if (action === "direct") return openDirect(u, text(b?.user_id, 64));
+  if (action === "direct") return (await openDirect(u, text(b?.user_id, 64)));
   if (action === "group")
-    return createGroup(u, text(b?.title, 120), (b?.members ?? []).map(String));
-  if (action === "channel") return ensureChannel(u, text(b?.slug, 40));
-  if (action === "join") return joinChannel(u, text(b?.conversation_id, 64));
+    return (await createGroup(u, text(b?.title, 120), (b?.members ?? []).map(String)));
+  if (action === "channel") return (await ensureChannel(u, text(b?.slug, 40)));
+  if (action === "join") return (await joinChannel(u, text(b?.conversation_id, 64)));
   if (action === "members/add")
-    return addMembers(u, text(b?.conversation_id, 64), (b?.members ?? []).map(String));
+    return (await addMembers(u, text(b?.conversation_id, 64), (b?.members ?? []).map(String)));
   if (action === "leave") {
-    leaveConversation(u, text(b?.conversation_id, 64));
+    (await leaveConversation(u, text(b?.conversation_id, 64)));
     return { ok: true };
   }
   if (action === "mute") {
-    setMuted(u, text(b?.conversation_id, 64), b?.muted === true);
+    (await setMuted(u, text(b?.conversation_id, 64), b?.muted === true));
     return { ok: true };
   }
   if (action === "archive") {
-    archiveConversation(u, text(b?.conversation_id, 64));
+    (await archiveConversation(u, text(b?.conversation_id, 64)));
     return { ok: true };
   }
   if (action === "send")
-    return postMessage(
+    return (await postMessage(
       u,
       text(b?.conversation_id, 64),
       text(b?.body, 4000),
       b?.reply_to ? String(b.reply_to) : null,
-    );
+    ));
   if (action === "edit")
-    return editMessage(u, text(b?.message_id, 64), text(b?.body, 4000));
-  if (action === "delete") return deleteMessage(u, text(b?.message_id, 64));
+    return (await editMessage(u, text(b?.message_id, 64), text(b?.body, 4000)));
+  if (action === "delete") return (await deleteMessage(u, text(b?.message_id, 64)));
   if (action === "messages")
     return {
-      messages: messagesIn(
+      messages: (await messagesIn(
         u,
         text(b?.conversation_id, 64),
         Math.min(Math.max(Number(b?.limit) || 50, 1), 200),
-      ),
+      )),
     };
   if (action === "thread")
     return {
-      messages: thread(u, text(b?.conversation_id, 64), text(b?.message_id, 64)),
+      messages: (await thread(u, text(b?.conversation_id, 64), text(b?.message_id, 64))),
     };
   if (action === "participants")
-    return { participants: participants(u, text(b?.conversation_id, 64)) };
-  if (action === "read") return { last_read_at: markRead(u, text(b?.conversation_id, 64)) };
+    return { participants: (await participants(u, text(b?.conversation_id, 64))) };
+  if (action === "read") return { last_read_at: (await markRead(u, text(b?.conversation_id, 64))) };
   if (action === "preferences")
-    return setNotificationPrefs(u, {
+    return (await setNotificationPrefs(u, {
       dm: b?.dm,
       groups: b?.groups,
       channels: b?.channels,
-    });
+    }));
   fail("Unknown messaging action.", 404);
 }

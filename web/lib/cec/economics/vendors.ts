@@ -64,9 +64,9 @@ export type VendorEngagementStatus = (typeof VENDOR_ENGAGEMENT_STATUSES)[number]
 const GOOD_OUTCOMES: VendorEngagementStatus[] = ["completed"];
 
 let ready = false;
-export function vendorsInit() {
+export async function vendorsInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS vendors(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -99,13 +99,13 @@ CREATE TABLE IF NOT EXISTS vendor_engagements(
   notes TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS vendor_engage_vendor ON vendor_engagements(vendor_id,observed_at);
 CREATE INDEX IF NOT EXISTS vendor_engage_club ON vendor_engagements(club_id,status);
-`);
+`));
   // Additive migration for databases created before currency was separated
   // from the amount. Defaulted rather than backfilled: we do not know what
   // currency an old row was in, and 'USD' is at least stated.
-  const cols = db().prepare("PRAGMA table_info(vendor_engagements)").all() as { name: string }[];
+  const cols = (await db().prepare("PRAGMA table_info(vendor_engagements)").all()) as { name: string }[];
   if (!cols.some((c) => c.name === "currency"))
-    db().exec("ALTER TABLE vendor_engagements ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'");
+    (await db().exec("ALTER TABLE vendor_engagements ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'"));
   ready = true;
 }
 
@@ -133,7 +133,7 @@ export type VendorEngagement = {
   notes: string;
 };
 
-export function addVendor(
+export async function addVendor(
   u: User,
   v: {
     name: string;
@@ -142,18 +142,18 @@ export function addVendor(
     contact?: string;
     notes?: string;
   },
-): string {
-  officer(u);
-  vendorsInit();
+): Promise<string> {
+  (await officer(u));
+  (await vendorsInit());
   if (!NEED_CATEGORIES.includes(v.category)) fail(`Unknown vendor category "${v.category}".`);
   const name = text(v.name, 200);
   const institution = String(v.institutionId || "").slice(0, 64);
-  const existing = db()
+  const existing = (await db()
     .prepare("SELECT id FROM vendors WHERE name=? AND category=? AND institution_id=?")
-    .get(name, v.category, institution) as { id: string } | undefined;
+    .get(name, v.category, institution)) as { id: string } | undefined;
   if (existing) return existing.id;
   const key = id();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO vendors(id,name,category,institution_id,contact,notes,active,created_at) VALUES (?,?,?,?,?,?,1,?)",
     )
@@ -165,30 +165,30 @@ export function addVendor(
       String(v.contact || "").slice(0, 400),
       String(v.notes || "").slice(0, 2000),
       timestamp(),
-    );
-  audit(u, "vendor.add", key, { category: v.category });
+    ));
+  (await audit(u, "vendor.add", key, { category: v.category }));
   return key;
 }
 
 /** Retire a vendor without deleting the history of who used them. */
-export function deactivateVendor(u: User, vendorId: string): void {
-  officer(u);
-  vendorsInit();
-  db().prepare("UPDATE vendors SET active=0 WHERE id=?").run(vendorId);
-  audit(u, "vendor.deactivate", vendorId, {});
+export async function deactivateVendor(u: User, vendorId: string): Promise<void> {
+  (await officer(u));
+  (await vendorsInit());
+  (await db().prepare("UPDATE vendors SET active=0 WHERE id=?").run(vendorId));
+  (await audit(u, "vendor.deactivate", vendorId, {}));
 }
 
-export function vendor(vendorId: string): Vendor {
-  vendorsInit();
-  const row = db().prepare("SELECT * FROM vendors WHERE id=?").get(vendorId) as Vendor | undefined;
+export async function vendor(vendorId: string): Promise<Vendor> {
+  (await vendorsInit());
+  const row = (await db().prepare("SELECT * FROM vendors WHERE id=?").get(vendorId)) as Vendor | undefined;
   if (!row) fail("Vendor not found.", 404);
   return row;
 }
 
-export function listVendors(
+export async function listVendors(
   o: { category?: NeedCategory; institutionId?: string; includeInactive?: boolean } = {},
-): Vendor[] {
-  vendorsInit();
+): Promise<Vendor[]> {
+  (await vendorsInit());
   const where: string[] = [];
   const args: unknown[] = [];
   if (o.category) {
@@ -201,9 +201,9 @@ export function listVendors(
   }
   if (!o.includeInactive) where.push("active=1");
   const sql = `SELECT * FROM vendors${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY name`;
-  return db()
+  return (await db()
     .prepare(sql)
-    .all(...(args as any[])) as Vendor[];
+    .all(...(args as any[]))) as Vendor[];
 }
 
 /**
@@ -218,7 +218,7 @@ export function listVendors(
  * rejected at ingest, and stretching an existing one would put a purchase into
  * a person's behavioural record, which is exactly where it does not belong.
  */
-export function recordEngagement(
+export async function recordEngagement(
   u: User,
   e: {
     vendorId: string;
@@ -230,14 +230,14 @@ export function recordEngagement(
     occurredAt?: string;
     notes?: string;
   },
-): string {
-  officer(u);
-  vendorsInit();
+): Promise<string> {
+  (await officer(u));
+  (await vendorsInit());
   if (!VENDOR_ENGAGEMENT_STATUSES.includes(e.status)) fail("Unknown engagement status.");
-  vendor(e.vendorId); // 404s rather than orphaning a row
+  (await vendor(e.vendorId)); // 404s rather than orphaning a row
   const key = id();
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       "INSERT INTO vendor_engagements(id,vendor_id,need_id,club_id,status,amount_cents,currency,occurred_at,observed_at,notes) VALUES (?,?,?,?,?,?,?,?,?,?)",
     )
@@ -252,22 +252,22 @@ export function recordEngagement(
       e.occurredAt || now,
       now,
       String(e.notes || "").slice(0, 2000),
-    );
-  audit(u, "vendor.engagement", key, { vendor_id: e.vendorId, status: e.status });
+    ));
+  (await audit(u, "vendor.engagement", key, { vendor_id: e.vendorId, status: e.status }));
   return key;
 }
 
-export function engagementsFor(vendorId: string, asOf?: string): VendorEngagement[] {
-  vendorsInit();
+export async function engagementsFor(vendorId: string, asOf?: string): Promise<VendorEngagement[]> {
+  (await vendorsInit());
   const rows = asOf
-    ? db()
+    ? (await db()
         .prepare(
           "SELECT * FROM vendor_engagements WHERE vendor_id=? AND observed_at<=? ORDER BY occurred_at",
         )
-        .all(vendorId, asOf)
-    : db()
+        .all(vendorId, asOf))
+    : (await db()
         .prepare("SELECT * FROM vendor_engagements WHERE vendor_id=? ORDER BY occurred_at")
-        .all(vendorId);
+        .all(vendorId));
   return rows as VendorEngagement[];
 }
 
@@ -345,11 +345,11 @@ export function mayRecommendFor(need: PotentialEconomicNeed): { ok: boolean; rea
  * that two vendors with identical histories do not swap places between page
  * loads and make the ranking look like it means something it does not.
  */
-export function recommendVendors(
+export async function recommendVendors(
   need: PotentialEconomicNeed,
   options: { institutionId?: string; limit?: number; asOf?: string } = {},
-): VendorRecommendation[] {
-  vendorsInit();
+): Promise<VendorRecommendation[]> {
+  (await vendorsInit());
   if (!mayRecommendFor(need).ok) return [];
 
   // The club's campus, if we know it. Unknown means no institution term fires
@@ -358,9 +358,9 @@ export function recommendVendors(
     options.institutionId ?? clubInstitution(need.clubId)?.id ?? "";
 
   const candidates = (
-    db()
+    (await db()
       .prepare("SELECT * FROM vendors WHERE category=? AND active=1 ORDER BY name")
-      .all(need.category) as Vendor[]
+      .all(need.category)) as Vendor[]
   ).filter(
     // A vendor pinned to another campus is not a candidate. One pinned to no
     // campus is, because blank means unknown.
@@ -369,7 +369,7 @@ export function recommendVendors(
 
   const out: VendorRecommendation[] = [];
   for (const v of candidates) {
-    const history = engagementsFor(v.id, options.asOf);
+    const history = (await engagementsFor(v.id, options.asOf));
     const mine = history.filter((h) => h.club_id === need.clubId);
     const others = new Set(history.filter((h) => h.club_id !== need.clubId).map((h) => h.club_id));
     const completedForClub = mine.filter((h) => GOOD_OUTCOMES.includes(h.status)).length;

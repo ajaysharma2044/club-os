@@ -112,9 +112,9 @@ export type RunRow = {
 // ================================================================== schema
 
 let ready = false;
-export function sourcesInit() {
+export async function sourcesInit() {
   if (ready) return;
-  db().exec(`
+  (await db().exec(`
 CREATE TABLE IF NOT EXISTS context_sources(
   source_id TEXT PRIMARY KEY,
   institution_id TEXT NOT NULL,
@@ -141,15 +141,15 @@ CREATE TABLE IF NOT EXISTS context_source_runs(
   error TEXT NOT NULL DEFAULT '',
   parser_version TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS context_source_run_src ON context_source_runs(source_id,started_at);
-`);
+`));
   // Additive migration for databases created before the permission basis had a
   // review date. Nullable, because for an existing row we genuinely do not know
   // when it was last checked and a default would be a lie.
-  const cols = db().prepare("PRAGMA table_info(context_sources)").all() as { name: string }[];
+  const cols = (await db().prepare("PRAGMA table_info(context_sources)").all()) as { name: string }[];
   if (!cols.some((c) => c.name === "permission_checked_at"))
-    db().exec("ALTER TABLE context_sources ADD COLUMN permission_checked_at TEXT");
+    (await db().exec("ALTER TABLE context_sources ADD COLUMN permission_checked_at TEXT"));
 
-  seedFromCode();
+  (await seedFromCode());
   ready = true;
 }
 
@@ -165,14 +165,14 @@ CREATE INDEX IF NOT EXISTS context_source_run_src ON context_source_runs(source_
  * registry is the live record once it exists, the code constant is only the
  * bootstrap.
  */
-function seedFromCode() {
+async function seedFromCode() {
   const insert = db().prepare(
     `INSERT INTO context_sources(source_id,institution_id,name,source_type,base_url,permission_basis,trust_level,parser_version,crawl_frequency,active,notes,permission_checked_at)
      VALUES (?,?,?,?,?,?,?,?,?,1,?,?)
      ON CONFLICT(source_id) DO NOTHING`,
   );
   for (const s of CAMPUS_SOURCES) {
-    insert.run(
+    (await insert.run(
       `${s.key}_${s.platform}`,
       s.key,
       s.label,
@@ -184,7 +184,7 @@ function seedFromCode() {
       "daily",
       `Seeded from CAMPUS_SOURCES in lib/cec/campus.ts.`,
       s.permissionCheckedAt ?? null,
-    );
+    ));
   }
 }
 
@@ -218,8 +218,8 @@ const KEY_RE = /^[a-z][a-z0-9_]{2,63}$/;
  * Re-registering a source with a new parser version must not erase the evidence
  * that it has been failing since Tuesday.
  */
-export function registerSource(input: SourceInput): SourceRow {
-  sourcesInit();
+export async function registerSource(input: SourceInput): Promise<SourceRow> {
+  (await sourcesInit());
   if (!KEY_RE.test(input.sourceId ?? ""))
     fail("source_id must be lower_snake_case, 3-64 characters.");
   if (!KEY_RE.test(input.institutionId ?? ""))
@@ -238,7 +238,7 @@ export function registerSource(input: SourceInput): SourceRow {
   if (!CRAWL_FREQUENCIES.includes(frequency))
     fail(`crawl_frequency must be one of ${CRAWL_FREQUENCIES.join(", ")}.`);
 
-  db()
+  (await db()
     .prepare(
       `INSERT INTO context_sources(source_id,institution_id,name,source_type,base_url,permission_basis,trust_level,parser_version,crawl_frequency,active,notes,permission_checked_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
@@ -268,25 +268,25 @@ export function registerSource(input: SourceInput): SourceRow {
       input.active === false ? 0 : 1,
       (input.notes || "").slice(0, 2000),
       input.permissionCheckedAt ?? null,
-    );
-  return source(input.sourceId);
+    ));
+  return (await source(input.sourceId));
 }
 
-export function source(sourceId: string): SourceRow {
-  sourcesInit();
-  const row = db()
+export async function source(sourceId: string): Promise<SourceRow> {
+  (await sourcesInit());
+  const row = (await db()
     .prepare("SELECT * FROM context_sources WHERE source_id=?")
-    .get(sourceId) as SourceRow | undefined;
+    .get(sourceId)) as SourceRow | undefined;
   if (!row) fail("Context source not found.", 404);
   return row;
 }
 
-export function findSource(sourceId: string): SourceRow | null {
-  sourcesInit();
+export async function findSource(sourceId: string): Promise<SourceRow | null> {
+  (await sourcesInit());
   return (
-    (db()
+    ((await db()
       .prepare("SELECT * FROM context_sources WHERE source_id=?")
-      .get(sourceId) as SourceRow | undefined) ?? null
+      .get(sourceId)) as SourceRow | undefined) ?? null
   );
 }
 
@@ -295,23 +295,23 @@ export function findSource(sourceId: string): SourceRow | null {
  * default because "what feeds does this school have" and "what may we crawl
  * tonight" are different questions with different answers.
  */
-export function sourcesFor(
+export async function sourcesFor(
   institutionId: string,
   opts: { activeOnly?: boolean } = {},
-): SourceRow[] {
-  sourcesInit();
+): Promise<SourceRow[]> {
+  (await sourcesInit());
   const sql = opts.activeOnly
     ? "SELECT * FROM context_sources WHERE institution_id=? AND active=1 ORDER BY name"
     : "SELECT * FROM context_sources WHERE institution_id=? ORDER BY name";
-  return db().prepare(sql).all(institutionId) as SourceRow[];
+  return (await db().prepare(sql).all(institutionId)) as SourceRow[];
 }
 
-export function institutions(): string[] {
-  sourcesInit();
+export async function institutions(): Promise<string[]> {
+  (await sourcesInit());
   return (
-    db()
+    (await db()
       .prepare("SELECT DISTINCT institution_id FROM context_sources ORDER BY institution_id")
-      .all() as { institution_id: string }[]
+      .all()) as { institution_id: string }[]
   ).map((r) => r.institution_id);
 }
 
@@ -360,24 +360,24 @@ export function maySource(row: SourceRow): { allowed: boolean; reason: string } 
  * A refusal that leaves no trace is indistinguishable from a source nobody ever
  * tried, which is how a feed quietly disappears from a model's inputs.
  */
-export function mayCrawl(sourceId: string): { allowed: boolean; reason: string; runId?: string } {
-  const row = source(sourceId);
+export async function mayCrawl(sourceId: string): Promise<{ allowed: boolean; reason: string; runId?: string }> {
+  const row = (await source(sourceId));
   const gate = maySource(row);
   if (gate.allowed) return gate;
   const runId = id();
   const now = timestamp();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO context_source_runs(id,source_id,started_at,finished_at,status,rows_seen,rows_new,error,parser_version)
        VALUES (?,?,?,?,'refused',0,0,?,?)`,
     )
-    .run(runId, sourceId, now, now, gate.reason.slice(0, 1000), row.parser_version);
+    .run(runId, sourceId, now, now, gate.reason.slice(0, 1000), row.parser_version));
   return { ...gate, runId };
 }
 
 /** Sources for one institution that we may actually call tonight. */
-export function crawlableSources(institutionId: string): SourceRow[] {
-  return sourcesFor(institutionId).filter((s) => maySource(s).allowed);
+export async function crawlableSources(institutionId: string): Promise<SourceRow[]> {
+  return (await sourcesFor(institutionId)).filter((s) => maySource(s).allowed);
 }
 
 // ================================================================ crawl log
@@ -386,16 +386,16 @@ export function crawlableSources(institutionId: string): SourceRow[] {
  * Open a run. Stamps `last_attempt_at` immediately, before the fetch, so a
  * crawl that hangs or crashes still leaves the attempt on the record.
  */
-export function recordAttempt(sourceId: string, at = timestamp()): string {
-  const row = source(sourceId);
+export async function recordAttempt(sourceId: string, at = timestamp()): Promise<string> {
+  const row = (await source(sourceId));
   const runId = id();
-  db()
+  (await db()
     .prepare(
       `INSERT INTO context_source_runs(id,source_id,started_at,status,parser_version)
        VALUES (?,?,?,'attempted',?)`,
     )
-    .run(runId, sourceId, at, row.parser_version);
-  db().prepare("UPDATE context_sources SET last_attempt_at=? WHERE source_id=?").run(at, sourceId);
+    .run(runId, sourceId, at, row.parser_version));
+  (await db().prepare("UPDATE context_sources SET last_attempt_at=? WHERE source_id=?").run(at, sourceId));
   return runId;
 }
 
@@ -406,45 +406,45 @@ export function recordAttempt(sourceId: string, at = timestamp()): string {
  * signal: a feed returning 400 rows of which 0 are new every night is either
  * stable or broken upstream, and only the trend can tell you which.
  */
-export function recordSuccess(
+export async function recordSuccess(
   runId: string,
   counts: { rowsSeen: number; rowsNew: number },
   at = timestamp(),
-): void {
-  sourcesInit();
-  const run = db()
+): Promise<void> {
+  (await sourcesInit());
+  const run = (await db()
     .prepare("SELECT source_id FROM context_source_runs WHERE id=?")
-    .get(runId) as { source_id: string } | undefined;
+    .get(runId)) as { source_id: string } | undefined;
   if (!run) fail("Crawl run not found.", 404);
   const seen = Math.max(0, Math.trunc(Number(counts.rowsSeen) || 0));
   const added = Math.max(0, Math.trunc(Number(counts.rowsNew) || 0));
-  db()
+  (await db()
     .prepare(
       "UPDATE context_source_runs SET finished_at=?, status='success', rows_seen=?, rows_new=? WHERE id=?",
     )
-    .run(at, seen, added, runId);
-  db()
+    .run(at, seen, added, runId));
+  (await db()
     .prepare("UPDATE context_sources SET last_success_at=? WHERE source_id=?")
-    .run(at, run.source_id);
+    .run(at, run.source_id));
 }
 
 /** Close a run that did not work. `last_success_at` is deliberately untouched. */
-export function recordFailure(runId: string, error: string, at = timestamp()): void {
-  sourcesInit();
-  db()
+export async function recordFailure(runId: string, error: string, at = timestamp()): Promise<void> {
+  (await sourcesInit());
+  (await db()
     .prepare(
       "UPDATE context_source_runs SET finished_at=?, status='error', error=? WHERE id=?",
     )
-    .run(at, String(error || "unknown error").slice(0, 1000), runId);
+    .run(at, String(error || "unknown error").slice(0, 1000), runId));
 }
 
-export function sourceRuns(sourceId: string, limit = 50): RunRow[] {
-  sourcesInit();
-  return db()
+export async function sourceRuns(sourceId: string, limit = 50): Promise<RunRow[]> {
+  (await sourcesInit());
+  return (await db()
     .prepare(
       "SELECT * FROM context_source_runs WHERE source_id=? ORDER BY started_at DESC, id DESC LIMIT ?",
     )
-    .all(sourceId, Math.min(Math.max(limit, 1), 500)) as RunRow[];
+    .all(sourceId, Math.min(Math.max(limit, 1), 500))) as RunRow[];
 }
 
 /**
@@ -453,10 +453,10 @@ export function sourceRuns(sourceId: string, limit = 50): RunRow[] {
  * This is the report that catches the failure mode the whole run log exists
  * for: a model reading an empty feed and concluding the campus is quiet.
  */
-export function staleSources(
+export async function staleSources(
   institutionId: string,
   asOf = timestamp(),
-): { source: SourceRow; hoursSince: number | null; reason: string }[] {
+): Promise<{ source: SourceRow; hoursSince: number | null; reason: string }[]> {
   const budgetHours: Record<CrawlFrequency, number> = {
     hourly: 3,
     daily: 36,
@@ -466,7 +466,7 @@ export function staleSources(
   };
   const now = Date.parse(asOf);
   const out: { source: SourceRow; hoursSince: number | null; reason: string }[] = [];
-  for (const s of crawlableSources(institutionId)) {
+  for (const s of (await crawlableSources(institutionId))) {
     const budget = budgetHours[s.crawl_frequency] ?? 36;
     if (!Number.isFinite(budget)) continue;
     if (!s.last_success_at) {
