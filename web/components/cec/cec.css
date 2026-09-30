@@ -752,3 +752,25 @@
 .cec.officer-tools details { margin: 16px 0; }
 .cec.officer-tools summary { cursor: pointer; font-weight: 600; }
 .cec.officer-tools input, .cec.officer-tools textarea, .cec.officer-tools select { max-width: 100%; }
+
+/* Inbox uses a single readable pane on phones. */
+.cec .message-layout { display:grid; grid-template-columns:minmax(180px, 28%) minmax(0, 1fr); gap:20px; }
+.cec .message-list button { display:block; width:100%; text-align:left; min-height:44px; white-space:normal; overflow-wrap:anywhere; }
+.cec .message-list small, .cec .message-history small { display:block; }
+.cec .message-detail, .cec .message-list { min-width:0; overflow-wrap:anywhere; }
+.cec .message-history { max-height:55dvh; overflow:auto; padding:12px; border:1px solid var(--line); }
+.cec .message-history article { padding:12px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.cec .message-history p { white-space:pre-wrap; }
+.cec .message-history time { font-size:12px; }
+.cec .message-composer { display:grid; gap:8px; margin-top:12px; }
+.cec .message-composer textarea { min-width:0; width:100%; }
+.cec .kbar { width:100%; max-width:100%; }
+@media (max-width:700px) {
+  .cec .message-layout { display:block; }
+  .cec .message-layout:not(.has-conversation) .message-detail { display:none; }
+  .cec .message-layout.has-conversation .message-list { display:none; }
+  .cec .messaging .actions { flex-wrap:wrap; }
+}
+.cec .messaging button, .cec-dialog-root .message-creation button { min-height:44px; border:1px solid var(--line); border-radius:6px; padding:8px 12px; color:var(--ink); background:var(--panel, white); cursor:pointer; }
+.cec .messaging button:disabled, .cec-dialog-root .message-creation button:disabled { opacity:.55; cursor:default; }
+.cec .messaging button[aria-current="true"] { border-color:var(--red); background:var(--bg); }

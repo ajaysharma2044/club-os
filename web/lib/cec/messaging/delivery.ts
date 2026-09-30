@@ -215,7 +215,7 @@ async function mentionUnread(
         `SELECT COUNT(*) n FROM message_mentions mm
            JOIN conversation_messages m ON m.id=mm.message_id
           WHERE mm.conversation_id=? AND mm.user_id=? AND m.author_id<>?
-            AND m.deleted_at IS NULL AND (? IS NULL OR m.created_at > ?)`,
+            AND m.deleted_at IS NULL AND (CAST(? AS TEXT) IS NULL OR m.created_at > ?)`,
       )
       .get(conversationId, userId, userId, lastReadAt, lastReadAt)) as {
       n: number;

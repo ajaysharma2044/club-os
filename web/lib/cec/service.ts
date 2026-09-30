@@ -1,4 +1,4 @@
-import { queueTaskEmail } from './email';
+import { emailConfig, queueTaskEmail } from './email';
 import { offer, respond } from "./opportunities";
 import { timingSafeEqual } from "node:crypto";
 import {
@@ -107,6 +107,12 @@ export async function auth(action: string, b: any) {
   }));
 }
 export async function state(u: User | null) {
+  let emailAvailable = false;
+  try {emailAvailable = !!emailConfig();} catch {}
+  const capabilities = {
+    analytics: process.env.CEC_STORAGE !== "postgres" || !!process.env.CEC_QUANT_DATABASE,
+    email: emailAvailable,
+  };
   if (u) {
     const role = (await clubRole(u.id));
     if (!role) fail("This account has no current membership in this organization.", 403);
@@ -119,6 +125,7 @@ export async function state(u: User | null) {
   if (!u)
     return {
       user: null,
+      capabilities,
       setupNeeded: !(await db()
         .prepare("SELECT 1 FROM users WHERE role='officer'")
         .get()),
@@ -151,6 +158,7 @@ export async function state(u: User | null) {
     .all()) as any[];
   return {
     user: u,
+    capabilities,
     items: visible,
     people,
     rsvps: isOfficer

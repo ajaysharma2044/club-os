@@ -126,3 +126,31 @@ ID and native meeting version. State refresh follows successful writes and an ex
 Refresh button. This is an officer-only server boundary, not only a hidden navigation link.
 Native task cards remain the review surface. Calendar UI explicitly distinguishes polling
 subscriptions from direct OAuth synchronization. See doc 32 for data and access contracts.
+
+## Inbox and asynchronous ownership
+
+`Messages.tsx` owns the Inbox list, creation dialog, and conversation-keyed drafts,
+pending sends and errors. The module-level Conversation is keyed by conversation ID;
+a completed request can only update that instance. Send locks live above the keyed
+component so switching away and back cannot issue the same in-flight draft twice.
+Successful sends clear only the matching original draft. Failed sends retain it.
+
+Private history uses numeric sequence cursors: `before` for older pages, `after` for
+incoming catch-up. UI requests 50 messages per page. An older-page request queues
+behind an active refresh; read-marker writes do not block history controls. Focus and a ten-second visible-tab
+interval refresh the open conversation; Inbox refreshes every fifteen seconds. Legacy
+club channels use a separate per-channel `(created_at,id)` cursor and retain their
+scheduler selection flow. Private messages remain outside analytics and officer logs.
+Phones show list or detail with Back; tablet/desktop use a flexible split layout.
+
+`commitAndRefresh` treats the successful write as authoritative. A later read failure
+shows “saved, refresh failed” and does not reject the write or invite re-submission.
+The workspace change event identifies its source to avoid its own redundant reload.
+New setup/detail requests must reject stale responses and keep local errors visible.
+
+Use `localDateTime` for datetime-local defaults and `optionalNumber` when zero is valid.
+Server state exposes non-secret `capabilities.analytics` and `capabilities.email`.
+These indicate host configuration, not proof of healthy workers or successful delivery.
+Unavailable features explain their requirement and do not offer futile retry actions.
+The global palette searches navigation shortcuts and uses the shared Modal; do not
+add input autofocus that steals the modal's captured return-focus target.

@@ -53,7 +53,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { data } = useCEC();
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => setMenuOpen(false), [pathname]);
-  const unread = 0;
+  const [unread, setUnread] = useState(false);
+  useEffect(() => {
+    let alive = true, pending = false;
+    setUnread(false);
+    if (!data?.user || data.user.role === "applicant") return;
+    const refresh = async () => {
+      if (pending || document.visibilityState !== "visible") return;
+      pending = true;
+      try { const r = await fetch("/api/cec/messaging/state"); if (!r.ok) return; const j = await r.json(); if (alive) setUnread(j.inbox.entries.some((e: any) => !e.muted && e.unread > 0)); }
+      catch {} finally {pending = false;}
+    };
+    void refresh(); const timer = setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => {alive = false; clearInterval(timer); window.removeEventListener("focus", refresh);};
+  }, [data?.user?.id, data?.user?.role, pathname]);
   const { state: join } = useJoinState();
   const isDemo = !!clubMatch && clubMatch[1] !== "cec";
   const who = isDemo ? (join?.completed && join.name ? join : me) : data?.user;
@@ -96,8 +110,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
               >
                 <Icon size={20} weight="regular" aria-hidden />
                 {item.label}
-                {item.href === "/chat" && unread > 0 && (
-                  <span className="rail-unread">{unread}</span>
+                {item.href === "/chat" && unread && (
+                  <span className="rail-unread" aria-label="New inbox activity">●</span>
                 )}
               </Link>
             );

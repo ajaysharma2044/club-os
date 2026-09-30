@@ -579,15 +579,17 @@ export async function messagesIn(
   u: User,
   conversationId: string,
   limit = 200,
+  before?: number,
+  after?: number,
 ): Promise<Message[]> {
   (await requireMember(u, conversationId));
   const n = Math.min(Math.max(Number(limit) || 200, 1), 500);
   const rows = (await db()
     .prepare(
-      "SELECT * FROM conversation_messages WHERE conversation_id=? ORDER BY seq DESC LIMIT ?",
+      `SELECT * FROM conversation_messages WHERE conversation_id=? ${before ? "AND seq < ?" : after ? "AND seq > ?" : ""} ORDER BY seq ${after ? "ASC" : "DESC"} LIMIT ?`,
     )
-    .all(conversationId, n)) as Message[];
-  return rows.reverse();
+    .all(...(before ? [conversationId, before, n] : after ? [conversationId, after, n] : [conversationId, n]))) as Message[];
+  return after ? rows : rows.reverse();
 }
 
 /** A root message and its replies, in order. */
@@ -660,7 +662,7 @@ export async function unreadFor(
       .prepare(
         `SELECT COUNT(*) n FROM conversation_messages
           WHERE conversation_id=? AND author_id<>? AND deleted_at IS NULL
-            AND (? IS NULL OR created_at > ?)`,
+            AND (CAST(? AS TEXT) IS NULL OR created_at > ?)`,
       )
       .get(conversationId, userId, lastReadAt, lastReadAt)) as { n: number }
   ).n;

@@ -20,7 +20,7 @@ import { randomUUID } from "node:crypto";
 const dir = mkdtempSync(join(tmpdir(), "cec-messaging-"));
 process.env.CEC_DATABASE = join(dir, "messaging.sqlite");
 
-const { db } = await import("../lib/cec/db.ts");
+const { db, tx } = await import("../lib/cec/db.ts");
 const {
   messagingInit,
   openDirect,
@@ -64,10 +64,11 @@ const ok = (c, m) => {
 const refuses = async (f, status, m) => {
   let thrown = null;
   try {
-    await f();
+    await tx(f);
   } catch (e) {
     thrown = e;
   }
+  if (thrown && thrown.status !== status) console.error("Unexpected refusal", m, thrown.code, thrown.message);
   ok(thrown !== null && thrown.status === status, m);
   return thrown;
 };
@@ -140,11 +141,11 @@ ok(
 // trying to write the duplicate directly.
 let indexHeld = false;
 try {
-  (await db()
+  await tx(async () => { (await db()
     .prepare(
       "INSERT INTO conversations(id,kind,title,created_by,created_at,dedupe_key) VALUES (?,'dm','',?,?,?)",
     )
-    .run(randomUUID(), alice.id, new Date().toISOString(), dmKey(alice.id, bob.id)));
+    .run(randomUUID(), alice.id, new Date().toISOString(), dmKey(alice.id, bob.id))); });
 } catch {
   indexHeld = true;
 }
@@ -559,3 +560,35 @@ ok(
 );
 
 console.log(`${checks} messaging assertions passed.`);
+
+// Cursor paging must retain quiet-channel history and never cross private boundaries.
+const {messaging, messagingState} = await import('../lib/cec/messaging/service.ts');
+const {upNext} = await import('../lib/cec/upnext.ts');
+const history = await createGroup(pres, 'Paged regression', [chen.id]);
+for(let i=0;i<105;i++) await postMessage(pres,history.id,'history '+i);
+const page1=(await messaging(chen,'messages',{conversation_id:history.id,limit:50})).messages;
+const page2=(await messaging(chen,'messages',{conversation_id:history.id,limit:50,before:page1[0].seq})).messages;
+const page3=(await messaging(chen,'messages',{conversation_id:history.id,limit:50,before:page2[0].seq})).messages;
+assert.equal(new Set([...page1,...page2,...page3].map(m=>m.id)).size,105);
+assert.equal(page3[0].body,'history 0');
+await refuses(()=>messaging(bob,'messages',{conversation_id:history.id,before:page1[0].seq}),404,'cursor cannot bypass membership');
+await db().prepare('UPDATE conversation_members SET last_read_at=NULL WHERE conversation_id=? AND user_id=?').run(history.id,chen.id);
+assert((await messagingState(chen)).inbox.entries.some(e=>e.conversation_id===history.id && e.unread===105));
+await upNext(chen);
+await markRead(chen,history.id);
+assert.equal((await messagingState(chen)).inbox.entries.find(e=>e.conversation_id===history.id).unread,0);
+await upNext(chen);
+const quietId=randomUUID();
+await db().prepare('INSERT INTO messages(id,user_id,channel,body,created_at) VALUES(?,?,?,?,?)').run(quietId,alice.id,'builders','Quiet channel history','2026-01-01T00:00:00Z');
+for(let i=0;i<105;i++)await db().prepare('INSERT INTO messages(id,user_id,channel,body,created_at) VALUES(?,?,?,?,?)').run(randomUUID(),bob.id,'general','busy '+i,'2026-02-01T00:00:00Z');
+assert.equal((await messaging(alice,'legacy',{channel:'builders'})).messages[0].id,quietId);
+const legacy1=(await messaging(alice,'legacy',{channel:'general'})).messages;
+const legacy2=(await messaging(alice,'legacy',{channel:'general',before:legacy1.at(-1).id})).messages;
+assert.equal(new Set([...legacy1,...legacy2].map(m=>m.id)).size,100);
+await refuses(()=>messaging(hopeful,'legacy',{channel:'general'}),403,'applicant cannot read channel history');
+console.log('Populated inbox, null/read cutoffs, Up next, private cursor boundaries and quiet legacy history: PASS');
+const forward1=(await messaging(chen,'messages',{conversation_id:history.id,limit:50,after:page3.at(-1).seq})).messages;
+const forward2=(await messaging(chen,'messages',{conversation_id:history.id,limit:50,after:forward1.at(-1).seq})).messages;
+assert.equal(forward1.length,50);assert.equal(forward2.length,50);
+assert.equal(new Set([...page3,...forward1,...forward2].map(m=>m.id)).size,105);
+console.log('Forward cursor catches up without dropping messages: PASS');

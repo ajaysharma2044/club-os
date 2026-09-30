@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // Integrations — what is connected, what is not, and exactly who has to do what.
 //
@@ -109,8 +109,12 @@ export default function Integrations() {
     load();
   }, [load]);
 
-  const openSetup = async (id: string) => {
-    if (open === id) {
+  const setupSequence = useRef(0);
+  const [setupError, setSetupError] = useState("");
+  const openSetup = async (id: string, retry = false) => {
+    const request = ++setupSequence.current;
+    setSetupError("");
+    if (open === id && !retry) {
       setOpen(null);
       setSetup(null);
       return;
@@ -118,13 +122,14 @@ export default function Integrations() {
     setOpen(id);
     setSetup(null);
     try {
-      setSetup(await post("integrations/setup", { id }));
+      const result = await post("integrations/setup", { id });
+      if (request === setupSequence.current) setSetup(result);
     } catch (e: any) {
-      setError(e.message);
+      if (request === setupSequence.current) setSetupError(e.message);
     }
   };
 
-  if (error && !data) return <div className="inline-alert">{error}</div>;
+  if (error && !data) return <div className="inline-alert" role="alert">{error}<button onClick={load}>Retry</button></div>;
   if (!data) return <div className="empty">Checking what is connected…</div>;
 
   const byCategory = data.integrations.reduce<Record<string, Status[]>>((acc, i) => {
@@ -194,7 +199,8 @@ export default function Integrations() {
                   {expanded ? "Hide setup" : `Setup — ${i.humanSteps} human step${i.humanSteps === 1 ? "" : "s"}`}
                 </button>
 
-                {expanded && !setup && <p className="text-caption">Loading…</p>}
+                {expanded && setupError && <div role="alert">{setupError} <button onClick={() => openSetup(i.id, true)}>Retry setup</button></div>}
+                {expanded && !setup && !setupError && <p className="text-caption">Loading…</p>}
                 {expanded && setup && (
                   <div style={{ marginTop: 10 }}>
                     <p className="text-caption">

@@ -1,390 +1,172 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Modal } from "./FormPrimitives";
+import { LegacyConversation } from "./LegacyConversation";
 
-// Messages — DMs, groups and channels.
-//
-// The backend this drives is walled off from every analytical layer: a test
-// reads the messaging sources and fails if they contain a call to `emit`,
-// `recordEvidence`, `writeFactorValue` or `audit`. Private conversation is not
-// behavioural evidence, and the audit trail is excluded too, because "who
-// messaged whom, when" is a complete social graph with an integrity story
-// stapled to it.
-//
-// That constraint shapes this screen more than it might look:
-//
-//   - No read receipts. Not per-person, not at all. docs/22 section 6.2 cites
-//     the CHI 2022 work on pressure-to-reply and deliberate non-opening.
-//   - No presence, no "last seen", no typing indicator. Presence creates an
-//     expectation of immediate reply and an anxiety of constant visibility,
-//     and it reveals a pattern about a person continuously with no moment of
-//     disclosure — which fails the spirit of the mirror test.
-//   - TWO-TIER UNREAD (docs/22 Pattern 1): a NUMBER only for a mention, which
-//     is addressed to you. Ambient activity gets a dot and never a count. The
-//     moment ambient traffic earns a number, the badge becomes noise and
-//     people stop reading it — which is exactly how Slack and Canvas
-//     notifications died.
-
-type Entry = {
-  conversation_id: string;
-  kind: "dm" | "group" | "channel";
-  title: string;
-  muted: boolean;
-  unread: number;
-  mentions: number;
-  last_activity_at: string;
-  preview: string;
-  preview_author: string;
-  preview_deleted: boolean;
-};
-type Msg = {
-  id: string;
-  author_id: string;
-  body: string;
-  reply_to: string | null;
-  created_at: string;
-  edited_at: string | null;
-  deleted_at: string | null;
-};
-type State = {
-  inbox: { entries: Entry[]; total_unread: number; total_mentions: number };
-  note: string;
-};
-
-const post = async (path: string, body: unknown) => {
-  const r = await fetch(`/api/cec/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+type Entry = { conversation_id: string; title: string; kind: string; muted: boolean; unread: number; mentions: number; preview: string };
+type Message = { id: string; seq: number; author_id: string; body: string; created_at: string; deleted_at: string | null; reply_to: string | null };
+type State = { inbox: {entries: Entry[]}; people: {id: string; name: string}[]; channels: {id: string; title: string}[]; canCreateChannel: boolean; note: string };
+export async function messagingPost(path: string, body: unknown) {
+  const r = await fetch(`/api/cec/messaging/${path}`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
   const j = await r.json();
-  if (!r.ok) throw Error(j.error || "That did not work.");
+  if (!r.ok) throw Error(j.error || "Unable to complete this request.");
   return j;
-};
-
-const when = (iso: string) => {
-  const d = new Date(iso);
-  const mins = (Date.now() - d.getTime()) / 60000;
-  if (mins < 1) return "now";
-  if (mins < 60) return `${Math.floor(mins)}m`;
-  if (mins < 1440) return `${Math.floor(mins / 60)}h`;
-  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-};
+}
 
 export default function Messages() {
   const [state, setState] = useState<State | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Msg[]>([]);
-  const [names, setNames] = useState<Record<string, string>>({});
-  const [draft, setDraft] = useState("");
-  const [replyTo, setReplyTo] = useState<Msg | null>(null);
+  const sendLocks = useRef(new Set<string>());
+  const [pendingSends, setPendingSends] = useState<Set<string>>(new Set());
+  const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
-  const [sending, setSending] = useState(false);
-  const foot = useRef<HTMLDivElement>(null);
-
-  const loadInbox = useCallback(async () => {
+  const [creating, setCreating] = useState(false);
+  const [legacy, setLegacy] = useState(false);
+  const loading = useRef(false);
+  const alive = useRef(true);
+  const refresh = useCallback(async () => {
+    if (loading.current) return;
+    loading.current = true;
     try {
-      const r = await fetch("/api/cec/messaging/state");
+      const r = await fetch("/api/cec/messaging/state", {cache: "no-store"});
       const j = await r.json();
-      if (!r.ok) throw Error(j.error);
-      setState(j);
-    } catch (e: any) {
-      setError(e.message);
-    }
+      if (!r.ok) throw Error(j.error || "Unable to load Inbox.");
+      if (alive.current) { setState(j); setError(""); }
+    } catch (e: any) { if (alive.current) setError(e.message); }
+    finally { loading.current = false; }
   }, []);
-
   useEffect(() => {
-    loadInbox();
-  }, [loadInbox]);
-
-  const openConversation = useCallback(
-    async (id: string) => {
-      setOpen(id);
-      setReplyTo(null);
-      try {
-        const [m, p] = await Promise.all([
-          post("messaging/messages", { conversation_id: id, limit: 100 }),
-          post("messaging/participants", { conversation_id: id }),
-        ]);
-        setMessages(m.messages);
-        setNames(
-          Object.fromEntries(
-            (p.participants || []).map((x: any) => [x.user_id, x.name]),
-          ),
-        );
-        await post("messaging/read", { conversation_id: id });
-        await loadInbox();
-        requestAnimationFrame(() =>
-          foot.current?.scrollIntoView({ block: "end" }),
-        );
-      } catch (e: any) {
-        setError(e.message);
-      }
-    },
-    [loadInbox],
-  );
-
-  const send = async () => {
-    const body = draft.trim();
-    if (!body || !open) return;
-    setSending(true);
-    setError("");
-    // Optimistic: the message appears immediately and reconciles behind.
-    const temp: Msg = {
-      id: `pending-${Date.now()}`,
-      author_id: "__me__",
-      body,
-      reply_to: replyTo?.id ?? null,
-      created_at: new Date().toISOString(),
-      edited_at: null,
-      deleted_at: null,
-    };
-    setMessages((m) => [...m, temp]);
-    setDraft("");
-    setReplyTo(null);
-    requestAnimationFrame(() => foot.current?.scrollIntoView({ block: "end" }));
-    try {
-      await post("messaging/send", {
-        conversation_id: open,
-        body,
-        reply_to: temp.reply_to,
-      });
-      const m = await post("messaging/messages", {
-        conversation_id: open,
-        limit: 100,
-      });
-      setMessages(m.messages);
-      await loadInbox();
-    } catch (e: any) {
-      // Roll back inline, and give the text back rather than losing it.
-      setMessages((m) => m.filter((x) => x.id !== temp.id));
-      setDraft(body);
-      setError(e.message);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  if (error && !state) return <div className="inline-alert">{error}</div>;
-  if (!state) return <div className="empty">Loading your messages…</div>;
-
-  const entries = state.inbox.entries;
-  const current = entries.find((e) => e.conversation_id === open);
-
-  return (
-    <section className="panel">
-      <header className="panel-head">
-        <div>
-          <h2 className="text-title-2">Messages</h2>
-          <p className="text-caption">{state.note}</p>
-        </div>
-        {state.inbox.total_mentions > 0 && (
-          <span className="num" title="Mentions of you">
-            @{state.inbox.total_mentions}
-          </span>
-        )}
-      </header>
-
-      <div style={{ display: "flex", gap: 16, marginTop: 14, alignItems: "flex-start" }}>
-        {/* ---- the list ---- */}
-        <div style={{ flex: "0 0 240px", maxWidth: 240 }}>
-          {!entries.length && (
-            <div className="empty">
-              No conversations yet. They appear here when someone messages you or you
-              join a channel.
-            </div>
-          )}
-          {entries.map((e) => {
-            const active = e.conversation_id === open;
-            return (
-              <button
-                key={e.conversation_id}
-                type="button"
-                onClick={() => openConversation(e.conversation_id)}
-                className="ghost"
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "8px 10px",
-                  marginBottom: 4,
-                  borderRadius: 8,
-                  transition: "background 120ms ease",
-                  background: active ? "var(--porcelain)" : "transparent",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span
-                    className="text-body"
-                    style={{ fontWeight: e.unread ? 600 : 400, flex: 1 }}
-                  >
-                    {e.kind === "channel" ? "#" : ""}
-                    {e.title}
-                  </span>
-                  {/* A NUMBER only for a mention. Ambient gets a dot. */}
-                  {e.mentions > 0 ? (
-                    <span className="num" style={{ fontSize: 12 }}>
-                      @{e.mentions}
-                    </span>
-                  ) : e.unread > 0 && !e.muted ? (
-                    <span
-                      aria-label="New activity"
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: 4,
-                        background: "var(--signal, var(--electric))",
-                      }}
-                    />
-                  ) : null}
-                </div>
-                <div className="text-caption" style={{ opacity: 0.75 }}>
-                  {e.preview_deleted ? (
-                    <em>message deleted</em>
-                  ) : (
-                    `${e.preview_author ? e.preview_author + ": " : ""}${e.preview}`.slice(0, 48)
-                  )}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ---- the conversation ---- */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {!current && (
-            <div className="empty">Pick a conversation to read it.</div>
-          )}
-          {current && (
-            <>
-              <div className="page-title" style={{ marginBottom: 8 }}>
-                <h3 className="text-title-3">
-                  {current.kind === "channel" ? "#" : ""}
-                  {current.title}
-                </h3>
-                <button
-                  type="button"
-                  className="ghost"
-                  onClick={async () => {
-                    await post("messaging/mute", {
-                      conversation_id: current.conversation_id,
-                      muted: !current.muted,
-                    });
-                    loadInbox();
-                  }}
-                >
-                  {current.muted ? "Unmute" : "Mute"}
-                </button>
-              </div>
-
-              <div
-                style={{
-                  maxHeight: 420,
-                  overflowY: "auto",
-                  border: "1px solid var(--line, var(--tiara))",
-                  borderRadius: 10,
-                  padding: 10,
-                }}
-              >
-                {!messages.length && (
-                  <p className="text-caption">Nothing here yet. Say something.</p>
-                )}
-                {messages.map((m) => {
-                  const parent = m.reply_to
-                    ? messages.find((x) => x.id === m.reply_to)
-                    : null;
-                  const pending = m.id.startsWith("pending-");
-                  return (
-                    <div
-                      key={m.id}
-                      style={{ marginBottom: 10, opacity: pending ? 0.6 : 1 }}
-                    >
-                      {parent && (
-                        <div
-                          className="text-caption"
-                          style={{
-                            borderLeft: "2px solid var(--tiara)",
-                            paddingLeft: 6,
-                            opacity: 0.7,
-                          }}
-                        >
-                          {names[parent.author_id] || "…"}: {parent.body.slice(0, 60)}
-                        </div>
-                      )}
-                      <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                        <strong className="text-body">
-                          {m.author_id === "__me__"
-                            ? "You"
-                            : names[m.author_id] || "Member"}
-                        </strong>
-                        <span className="text-micro" style={{ opacity: 0.6 }}>
-                          {when(m.created_at)}
-                          {m.edited_at ? " · edited" : ""}
-                        </span>
-                        {!pending && !m.deleted_at && (
-                          <button
-                            type="button"
-                            className="ghost"
-                            style={{ fontSize: 11, padding: "0 4px" }}
-                            onClick={() => setReplyTo(m)}
-                          >
-                            Reply
-                          </button>
-                        )}
-                      </div>
-                      <p className="text-body" style={{ margin: 0 }}>
-                        {m.deleted_at ? (
-                          <em style={{ opacity: 0.6 }}>message deleted</em>
-                        ) : (
-                          m.body
-                        )}
-                      </p>
-                    </div>
-                  );
-                })}
-                <div ref={foot} />
-              </div>
-
-              {replyTo && (
-                <p className="text-caption" style={{ marginTop: 6 }}>
-                  Replying to {names[replyTo.author_id] || "member"}:{" "}
-                  {replyTo.body.slice(0, 40)}…{" "}
-                  <button type="button" className="ghost" onClick={() => setReplyTo(null)}>
-                    Cancel
-                  </button>
-                </p>
-              )}
-
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <input
-                  style={{ flex: 1 }}
-                  value={draft}
-                  maxLength={4000}
-                  placeholder={`Message ${current.title}`}
-                  aria-label="Write a message"
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send();
-                    }
-                  }}
-                />
-                <button type="button" onClick={send} disabled={sending || !draft.trim()}>
-                  Send
-                </button>
-              </div>
-              {error && (
-                <p
-                  className="text-caption"
-                  style={{ color: "var(--fire, var(--crimson))", marginTop: 6 }}
-                >
-                  {error}
-                </p>
-              )}
-            </>
-          )}
-        </div>
+    alive.current = true;
+    void refresh();
+    const sync = () => { if (document.visibilityState === "visible") void refresh(); };
+    const timer = setInterval(sync, 15000);
+    window.addEventListener("focus", sync);
+    return () => { alive.current = false; clearInterval(timer); window.removeEventListener("focus", sync); };
+  }, [refresh]);
+  const current = state?.inbox.entries.find(e => e.conversation_id === open);
+  return <section className="panel messaging">
+    <header className="panel-head"><h2>Inbox</h2><div className="actions">
+      <button onClick={() => setCreating(true)} disabled={!state}>New conversation</button>
+      <button className="ghost" onClick={refresh}>Refresh inbox</button>
+      <button className="ghost" onClick={() => setLegacy(!legacy)}>{legacy ? "Private conversations" : "Earlier club channels"}</button>
+    </div></header>
+    {error && <p role="alert" className="inline-alert">{error}</p>}
+    {!state && !error && <p>Loading your inbox…</p>}
+    {state && <p className="source-note">{state.note}</p>}
+    {legacy ? <LegacyConversation /> : state && <div className={`message-layout ${open ? "has-conversation" : ""}`}>
+      <nav className="message-list" aria-label="Conversations">
+        {!state.inbox.entries.length && <p>No conversations yet. Start a conversation or join a club channel.</p>}
+        {state.inbox.entries.map(e => <button key={e.conversation_id} className="ghost" aria-current={open === e.conversation_id ? "true" : undefined} onClick={() => setOpen(e.conversation_id)}>
+          <strong>{e.kind === "channel" ? "# " : ""}{e.title}</strong>
+          {e.mentions > 0 ? <span aria-label={`${e.mentions} mentions`}> @{e.mentions}</span> : e.unread > 0 && !e.muted ? <span aria-label="New activity"> ●</span> : null}
+          <small>{e.preview.slice(0, 80)}</small>
+        </button>)}
+      </nav>
+      <div className="message-detail">
+        {open && <button className="ghost" onClick={() => setOpen(null)}>Back to conversations</button>}
+        {current ? <Conversation key={current.conversation_id} entry={current} draft={drafts[current.conversation_id] || ""}
+          setDraft={value => setDrafts(d => ({...d, [current.conversation_id]: value}))}
+          busy={pendingSends.has(current.conversation_id)} sendLocks={sendLocks.current}
+          markSending={value => setPendingSends(p => {const next = new Set(p); if(value) next.add(current.conversation_id); else next.delete(current.conversation_id); return next;})}
+          sendError={sendErrors[current.conversation_id] || ""} setSendError={value => setSendErrors(e => ({...e, [current.conversation_id]: value}))}
+          clearSentDraft={value => setDrafts(d => d[current.conversation_id] === value ? {...d, [current.conversation_id]: ""} : d)} refreshInbox={refresh} />
+          : <p>{open ? "This conversation is unavailable. Refresh your inbox or choose another." : "Choose a conversation to read it."}</p>}
       </div>
-    </section>
-  );
+    </div>}
+    {creating && state && <NewConversation state={state} close={() => setCreating(false)} created={async id => {setCreating(false); setLegacy(false); setOpen(id); await refresh();}} />}
+  </section>;
+}
+
+function NewConversation({state, close, created}: {state: State; close: () => void; created: (id: string) => Promise<void>}) {
+  const [kind, setKind] = useState("direct"), [title, setTitle] = useState("");
+  const [members, setMembers] = useState<string[]>([]), [channel, setChannel] = useState(state.channels[0]?.id || "");
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const pending = useRef(false);
+  return <Modal title="New conversation" close={() => {if (!pending.current) close();}}>
+    <form className="form-grid message-creation" onSubmit={async e => {
+      e.preventDefault(); if (pending.current) return; pending.current = true; setBusy(true); setError("");
+      try {
+        const result = await messagingPost(kind, kind === "direct" ? {user_id: members[0]} : kind === "group" ? {title, members} : kind === "channel" ? {slug: title} : {conversation_id: channel});
+        await created(kind === "join" ? channel : result.id);
+      } catch (e: any) {setError(e.message);} finally {pending.current = false; setBusy(false);}
+    }}>
+      <label className="field">Conversation type<select value={kind} disabled={busy} onChange={e => {setKind(e.target.value); setMembers([]);}}><option value="direct">Direct message</option><option value="group">Group</option><option value="join">Join a channel</option>{state.canCreateChannel && <option value="channel">Create a channel</option>}</select></label>
+      {(kind === "channel" || kind === "group") && <label className="field">Name<input required maxLength={120} value={title} disabled={busy} onChange={e => setTitle(e.target.value)} /></label>}
+      {kind === "direct" && <label className="field">Member<select required disabled={busy} value={members[0] || ""} onChange={e => setMembers([e.target.value])}><option value="">Choose a member</option>{state.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+      {kind === "group" && <fieldset><legend>Members</legend>{state.people.map(p => <label className="check" key={p.id}><input type="checkbox" disabled={busy} checked={members.includes(p.id)} onChange={e => setMembers(m => e.target.checked ? [...m, p.id] : m.filter(id => id !== p.id))} />{p.name}</label>)}</fieldset>}
+      {kind === "join" && <label className="field">Channel<select required value={channel} disabled={busy} onChange={e => setChannel(e.target.value)}><option value="">Choose a channel</option>{state.channels.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select>{!state.channels.length && <small>No channels yet. An officer can create one.</small>}</label>}
+      {error && <p role="alert">{error}</p>}<button disabled={busy || (kind === "group" && !members.length)}>{busy ? "Opening…" : "Open conversation"}</button>
+    </form>
+  </Modal>;
+}
+
+function Conversation({entry, draft, setDraft, clearSentDraft, refreshInbox, busy, sendLocks, markSending, sendError, setSendError}: {busy: boolean; sendLocks: Set<string>; markSending: (v: boolean) => void; sendError: string; setSendError: (v: string) => void; entry: Entry; draft: string; setDraft: (v: string) => void; clearSentDraft: (v: string) => void; refreshInbox: () => Promise<void>}) {
+  const [messages, setMessages] = useState<Message[]>([]), [names, setNames] = useState<Record<string, string>>({});
+  const [error, setError] = useState(""), [loaded, setLoaded] = useState(false), [older, setOlder] = useState(false);
+  const [reply, setReply] = useState<Message | null>(null);
+  const [reading, setReading] = useState(false);
+  const [pagePending, setPagePending] = useState(false);
+  const queuedBefore = useRef<number | undefined>(undefined);
+  const newest = useRef(0);
+  const alive = useRef(true), fetching = useRef(false);
+  const load = useCallback(async (before?: number) => {
+    if (fetching.current) {
+      if (before) {queuedBefore.current = before; setPagePending(true);}
+      return;
+    }
+    fetching.current = true; setReading(true);
+    if (before) setPagePending(true);
+    try {
+      const [result, people] = await Promise.all([messagingPost("messages", {conversation_id: entry.conversation_id, limit: 50, before, after: before ? undefined : newest.current || undefined}), loaded ? Promise.resolve(null) : messagingPost("participants", {conversation_id: entry.conversation_id})]);
+      if (!alive.current) return;
+      newest.current = Math.max(newest.current, ...result.messages.map((m: Message) => m.seq));
+      setMessages(previous => [...new Map([...previous, ...result.messages].map((m: Message) => [m.id, m])).values()].sort((a,b) => a.seq - b.seq));
+      if (people) setNames(Object.fromEntries(people.participants.map((p: any) => [p.user_id, p.name])));
+      if (before || !loaded) setOlder(result.messages.length === 50);
+      setLoaded(true); setError("");
+      if (!before && (!loaded || result.messages.length)) {
+        void messagingPost("read", {conversation_id: entry.conversation_id}).then(refreshInbox).catch((e: Error) => {if (alive.current) setError(e.message);});
+      }
+    } catch (e: any) {if (alive.current) setError(e.message);} finally {
+      fetching.current = false;
+      const queued = queuedBefore.current; queuedBefore.current = undefined;
+      if (alive.current) {
+        setReading(false);
+        if (queued) void load(queued); else setPagePending(false);
+      }
+    }
+  }, [entry.conversation_id, loaded, refreshInbox]);
+  useEffect(() => {
+    alive.current = true; void load();
+    const sync = () => {if (document.visibilityState === "visible") void load();};
+    const timer = setInterval(sync, 10000); window.addEventListener("focus", sync);
+    return () => {alive.current = false; clearInterval(timer); window.removeEventListener("focus", sync);};
+  }, [load]);
+  async function send() {
+    if (sendLocks.has(entry.conversation_id) || !draft.trim()) return;
+    const original = draft; sendLocks.add(entry.conversation_id); markSending(true); setSendError(""); setError("");
+    try {
+      const sent = await messagingPost("send", {conversation_id: entry.conversation_id, body: original.trim(), reply_to: reply?.id});
+      clearSentDraft(original);
+      if (alive.current) {setReply(null); setMessages(m => [...new Map([...m, sent].map(x => [x.id,x])).values()].sort((a,b) => a.seq-b.seq));}
+      // Read refresh failures never turn a confirmed send into a failed send.
+      await refreshInbox();
+    } catch (e: any) {setSendError(e.message);} finally {sendLocks.delete(entry.conversation_id); markSending(false);}
+  }
+  return <>
+    <header className="panel-head"><h3>{entry.title}</h3><div className="actions"><button className="ghost" disabled={reading} onClick={() => load()}>Refresh conversation</button><button className="ghost" onClick={async () => {try {await messagingPost("mute", {conversation_id: entry.conversation_id, muted: !entry.muted}); await refreshInbox();} catch (e: any) {setError(e.message);}}}>{entry.muted ? "Unmute" : "Mute"}</button></div></header>
+    {(error || sendError) && <p role="alert" className="inline-alert">{error || sendError}</p>}
+    {!loaded ? <p>Loading conversation…</p> : <>
+      {older && <button className="ghost" disabled={pagePending} onClick={() => load(messages[0]?.seq)}>Load older messages</button>}
+      <div className="message-history" aria-label="Message history">
+        {!messages.length && <p>No messages yet.</p>}
+        {messages.map(m => <article key={m.id}><strong>{names[m.author_id] || "Member"}</strong> <time dateTime={m.created_at}>{new Date(m.created_at).toLocaleString("en-US", {timeZone: "America/New_York"})} ET</time>
+          {m.reply_to && <small>Reply to {messages.find(p => p.id === m.reply_to)?.body.slice(0,80) || "an earlier message"}</small>}
+          <p>{m.deleted_at ? "Message deleted" : m.body}</p>{!m.deleted_at && <button className="ghost" onClick={() => setReply(m)}>Reply</button>}</article>)}
+      </div>
+      {reply && <p>Replying to: {reply.body.slice(0,80)} <button onClick={() => setReply(null)}>Cancel reply</button></p>}
+      <form className="message-composer" onSubmit={e => {e.preventDefault(); void send();}}><label className="field">Write a message<textarea value={draft} disabled={busy} maxLength={4000} onChange={e => setDraft(e.target.value)} /></label><button disabled={busy || !draft.trim()}>{busy ? "Sending…" : "Send"}</button></form>
+    </>}
+  </>;
 }

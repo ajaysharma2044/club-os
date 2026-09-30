@@ -1,4 +1,5 @@
 "use client";
+import { commitAndRefresh } from "./frontendState";
 import { useCallback, useEffect, useRef, useState } from "react";
 /** Owns the legacy workspace contract. Server authorization remains authoritative. */
 export function useWorkspaceData(section: string) {
@@ -40,7 +41,8 @@ export function useWorkspaceData(section: string) {
     }, [section]);
     useEffect(() => { load().catch(e => setError(e.message)); }, [load]);
     useEffect(() => {
-        const refresh = () => {
+        const refresh = (event?: Event) => {
+            if (event instanceof CustomEvent && event.detail?.source === "workspace") return;
             if (document.visibilityState === "visible")
                 load().catch((e) => setError(e.message));
         };
@@ -62,17 +64,17 @@ export function useWorkspaceData(section: string) {
         setError("");
         setNotice("");
         try {
-            const r = await fetch("/api/cec/" + path, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
-            });
-            const result = await r.json();
-            if (!r.ok)
-                throw new Error(result.error || "Unable to save.");
-            window.dispatchEvent(new Event("cec:changed"));
-            await load();
-            return result;
+            return await commitAndRefresh(async () => {
+                const r = await fetch("/api/cec/" + path, {
+                    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+                });
+                const result = await r.json();
+                if (!r.ok) throw new Error(result.error || "Unable to save.");
+                return result;
+            }, async () => {
+                window.dispatchEvent(new CustomEvent("cec:changed", {detail: {source: "workspace"}}));
+                await load();
+            }, () => setError("Saved successfully, but the latest records could not be loaded. Refresh the page to view them; do not submit again."));
         }
         catch (e: any) {
             setError(e.message);

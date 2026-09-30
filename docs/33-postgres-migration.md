@@ -130,3 +130,12 @@ storage. Do not disable the guard to hide a missing deployment setting.
 References: [node-postgres transactions](https://node-postgres.com/features/transactions),
 [Supabase connections](https://supabase.com/docs/guides/database/connecting-to-postgres),
 [SSL verification](https://supabase.com/docs/guides/platform/ssl-enforcement).
+
+### Populated messaging regression gate
+
+Run `npm --prefix web run test:postgres-messaging` against configured Supabase access.
+It creates and drops its own test schema. Coverage includes populated conversations,
+null/non-null read cutoffs, mentions, Up next, privacy checks and history pagination.
+PostgreSQL cannot infer an isolated `$n IS NULL` parameter's type from another placeholder:
+nullable timestamp strings in unread queries explicitly cast the parameter to TEXT.
+No migration is required for these fixes. Empty-inbox HTTP checks alone are insufficient.

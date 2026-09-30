@@ -852,7 +852,8 @@ export function CECWorkspace({
                           () => update(e, { status: "closed" }),
                           true,
                         )}
-                      {e.data.status === "published" &&
+                      {!data.capabilities?.analytics && <p className="source-note">Attendance forecasts are unavailable on this host. Event records and RSVPs remain available.</p>}
+                      {e.data.status === "published" && data.capabilities?.analytics &&
                         button(
                           "Forecast",
                           async () => {
@@ -1265,70 +1266,7 @@ export function CECWorkspace({
                   )}
               </div>
             )}
-            {current === "Inbox" && (
-              <div className="panel">
-                <div className="panel-head">
-                  <h2>Club conversation</h2>
-                  <select
-                    style={{ width: 180 }}
-                    value={channel}
-                    onChange={(e) => setChannel(e.target.value)}
-                  >
-                    {["general", "events", "builders"].map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <ChatScheduler
-                  key={channel}
-                  messages={(data.messages || []).filter(
-                    (m: any) => m.channel === channel,
-                  )}
-                  people={people}
-                  userId={user.id}
-                />
-                <div className="thread">
-                  {(data.messages || [])
-                    .filter((m: any) => m.channel === channel)
-                    .reverse()
-                    .map((m: any) => (
-                      <div className="message" key={m.id}>
-                        <strong>{m.name}</strong>{" "}
-                        <small>{dateLabel(m.created_at)} ET</small>
-                        <p>{m.body}</p>
-                      </div>
-                    ))}
-                </div>
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    try {
-                      await action("message", { channel, body: message });
-                      setMessage("");
-                    } catch {}
-                  }}
-                  className="form-grid"
-                  style={{ marginTop: 20 }}
-                >
-                  <label className="field">
-                    Message #{channel}
-                    <textarea
-                      required
-                      maxLength={4000}
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                    />
-                  </label>
-                  <button className="button" disabled={busy}>
-                    Send message
-                  </button>
-                </form>
-                <p className="source-note">
-                  Messages stay in the club conversation. Message content is not
-                  sent to the quant engine.
-                </p>
-              </div>
-            )}
+            {current === "Inbox" && <Messages />}
           </>
         )}
       </>
@@ -1813,6 +1751,8 @@ export function CECWorkspace({
           ))}
         </div>
         <div>
+          {!data.capabilities?.analytics && <p className="notice" role="status">Analytics is unavailable on this host. A configured analytics worker is required for forecasts, simulations, and record synchronization.</p>}
+          <fieldset disabled={!data.capabilities?.analytics} style={{border:0,padding:0,minWidth:0}}>
           <div className="panel">
             <div className="eyebrow">Quant engine</div>
             <h2>Evidence before estimates.</h2>
@@ -1896,6 +1836,7 @@ export function CECWorkspace({
               }}
             />
           </div>
+          </fieldset>
         </div>
       </div>
     );

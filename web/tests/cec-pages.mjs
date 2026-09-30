@@ -16,8 +16,8 @@ for (const path of [
   "/discover",
   "/join",
   "/join?club=cec",
-  "/chat",
-  "/chat?c=builders",
+  "/clubs/cec/messages",
+  "/chat?c=demo-room",
   "/you",
   "/you?view=intake",
   "/you?view=record",
@@ -40,6 +40,8 @@ for (const path of [
   await page(path);
 
 for (const [legacy, current] of Object.entries({
+  "/chat": "/clubs/cec/messages",
+  "/chat?c=builders": "/clubs/cec/messages",
   "/cec": "/clubs/cec",
   "/cec/events": "/clubs/cec/events",
   "/cec/work": "/clubs/cec/workspace",

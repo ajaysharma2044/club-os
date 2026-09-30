@@ -1,4 +1,5 @@
 "use client";
+import {localDateTime, optionalNumber} from "./frontendState";
 import { useEffect, useState } from "react";
 
 // "When should we hold this?" — the officer-facing end of the context engine.
@@ -55,7 +56,7 @@ function defaultSlots(): string[] {
     const d = new Date(base);
     d.setDate(d.getDate() + dayOffset);
     d.setHours(hour, 0, 0, 0);
-    return d.toISOString().slice(0, 16);
+    return localDateTime(d);
   };
   return [at(0, 19), at(1, 11), at(4, 10)];
 }
@@ -88,7 +89,7 @@ export default function SlotAdvisor() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           slots: slots.filter(Boolean).map((s) => new Date(s).toISOString()),
-          rsvps: Number(rsvps) || undefined,
+          rsvps: optionalNumber(rsvps),
           food,
           outdoors,
         }),

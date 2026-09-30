@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { channelLabel, channels } from "@/lib/chat";
+import { Modal } from "./cec/FormPrimitives";
 import { clubs } from "@/lib/data";
 
 const staticItems = [
@@ -149,16 +150,14 @@ export function CommandPalette() {
   }
 
   return (
-    <div className="kbar-scrim" onMouseDown={() => setOpen(false)}>
+    <Modal title="Navigation shortcuts" close={() => setOpen(false)}>
       <div
         className="kbar"
-        role="dialog"
-        aria-label="Command palette"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input
-          autoFocus
-          placeholder="Go to a club, event, or person"
+          aria-label="Find a navigation shortcut"
+          placeholder="Find a navigation shortcut"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -191,6 +190,6 @@ export function CommandPalette() {
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

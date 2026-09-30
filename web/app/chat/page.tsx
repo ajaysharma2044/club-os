@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { ChatApp } from "@/components/ChatApp";
-import { CECWorkspace } from "@/components/cec/Workspace";
+import { redirect } from "next/navigation";
 export default async function ChatPage({
   searchParams,
 }: {
@@ -16,14 +16,5 @@ export default async function ChatPage({
         </Suspense>
       </>
     );
-  return (
-    <div className="connected-inbox">
-      <CECWorkspace
-        embedded
-        section="work"
-        initialTab="Inbox"
-        initialChannel={c}
-      />
-    </div>
-  );
+  redirect("/clubs/cec/messages");
 }
