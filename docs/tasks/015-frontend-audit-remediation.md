@@ -44,9 +44,17 @@ Self-review only. Browser emulation is not physical-device or complete screen-re
 - Real PostgreSQL suite passed: `work/frontend-audit/postgres-messaging-final.log`, including forward catch-up with 105 messages. Each suite drops its synthetic schema.
 - Final browser pass exercised sending while switching DM → group → DM. The DM showed one confirmed message and cleared its draft. API verification counted exactly one matching message in the DM and zero in the group.
 - Browser history advanced from 50 to 100 messages, then loaded all 106 messages (105 seeded plus the sent message), with History 0 visible and the older-page button removed. A final check found an older-page click could be ignored during background refresh; it now queues and exposes its pending state. Read-marker updates no longer block pagination. The test used a separate synthetic schema, never production records.
-- `git diff --check` passed. No migration or credentials were added. No commit, push or deployment was performed; local preview restored on port 3000.
+- `git diff --check` passed. No migration or credentials were added. At the end of implementation, changes were local and the preview was restored on port 3000. Deployment was subsequently authorized and completed below.
 
 
 - Shared Modal imports its scoped styles so shortcut dialogs also work on a fresh non-CEC route. Final production build rerun recorded in `work/frontend-audit/final-build.log`.
 - Temporary database schema absence was verified after stopping the audit server.
 - Fresh browser `/discover` verified the shortcut overlay is fixed-position, 600px wide at desktop, and aria-modal; Escape closes it. Local preview is running with polling watchers on port 3000.
+
+## Production deployment — 2026-09-30
+
+- User authorized redeployment. Runtime commit `1cc1039` pushed to `main`.
+- Netlify published [production deploy](https://app.netlify.com/projects/jade-palmier-e20b3c/deploys/6abd5327c9e01c0008bd7bc6); initialization, build, deploy, and post-processing completed.
+- Live health: HTTP 200, PostgreSQL storage. Live state: HTTP 200; analytics/email capabilities correctly false on this host.
+- Live `/chat`: HTTP 307 to `/clubs/cec/messages`. Browser `/you` rendered Welcome back and sign-in fields with no workspace-load error.
+- Authenticated mutations remain covered by the isolated tests above; production records were not modified for smoke testing.
