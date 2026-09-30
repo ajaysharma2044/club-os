@@ -75,3 +75,15 @@ are in progress; local success alone is not proof that the public site is fixed.
 serialization limits throughput. Operational backups belong in Supabase; quant backups
 remain on its worker host. See [the runbook](../33-postgres-migration.md) for configuration,
 commands, backup/rollback boundaries and deployment requirements.
+
+### Hosted deployment progress
+
+- Pushed runtime migration as `9268b5e` to main.
+- Netlify compiled and type-checked successfully, then its secret scanner rejected
+  the ordinary enum values `postgres` and `disabled`, because the bulk import marked
+  them secret. Netlify does not allow changing that classification in the edit form.
+- Excluded only `CEC_STORAGE` and `CEC_EMAIL_MODE` from value scanning in netlify.toml.
+  Scanning remains enabled for the connection password and application keys.
+- Staging the previously untracked SQL migration revealed trailing whitespace in the
+  generated file. It is already applied and checksum-verified, so its bytes are retained;
+  this is a formatting exception, not a changed or skipped database invariant.

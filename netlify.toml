@@ -13,6 +13,9 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Public enum values occur throughout source; these are not credentials.
+  # Keep scanning enabled for DATABASE_URL and all actual app secrets.
+  SECRETS_SCAN_OMIT_KEYS = "CEC_STORAGE,CEC_EMAIL_MODE"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
