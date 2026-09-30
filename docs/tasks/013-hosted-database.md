@@ -1,6 +1,6 @@
 # Task 013: Supabase operational runtime
 
-Status: implemented and local data migrated; hosted deployment pending.
+Status: deployed to Netlify with Supabase; hosted health/state and account-page smoke checks passed.
 
 ## Outcome and acceptance criteria
 
@@ -70,8 +70,8 @@ back to SQLite after new Supabase writes without reconciling those changes first
 
 The user approved production credential transfer and deployment. Seven server variables
 were saved as Netlify secrets for the Production context only; preview, branch and local
-contexts were excluded. Email remains disabled. Git push and hosted smoke verification
-are in progress; local success alone is not proof that the public site is fixed. Global request
+contexts were excluded. Email remains disabled. Runtime commits were pushed and the
+hosted smoke verification below passed. Global request
 serialization limits throughput. Operational backups belong in Supabase; quant backups
 remain on its worker host. See [the runbook](../33-postgres-migration.md) for configuration,
 commands, backup/rollback boundaries and deployment requirements.
@@ -87,3 +87,18 @@ commands, backup/rollback boundaries and deployment requirements.
 - Staging the previously untracked SQL migration revealed trailing whitespace in the
   generated file. It is already applied and checksum-verified, so its bytes are retained;
   this is a formatting exception, not a changed or skipped database invariant.
+
+### Hosted verification complete — 2026-09-30 UTC
+
+- Netlify published commit `c2e22cb` after the public-enum scanner exception.
+  Deployment: https://app.netlify.com/projects/jade-palmier-e20b3c/deploys/6abcb1652e63c50008df56c2
+- Production `/api/cec/health`: HTTP 200, `ok: true`, `storage: postgres`.
+- Production `/api/cec/state`: HTTP 200 with workspace JSON and no error.
+- Browser `/you`: rendered Welcome back and the sign-in form, with no workspace error.
+- Existing account/password preserved; no real user's login was impersonated for testing.
+  Authenticated workflows were covered by isolated PostgreSQL integration suites.
+- Hosted Python analytics still requires a separately provisioned durable worker; the
+  local worker is not a production hosting service. Email remains disabled.
+- No database credentials were committed. Production settings are absent from preview
+  contexts. Node 22 Netlify compilation and type checking passed; local full regression
+  gate evidence remains above.

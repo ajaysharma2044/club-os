@@ -1,6 +1,6 @@
 # Supabase operational database
 
-Status: runtime implemented; see task 013 for cutover and verification evidence.
+Status: runtime deployed on Netlify with Supabase; see task 013 for cutover and verification evidence.
 
 ## Storage selection
 
