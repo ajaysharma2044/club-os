@@ -1,6 +1,6 @@
 # Task: Simplify member navigation and the Home next action
 
-Status: done — verified locally
+Status: done — deployed and verified in production
 
 ## Acceptance criteria
 
@@ -37,8 +37,16 @@ Regression tests cover navigation labels/active routes and personal task sorting
 - Officer at 320px: management links stacked at 281px wide; document width stayed within viewport. Events remained reachable through the same menu.
 - Existing routes were preserved, including CEC Home as an alias for the main dashboard; no production data was modified.
 
-Reviewer: self-review. Local implementation only; no commit, push or production deployment in this task.
+Reviewer: self-review. Initial verification was local; deployment was subsequently authorized by the user.
 
 ### Final verification
 
 Full gate passed: `work/verification/2026-09-30T18-47-19.329Z-89279/result.json` (types, pure regression suites, Python, API/routes, signals, production build; local Node 26). `git diff --check` passed. Synthetic test schema removal was verified, viewport restored and test tab closed. Local preview restored on port 3000.
+
+### Production deployment — September 30, 2026
+
+- Runtime commit: `b64984cf03a28481c6704945c499388a5b552734`.
+- [Netlify published deployment](https://app.netlify.com/projects/jade-palmier-e20b3c/deploys/6abd915d3009490008198827); building, deploying and post-processing completed.
+- [Production](https://jade-palmier-e20b3c.netlify.app/) refreshed successfully in the browser. Home displays “Your next events”; the mobile menu displays Home, Events, Tasks & Projects, Inbox and People, with secondary resources below.
+- `/api/cec/health` returned HTTP 200 with `ok: true` and `storage: postgres`. `/api/cec/state` returned HTTP 200 without an error. Email and analytics remain disabled as configured.
+- Production verification was read-only; authenticated mutations were verified against the isolated test schema before deployment.
