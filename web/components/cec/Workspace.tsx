@@ -463,17 +463,17 @@ export function CECWorkspace({
   }
   const titles: Record<string, string> = {
     home: "Your club, in motion.",
-    events: "Events & Startup Hours",
-    work: "The workspace",
-    people: "People & recruitment",
-    crm: "Relationships",
-    record: "The club record",
+    events: "Events",
+    work: "Tasks & Projects",
+    people: "People",
+    crm: "Money & sponsors",
+    record: "Club activity",
     account: "Your account",
     directory: "Builder directory",
     intake: "Your weekly update",
-    schedule: "Your meetings",
-    planning: "Planning",
-    messages: "Messages",
+    schedule: "Calendar",
+    planning: "Event planning",
+    messages: "Inbox",
     integrations: "Integrations",
   };
   const subtitles: Record<string, string> = {
@@ -946,7 +946,6 @@ export function CECWorkspace({
             "Meetings",
             "Learning",
             "Forms",
-            "Inbox",
           ]}
         />
         {!isMember ? (
@@ -2072,7 +2071,6 @@ export function CECWorkspace({
               <h1>{titles[section] || "Workspace"}</h1>
               <p className="muted">{subtitles[section]}</p>
             </div>
-            {isOfficer && <Link className="button secondary" href="/clubs/cec/operations">Officer workspace</Link>}
             {isOfficer && section === "home" && (
               <button className="button" onClick={() => create("event")}>
                 <Plus size={17} />
@@ -2195,9 +2193,9 @@ export function CECWorkspace({
           )}
           {embedded && (
             <nav className="connected-links" aria-label="CEC shortcuts">
-              <Link href={cecRoutes.record}>The record</Link>
+              <Link href={cecRoutes.record}>Club activity</Link>
               <Link href={cecRoutes.schedule}>Meetings & calendar</Link>
-              <Link href={cecRoutes.intake}>Weekly update</Link>
+              <Link href={cecRoutes.intake}>Share a weekly update</Link>
               <Link href={cecRoutes.directory}>Shared projects</Link>
             </nav>
           )}

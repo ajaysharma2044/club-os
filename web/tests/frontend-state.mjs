@@ -15,3 +15,12 @@ for(const timezone of ['America/Los_Angeles','America/New_York','UTC']) {
 }
 assert.equal(optionalNumber('0'),0);assert.equal(optionalNumber(''),undefined);assert.equal(optionalNumber('60'),60);
 console.log('Confirmed writes survive failed reads; rejected writes never refresh; timezone defaults and zero RSVP: PASS');
+const {memberNavigation,currentNavigation,homeTasks}=await import('../lib/cec/navigation.ts');
+assert.deepEqual(memberNavigation.map(i=>i.label),['Home','Events','Tasks & Projects','Inbox','People']);
+assert.equal(currentNavigation('/clubs/cec/messages','/clubs/cec/messages'),true);
+assert.equal(currentNavigation('/clubs/cec/workspace','/'),false);
+assert.equal(currentNavigation('/clubs/cec','/'),true);
+const task=(id,status,due_at,assignee='me')=>({id,kind:'task',data:{status,due_at,assignee}});
+assert.deepEqual(homeTasks([task('late','accepted','2026-01-01'),task('done','completed','2025-01-01'),task('other','assigned','2025-01-01','else'),task('later','assigned','2027-01-01'),task('undated','assigned',undefined)],'me').map(t=>t.id),['late','later','undated']);
+assert.equal(homeTasks([task('signed-out','assigned','2026-01-01')]).length,0);
+console.log('Navigation destinations and personal next-task selection: PASS');

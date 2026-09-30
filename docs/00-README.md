@@ -115,3 +115,4 @@ documented functionality and [MVP system scope](24-mvp-system.md) for proposed l
 
 - [Frontend and workflow audit — September 30](34-frontend-audit.md): reproduced failures, missing flows, priorities, and browser coverage limits.
 - [Frontend audit remediation](tasks/015-frontend-audit-remediation.md): F01–F12 fixes, regression checks, and actual browser coverage.
+- [Navigation simplification](tasks/016-navigation-simplification.md): member destinations, Manage club, Home priorities and usability checks.

@@ -1,4 +1,5 @@
 "use client";
+import {managementNavigation} from "@/lib/cec/navigation";
 import { useEffect, useState, useRef, type FormEvent } from 'react';
 import Link from 'next/link';
 import './cec.css';
@@ -85,9 +86,11 @@ export default function OfficerTools() {
     }
     useEffect(() => { load().catch(e => setError(e.message)); return () => { readSequence.current++; }; }, []);
     const tabs = ['Overview', 'Imports', 'Meeting follow-ups', 'Handoff', 'Calendar'];
-    return <div className="cec embedded officer-tools"><header className="page-head"><div><h1>Officer workspace</h1><p>Review what needs attention, bring in your records, and prepare the next team.</p></div><Link className="link" href="/clubs/cec/workspace">Back to tasks</Link></header>
+    return <div className="cec embedded officer-tools"><header className="page-head"><div><h1>Manage club</h1><p>Review what needs attention, bring in your records, and prepare the next team.</p></div><Link className="link" href="/clubs/cec/workspace">Back to tasks</Link></header>
     {error && <p role="alert" className="notice error">{error} <a href="/clubs/cec/settings">Account settings</a></p>}
-    {!state ? <button className="button" onClick={() => load().catch(e => setError(e.message))}>Load officer workspace</button> : <>
+    {!state ? <button className="button" onClick={() => load().catch(e => setError(e.message))}>Load club management</button> : <>
+      <nav className="management-links" aria-label="Club management">{managementNavigation.filter(i => !i.href.endsWith("operations")).map(i => <Link key={i.href} href={i.href}><strong>{i.label}</strong><span>{i.description}</span></Link>)}</nav>
+      <h2>Club operations</h2>
       <button className="button secondary small" onClick={() => load().catch(e => setError(e.message))}>Refresh officer records</button>
       <nav className="task-filters" aria-label="Officer tools">{tabs.map(t => <button key={t} className="button secondary" aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>)}</nav>
       {tab === 'Overview' && <Overview state={state}/>}

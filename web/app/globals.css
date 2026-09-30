@@ -2295,3 +2295,21 @@ table.data tfoot td {
 /* Keep the mobile navigation control legible on the dark shell. */
 .mobile-bar .btn.ghost { color: #fff; min-height: 44px; }
 .mobile-bar .btn.ghost:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Connected club navigation: one list, with readable task labels. */
+.app.member-shell { grid-template-columns: 204px minmax(0, 1fr); }
+.member-shell .global-rail .nav-item { flex-direction:row; justify-content:flex-start; gap:10px; padding:12px 16px; min-height:48px; font-size:14px; font-family:var(--font-sans); text-transform:none; letter-spacing:0; text-align:left; }
+.member-shell .global-rail .nav-item svg { flex:none; }
+.nav-secondary { display:flex; flex-direction:column; gap:4px; padding:16px; border-top:1px solid #ffffff26; }
+.nav-secondary a { min-height:36px; display:flex; align-items:center; font-size:13px; }
+.mobile-account { margin-left:auto; margin-right:12px; }
+.cec .management-links { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:16px 0 24px; }
+.cec .management-links a { display:block; padding:16px; border:1px solid var(--line); border-radius:6px; }
+.cec .management-links span { display:block; font-size:14px; margin-top:4px; }
+@media(max-width:960px) {
+  .app.member-shell { grid-template-columns:1fr; }
+  .member-shell.mobile-menu-open .global-rail .nav-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
+  .member-shell.mobile-menu-open .global-rail .nav-item { width:100%; min-width:0; white-space:normal; min-height:48px; }
+  .member-shell .nav-secondary { flex-direction:row; flex-wrap:wrap; padding:8px 16px; gap:16px; }
+  .cec .management-links { grid-template-columns:1fr; }
+}

@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useCEC } from "@/components/cec/Connection";
-import { ConnectedAside } from "@/components/cec/ConnectedAside";
+import { memberNavigation, currentNavigation } from "@/lib/cec/navigation";
 import { cecClub } from "@/lib/cec/routes";
 import { usePathname } from "next/navigation";
 import {
   ChatCircle,
-  Compass,
+  CalendarBlank,
+  CheckSquare,
+  Users,
+  Gear,
   House,
   MagnifyingGlass,
   User,
@@ -17,13 +20,8 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { clubBySlug, hueVar, me } from "@/lib/data";
 import { useJoinState } from "@/lib/useJoin";
 
-const global = [
-  { href: "/clubs/cec", label: "CEC", icon: House },
-  { href: "/", label: "Home", icon: House },
-  { href: "/discover", label: "Discover", icon: Compass },
-  { href: "/chat", label: "Inbox", icon: ChatCircle },
-  { href: "/you", label: "Account", icon: User },
-];
+const icons = [House, CalendarBlank, CheckSquare, ChatCircle, Users];
+const global = memberNavigation.map((item, i) => ({...item, icon: icons[i]}));
 
 const clubTabs = [
   { seg: "", label: "Home" },
@@ -34,11 +32,6 @@ const clubTabs = [
   { seg: "settings", label: "Settings" },
 ];
 
-function isCurrent(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const clubMatch = pathname.match(/^\/clubs\/([^/]+)/);
@@ -48,8 +41,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
       : clubBySlug(clubMatch[1])
     : undefined;
   const inChat = pathname.startsWith("/chat");
-  const joining = pathname.startsWith("/join");
-  const showTodo = (pathname === "/" || pathname === "/discover") && !joining;
   const { data } = useCEC();
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -84,7 +75,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div
       className={
-        (club ? "app in-club" : inChat ? "app in-chat" : "app") +
+        (isDemo ? "app in-club" : "app member-shell") +
         (menuOpen ? " mobile-menu-open" : "")
       }
     >
@@ -103,41 +94,48 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setMenuOpen(false)}
                 className="nav-item"
                 aria-current={
-                  isCurrent(pathname, item.href) ? "page" : undefined
+                  currentNavigation(pathname, item.href) ? "page" : undefined
                 }
               >
                 <Icon size={20} weight="regular" aria-hidden />
                 {item.label}
-                {item.href === "/chat" && unread && (
+                {item.href === "/clubs/cec/messages" && unread && (
                   <span className="rail-unread" aria-label="New inbox activity">●</span>
                 )}
               </Link>
             );
           })}
+          {data?.user?.role === "officer" && <Link href="/clubs/cec/operations" className="nav-item" aria-current={["operations","money","integrations","planning"].some(p => pathname === `/clubs/cec/${p}`) ? "page" : undefined}><Gear size={20} aria-hidden/>Manage club</Link>}
           <button
             type="button"
             className="nav-item"
             onClick={() => window.dispatchEvent(new Event("clubos:command"))}
           >
             <MagnifyingGlass size={20} weight="regular" aria-hidden />
-            Search
+            Shortcuts
           </button>
+        </div>
+        <div className="nav-secondary">
+          <Link href="/clubs/cec/record">Club activity</Link>
+          <Link href="/clubs/cec/schedule">Calendar</Link>
+          <Link href="/discover">Explore clubs</Link>
         </div>
         <div className="rail-foot">
           <Link
             href="/you"
-            className="avatar"
+            className={who?.name ? "avatar" : "btn"}
             title={who?.name || "Sign in"}
             aria-label={who?.name ? "Your account" : "Sign in"}
           >
-            {initials}
+            {who?.name ? initials : "Sign in"}
           </Link>
         </div>
       </nav>
 
-      {club && (
+      {isDemo && club && (
         <nav className="club-rail" aria-label={`${club.name} navigation`}>
           <div className="club-rail-head">
             <span
@@ -176,6 +174,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="mobile-bar">
         <Link href="/">Club OS</Link>
+        <Link href="/you" className="mobile-account" aria-label={who?.name ? "Your account" : "Sign in"}>{who?.name ? initials : "Sign in"}</Link>
         <button
           className="btn ghost"
           type="button"
@@ -189,14 +188,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <div
         className={
-          inChat ? "work wide chat-work" : showTodo ? "work" : "work wide"
+          inChat ? "work wide chat-work" : "work wide"
         }
       >
         {inChat ? (
           <div id="content">{children}</div>
         ) : (
           <main id="content" className="main">
-            {club && (
+            {club && pathname !== `/clubs/${club.slug}` && (
               <nav className="crumbs" aria-label="Breadcrumb">
                 <Link href="/">Home</Link>
                 <span aria-hidden>/</span>
@@ -206,14 +205,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
                     <span aria-hidden>/</span>
                     <strong>
                       {club?.slug === "cec" && pathname.endsWith("workspace")
-                        ? "Workspace"
+                        ? "Tasks & Projects"
                         : (clubTabs.find(
                             (t) => t.seg && pathname.endsWith(t.seg),
                           )?.label ??
                           (
                             {
-                              record: "Club record",
-                              operations: "Officer workspace",
+                              record: "Club activity",
+                              messages: "Inbox",
+                              integrations: "Integrations",
+                              planning: "Event planning",
+                              interviews: "Interviews",
+                              signals: "Your activity",
+                              operations: "Manage club",
                               intake: "Weekly update",
                               schedule: "Calendar",
                               directory: "Shared projects",
@@ -234,11 +238,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {children}
           </main>
         )}
-        {showTodo && (
-          <aside className="up-next" aria-label="You owe">
-            <ConnectedAside />
-          </aside>
-        )}
+
       </div>
       <CommandPalette />
     </div>

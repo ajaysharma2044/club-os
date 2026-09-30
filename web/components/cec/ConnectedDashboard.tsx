@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCEC } from "./Connection";
+import {homeTasks} from "@/lib/cec/navigation";
 import { cecRoutes } from "@/lib/cec/routes";
 const when = (s: string) =>
   new Date(s).toLocaleString("en-US", {
@@ -13,14 +14,7 @@ const when = (s: string) =>
 export function ConnectedDashboard() {
   const { data, loading, error, refresh } = useCEC();
   const user = data?.user;
-  const tasks = (data?.items || [])
-    .filter(
-      (r: any) =>
-        r.kind === "task" &&
-        r.data.assignee === user?.id &&
-        !["completed", "cancelled"].includes(r.data.status),
-    )
-    .sort((a: any, b: any) => a.data.due_at.localeCompare(b.data.due_at));
+  const tasks = homeTasks(data?.items || [], user?.id);
   const upcoming = (data?.items || [])
     .filter(
       (r: any) =>
@@ -45,9 +39,6 @@ export function ConnectedDashboard() {
             Cornell Entrepreneurship Club · events, people, and the work ahead.
           </p>
         </div>
-        <Link className="btn" href="/you">
-          {user ? "Your account" : "Sign in"}
-        </Link>
       </div>
       {loading ? (
         <p role="status">Loading your club…</p>
@@ -65,11 +56,11 @@ export function ConnectedDashboard() {
               <p className="text-micro">Your next commitment</p>
               <h2 className="text-title-2">{tasks[0].data.title}</h2>
               <p className="text-caption">
-                {when(tasks[0].data.due_at)} ET · {tasks[0].data.status}
+                {tasks[0].data.due_at ? `${when(tasks[0].data.due_at)} ET` : "No due date"} · {({assigned:"Awaiting your acceptance",accepted:"In progress",submitted:"Waiting for review"} as Record<string,string>)[tasks[0].data.status] || tasks[0].data.status}
                 {tasks[0].data.origin ? ` · ${tasks[0].data.origin}` : ""}
               </p>
-              <Link href={cecRoutes.work} className="btn primary">
-                Open your work
+              <Link href={`${cecRoutes.work}#task-${tasks[0].id}`} className="btn primary">
+                View task
               </Link>
             </section>
           ) : (
@@ -113,67 +104,30 @@ export function ConnectedDashboard() {
                 <h2 className="text-title-2">Also on your list</h2>
               </div>
               {tasks.slice(1, 6).map((r: any) => (
-                <Link className="task-row" key={r.id} href={cecRoutes.work}>
+                <Link className="task-row" key={r.id} href={`${cecRoutes.work}#task-${r.id}`}>
                   <span
                     className="identity"
                     style={{ background: "#b31b1b" }}
                   />
                   <span className="grow">{r.data.title}</span>
-                  <span className="text-caption">{when(r.data.due_at)} ET</span>
+                  <span className="text-caption">{r.data.due_at ? `${when(r.data.due_at)} ET` : "No due date"}</span>
                 </Link>
               ))}
             </section>
           )}
           <section className="section">
             <div className="section-head">
-              <h2 className="text-title-2">
-                {user && user.role !== "applicant"
-                  ? "Your club"
-                  : "Explore CEC"}
-              </h2>
-              <Link className="text-caption" href={cecRoutes.home}>
-                Open workspace
-              </Link>
-            </div>
-            <article className="dash-card">
-              <Link
-                href={cecRoutes.home}
-                className="dash-band"
-                style={{ background: "#b31b1b" }}
-              >
-                <strong>Cornell Entrepreneurship Club</strong>
-                <span>
-                  {user
-                    ? user.role === "applicant"
-                      ? "Community participant"
-                      : user.role
-                    : "Cornell University"}
-                </span>
-              </Link>
-              <div className="dash-body">
-                <div className="connected-links">
-                  <Link href={cecRoutes.events}>Events & RSVPs</Link>
-                  <Link href={cecRoutes.work}>Workspace</Link>
-                  <Link href={cecRoutes.people}>People & applications</Link>
-                  <Link href={cecRoutes.record}>The record</Link>
-                  <Link href={cecRoutes.intake}>Weekly update</Link>
-                </div>
-              </div>
-            </article>
-          </section>
-          <section className="section">
-            <div className="section-head">
-              <h2 className="text-title-2">Coming up</h2>
+              <h2 className="text-title-2">Your next events</h2>
               <Link href={cecRoutes.events} className="text-caption">
                 All events
               </Link>
             </div>
             {!upcoming.length ? (
               <p className="text-caption">
-                No upcoming events have been published yet.
+                No upcoming events have been published yet. Check Events for updates.
               </p>
             ) : (
-              upcoming.slice(0, 5).map((e: any) => (
+              upcoming.slice(0, 3).map((e: any) => (
                 <Link href={cecRoutes.events} className="event-row" key={e.id}>
                   <span
                     className="identity"
@@ -190,6 +144,7 @@ export function ConnectedDashboard() {
               ))
             )}
           </section>
+          {user && user.role !== "applicant" && <section className="section"><h2 className="text-title-2">Keep your club up to date</h2><p>Share what you’re building and when you’re available.</p><Link className="btn" href={cecRoutes.intake}>Share a weekly update</Link></section>}
         </>
       )}
     </>

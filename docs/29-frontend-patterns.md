@@ -154,3 +154,21 @@ These indicate host configuration, not proof of healthy workers or successful de
 Unavailable features explain their requirement and do not offer futile retry actions.
 The global palette searches navigation shortcuts and uses the shared Modal; do not
 add input autofocus that steals the modal's captured return-focus target.
+
+## Member navigation
+
+`lib/cec/navigation.ts` owns connected primary labels and management destinations.
+The five primary entries are Home, Events, Tasks & Projects, Inbox and People.
+CEC uses one rail; example clubs retain their demonstration subnavigation. Resources
+stay secondary, while profile/preferences are behind the account avatar. Mobile has
+an explicit account/sign-in link because the desktop rail footer is hidden.
+
+Manage club is shown to officers and links to membership, money/sponsors, integrations
+and planning alongside the existing operations workflows. Link visibility never replaces
+server authorization. `/` and `/clubs/cec` render the same Home dashboard. Home task links
+use `#task-ID` so the existing task list reveals the target. Finished and other members'
+tasks never become a user's next commitment; missing due dates sort last.
+
+At 960px and below the shell uses one column with a two-column expanded menu. Do not
+use the 700px content breakpoint for shell layout: its existing rail switches at 960px.
+See task 016 for actual viewport and role coverage.

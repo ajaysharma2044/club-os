@@ -4,45 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { channelLabel, channels } from "@/lib/chat";
 import { Modal } from "./cec/FormPrimitives";
+import {useCEC} from "./cec/Connection";
+import {memberNavigation} from "@/lib/cec/navigation";
 import { clubs } from "@/lib/data";
 
 const staticItems = [
-  { href: "/", label: "Home", hint: "Your work" },
-  {
-    href: "/clubs/cec",
-    label: "Cornell Entrepreneurship Club",
-    hint: "Workspace",
-  },
-  { href: "/clubs/cec/events", label: "CEC events and RSVPs", hint: "Events" },
-  {
-    href: "/clubs/cec/workspace",
-    label: "CEC tasks, projects and forms",
-    hint: "Workspace",
-  },
-  {
-    href: "/clubs/cec/people",
-    label: "CEC applications and coffee chats",
-    hint: "People",
-  },
-  { href: "/chat", label: "CEC chat", hint: "Inbox" },
-  { href: "/you?view=record", label: "Your record", hint: "Evidence" },
-  { href: "/you?view=intake", label: "Weekly update", hint: "Your context" },
-  {
-    href: "/you?view=schedule",
-    label: "Calendar and meeting invitations",
-    hint: "Subscribe",
-  },
-  { href: "/you", label: "Account and sign in", hint: "Account" },
-  {
-    href: "/clubs/cec/money",
-    label: "CEC sponsorships and money",
-    hint: "Officers",
-  },
-  { href: "/discover", label: "Discover clubs", hint: "Campus" },
+  ...memberNavigation.map(i => ({...i, hint: "Navigate"})),
+  {href: "/you", label: "Profile & preferences", hint: "Account"},
+  {href: "/clubs/cec/record", label: "Club activity", hint: "Resources"},
+  {href: "/clubs/cec/intake", label: "Share a weekly update", hint: "Availability and projects"},
+  {href: "/clubs/cec/schedule", label: "Calendar", hint: "Events and meetings"},
+  {href: "/discover", label: "Explore clubs", hint: "Discover"},
 ];
 
 export function CommandPalette() {
   const router = useRouter();
+  const {data} = useCEC();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
@@ -105,6 +82,7 @@ export function CommandPalette() {
     });
     const all = [
       ...staticItems,
+      ...(data?.user?.role === "officer" ? [{href:"/clubs/cec/operations",label:"Manage club",hint:"Officer tools"}] : []),
       ...clubItems.map((i) => ({ ...i, hint: "Example club" })),
       ...chatItems.map((i) => ({ ...i, hint: "Example inbox" })),
     ];
@@ -113,7 +91,7 @@ export function CommandPalette() {
     return all
       .filter((i) => `${i.label} ${i.hint}`.toLowerCase().includes(needle))
       .slice(0, 8);
-  }, [q]);
+  }, [q, data?.user?.role]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

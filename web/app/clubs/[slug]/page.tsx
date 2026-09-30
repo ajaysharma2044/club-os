@@ -1,4 +1,4 @@
-import { CECWorkspace } from "@/components/cec/Workspace";
+import { ConnectedDashboard } from "@/components/cec/ConnectedDashboard";
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -21,7 +21,7 @@ export default async function ClubHome({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  if (slug === "cec") return <CECWorkspace embedded section="home" initialTab="" />;
+  if (slug === "cec") return <ConnectedDashboard />;
   const club = clubBySlug(slug);
   if (!club) notFound();
 
