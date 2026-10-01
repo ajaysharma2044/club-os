@@ -16,6 +16,7 @@ import {
   MagnifyingGlass,
   User,
 } from "@phosphor-icons/react";
+import { Modal } from "./cec/FormPrimitives";
 import { CommandPalette } from "@/components/CommandPalette";
 import { clubBySlug, hueVar, me } from "@/lib/data";
 import { useJoinState } from "@/lib/useJoin";
@@ -41,9 +42,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
       : clubBySlug(clubMatch[1])
     : undefined;
   const inChat = pathname.startsWith("/chat");
-  const { data } = useCEC();
+  const { data, refresh } = useCEC();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [accountError, setAccountError] = useState("");
+  async function signOut() {
+    setSigningOut(true); setAccountError("");
+    try { const r = await fetch("/api/cec/auth/logout", {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); if(!r.ok) throw Error("Unable to sign out. Try again."); setAccountOpen(false); await refresh(); window.dispatchEvent(new Event("cec:changed")); } catch(e) {setAccountError((e as Error).message);} finally {setSigningOut(false);}
+  }
   const [menuOpen, setMenuOpen] = useState(false);
-  useEffect(() => setMenuOpen(false), [pathname]);
+  useEffect(() => {setMenuOpen(false);setAccountOpen(false);}, [pathname]);
   const [unread, setUnread] = useState(false);
   useEffect(() => {
     let alive = true, pending = false;
@@ -87,6 +95,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className="mark-box" aria-hidden />
           <span className="mark-name">Club OS</span>
         </Link>
+        <button type="button" className="rail-jump" onClick={() => window.dispatchEvent(new Event("clubos:command"))}><MagnifyingGlass size={18} aria-hidden/><span>Jump to…</span><kbd>⌘K</kbd></button>
         <div className="nav-list">
           {global.map((item) => {
             const Icon = item.icon;
@@ -109,31 +118,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
             );
           })}
           {data?.user?.role === "officer" && <Link href="/clubs/cec/operations" className="nav-item" aria-current={["operations","money","integrations","planning"].some(p => pathname === `/clubs/cec/${p}`) ? "page" : undefined}><Gear size={20} aria-hidden/>Manage club</Link>}
-          <button
-            type="button"
-            className="nav-item"
-            onClick={() => window.dispatchEvent(new Event("clubos:command"))}
-          >
-            <MagnifyingGlass size={20} weight="regular" aria-hidden />
-            Shortcuts
-          </button>
         </div>
         <div className="nav-secondary">
-          <Link href="/clubs/cec/info" onClick={()=>setMenuOpen(false)}>Club info & resources</Link>
+          <span className="rail-section-label">Club</span>
+          <Link href="/clubs/cec/info" onClick={()=>setMenuOpen(false)}>Info & resources</Link>
           <Link href="/clubs/cec/requests" onClick={()=>setMenuOpen(false)}>Requests</Link>
           <Link href="/clubs/cec/record">Club activity</Link>
           <Link href="/clubs/cec/schedule">Calendar</Link>
-          <Link href="/discover">Explore clubs</Link>
+
         </div>
         <div className="rail-foot">
-          <Link
-            href="/you"
-            className={who?.name ? "avatar" : "btn"}
-            title={who?.name || "Sign in"}
-            aria-label={who?.name ? "Your account" : "Sign in"}
-          >
-            {who?.name ? initials : "Sign in"}
-          </Link>
+          <Link className="rail-explore" href="/discover">Explore clubs</Link>
+          {who?.name ? <button className="rail-account" onClick={()=>setAccountOpen(true)}><span className="avatar">{initials}</span><span>{who.name}<small>My account</small></span></button> : <Link href="/you">Sign in</Link>}
         </div>
       </nav>
 
@@ -176,7 +172,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="mobile-bar">
         <Link href="/">Club OS</Link>
-        <Link href="/you" className="mobile-account" aria-label={who?.name ? "Your account" : "Sign in"}>{who?.name ? initials : "Sign in"}</Link>
+        {who?.name ? <button className="mobile-account" onClick={()=>setAccountOpen(true)} aria-label="Your account">{initials}</button> : <Link href="/you" className="mobile-account">Sign in</Link>}
         <button
           className="btn ghost"
           type="button"
@@ -243,6 +239,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         )}
 
       </div>
+      {accountOpen && <Modal title="My account" close={()=>{if(!signingOut)setAccountOpen(false);}}><div className="account-links">
+        <Link href="/clubs/cec/profile" onClick={()=>setAccountOpen(false)}>My club profile</Link>
+        <Link href="/you" onClick={()=>setAccountOpen(false)}>Account settings</Link>
+        <button disabled={signingOut} onClick={signOut}>{signingOut?"Signing out…":"Sign out"}</button>
+        {accountError&&<p role="alert">{accountError}</p>}
+      </div></Modal>}
       <CommandPalette />
     </div>
   );

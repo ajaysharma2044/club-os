@@ -771,7 +771,7 @@ export function CECWorkspace({
       <>
         <div className="actions" style={{ marginBottom: 22 }}>
           {isOfficer && button("New event", () => create("event"))}
-          <a className="button secondary small" href="/api/cec/calendar">
+          <a className="quiet-action" href="/api/cec/calendar">
             Download calendar
           </a>
         </div>
@@ -2154,14 +2154,6 @@ export function CECWorkspace({
             Directory()
           ) : (
             Account()
-          )}
-          {embedded && (
-            <nav className="connected-links" aria-label="CEC shortcuts">
-              <Link href={cecRoutes.record}>Club activity</Link>
-              <Link href={cecRoutes.schedule}>Meetings & calendar</Link>
-              <Link href={cecRoutes.intake}>Share a weekly update</Link>
-              <Link href={cecRoutes.directory}>Shared projects</Link>
-            </nav>
           )}
           {!embedded && isMember && (
             <p>

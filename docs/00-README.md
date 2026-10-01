@@ -121,3 +121,5 @@ documented functionality and [MVP system scope](24-mvp-system.md) for proposed l
 
 - [Club portal and CRM](35-club-portal.md): information publishing, private profiles, requests, officer follow-ups and demo operations.
 - [Task 018](tasks/018-club-portal-and-crm.md): club-only feature acceptance and verification.
+
+- [Navigation and action hierarchy](tasks/019-navigation-and-action-hierarchy.md): compact search, account actions and quieter page controls.

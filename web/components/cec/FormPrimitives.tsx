@@ -14,7 +14,8 @@ export type Field = {
     step?: string;
     value?: any;
 };
-export function Modal({ title, children, close, }: {
+export function Modal({ title, children, close, variant, }: {
+    variant?: "command";
     title: string;
     children: ReactNode;
     close: () => void;
@@ -61,7 +62,7 @@ export function Modal({ title, children, close, }: {
         };
     }, []);
     return createPortal(<div className="cec embedded cec-dialog-root"><div className="modal-shade">
-      <div ref={ref} className="modal" tabIndex={-1} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={ref} className={variant === "command" ? "modal command-dialog" : "modal"} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title}>
         <header>
           <h2>{title}</h2>
           <button className="close" onClick={close} aria-label="Close dialog">

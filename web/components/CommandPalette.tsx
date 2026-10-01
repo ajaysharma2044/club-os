@@ -1,176 +1,59 @@
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { channelLabel, channels } from "@/lib/chat";
+import { ArrowSquareOut, User, Gear } from "@phosphor-icons/react";
 import { Modal } from "./cec/FormPrimitives";
 import {useCEC} from "./cec/Connection";
-import {memberNavigation} from "@/lib/cec/navigation";
-import { clubs } from "@/lib/data";
-
-const staticItems = [
-  {href:"/clubs/cec/info",label:"Club info & resources",hint:"Information"},
-  {href:"/clubs/cec/requests",label:"Requests",hint:"Member self-service"},
-  {href:"/clubs/cec/profile",label:"My club profile",hint:"Photo, skills and interests"},
-  ...memberNavigation.map(i => ({...i, hint: "Navigate"})),
-  {href: "/you", label: "Profile & preferences", hint: "Account"},
-  {href: "/clubs/cec/record", label: "Club activity", hint: "Resources"},
-  {href: "/clubs/cec/intake", label: "Share a weekly update", hint: "Availability and projects"},
-  {href: "/clubs/cec/schedule", label: "Calendar", hint: "Events and meetings"},
-  {href: "/discover", label: "Explore clubs", hint: "Discover"},
-];
+import {memberNavigation, managementNavigation} from "@/lib/cec/navigation";
 
 export function CommandPalette() {
   const router = useRouter();
   const {data} = useCEC();
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [active, setActive] = useState(0);
-
+  const [open, setOpen] = useState(false), [q, setQ] = useState(""), [active, setActive] = useState(0);
   const items = useMemo(() => {
-    const clubItems = clubs.flatMap((c) => [
-      { href: `/clubs/${c.slug}`, label: c.name, hint: "Home" },
-      {
-        href: `/clubs/${c.slug}/events`,
-        label: `${c.short} · Events`,
-        hint: "Events",
-      },
-      {
-        href: `/clubs/${c.slug}/people`,
-        label: `${c.short} · People`,
-        hint: "Roster",
-      },
-      {
-        href: `/clubs/${c.slug}/money`,
-        label: `${c.short} · Money`,
-        hint: "Ledger",
-      },
-      {
-        href: `/clubs/${c.slug}/settings`,
-        label: `${c.short} · Settings`,
-        hint: "Settings",
-      },
-      {
-        href: `/clubs/${c.slug}/settings#integrations`,
-        label: `${c.short} · Integrations`,
-        hint: "Settings",
-      },
-      {
-        href: `/clubs/${c.slug}/settings?integration=stripe`,
-        label: `${c.short} · Stripe`,
-        hint: "Money",
-      },
-      {
-        href: `/clubs/${c.slug}/settings?integration=calendar`,
-        label: `${c.short} · Club calendar`,
-        hint: "Settings",
-      },
-      {
-        href: `/clubs/${c.slug}/events`,
-        label: `${c.short} · Add to calendar`,
-        hint: "Events",
-      },
-      { href: `/chat?c=${c.slug}`, label: `${c.short} · Chat`, hint: "Inbox" },
-    ]);
-    const chatItems = channels.map((ch) => {
-      const club = clubs.find((c) => c.slug === ch.club);
-      return {
-        href: `/chat?c=${ch.id}`,
-        label:
-          ch.kind === "dm"
-            ? ch.name
-            : `${club?.short ?? ch.club} ${channelLabel(ch)}`,
-        hint: "Inbox",
-      };
-    });
     const all = [
-      ...staticItems,
-      ...(data?.user?.role === "officer" ? [{href:"/clubs/cec/operations",label:"Manage club",hint:"Officer tools"}] : []),
-      ...clubItems.map((i) => ({ ...i, hint: "Example club" })),
-      ...chatItems.map((i) => ({ ...i, hint: "Example inbox" })),
+      ...[...memberNavigation,
+        {href:"/clubs/cec/info",label:"Club info & resources"},
+        {href:"/clubs/cec/requests",label:"Requests"},
+        {href:"/clubs/cec/record",label:"Club activity"},
+        {href:"/clubs/cec/schedule",label:"Calendar"},
+        {href:"/clubs/cec/directory",label:"Shared projects"},
+        {href:"/discover",label:"Explore clubs"},
+      ].map(i=>({...i,group:"Pages"})),
+      ...(data?.user ? [
+        {href:"/clubs/cec/profile",label:"My club profile"},
+        {href:"/you",label:"Account settings"},
+        {href:"/clubs/cec/intake",label:"Share a weekly update"},
+      ] : [{href:"/you",label:"Sign in"}]).map(i=>({...i,group:"My account"})),
+      ...(data?.user?.role === "officer" ? managementNavigation.filter(i=>!["/clubs/cec/info","/clubs/cec/requests","/clubs/cec/people"].includes(i.href)).map(i=>({...i,group:"Officer tools"})) : []),
     ];
     const needle = q.trim().toLowerCase();
-    if (!needle) return all.slice(0, 8);
-    return all
-      .filter((i) => `${i.label} ${i.hint}`.toLowerCase().includes(needle))
-      .slice(0, 8);
-  }, [q, data?.user?.role]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen((v) => !v);
-        setQ("");
-        setActive(0);
-      }
-      if (e.key === "Escape") setOpen(false);
-    }
-    function onOpen() {
-      setOpen(true);
-      setQ("");
-      setActive(0);
-    }
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("clubos:command", onOpen);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("clubos:command", onOpen);
-    };
-  }, []);
-
-  useEffect(() => {
-    setActive(0);
-  }, [q]);
-
-  if (!open) return null;
-
-  function go(href: string) {
-    setOpen(false);
-    router.push(href);
-  }
-
-  return (
-    <Modal title="Navigation shortcuts" close={() => setOpen(false)}>
-      <div
-        className="kbar"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <input
-          aria-label="Find a navigation shortcut"
-          placeholder="Find a navigation shortcut"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              setActive((i) => Math.min(i + 1, items.length - 1));
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              setActive((i) => Math.max(i - 1, 0));
-            }
-            if (e.key === "Enter" && items[active]) go(items[active].href);
-          }}
-        />
-        <div>
-          {items.map((item, i) => (
-            <button
-              key={item.href + item.label}
-              className="pal-item"
-              data-active={i === active}
-              onMouseEnter={() => setActive(i)}
-              onClick={() => go(item.href)}
-            >
-              <span>{item.label}</span>
-              <span className="text-caption">{item.hint}</span>
-            </button>
-          ))}
-          {items.length === 0 && (
-            <div className="pal-item muted">Nothing matches.</div>
-          )}
-        </div>
-      </div>
-    </Modal>
-  );
+    return all.filter(i=>`${i.label} ${i.group}`.toLowerCase().includes(needle));
+  }, [q,data?.user?.id,data?.user?.role]);
+  useEffect(()=>{
+    const show=()=>{setOpen(true);setQ("");setActive(0);};
+    const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();if(document.querySelector('[role="dialog"]:not(.command-dialog)'))return;setOpen(v=>!v);setQ("");setActive(0);}};
+    window.addEventListener("keydown",key);window.addEventListener("clubos:command",show);
+    return()=>{window.removeEventListener("keydown",key);window.removeEventListener("clubos:command",show);};
+  },[]);
+  useEffect(()=>{setActive(0);},[q,data?.user?.id,data?.user?.role]);
+  useEffect(()=>{if(open)document.getElementById(`jump-result-${active}`)?.scrollIntoView({block:"nearest"});},[active,open]);
+  if(!open)return null;
+  const go=(href:string)=>{setOpen(false);router.push(href);};
+  return <Modal title="Jump to a page" variant="command" close={()=>setOpen(false)}>
+    <div className="command-search">
+      <input role="combobox" aria-label="Jump to a page" aria-expanded="true" aria-controls="jump-results" aria-autocomplete="list" aria-activedescendant={items[active]?`jump-result-${active}`:undefined} placeholder="Jump to…" value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{
+        if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();setActive(i=>Math.max(0,Math.min(items.length-1,i+(e.key==="ArrowDown"?1:-1))));}
+        if(e.key==="Enter"&&items[active]){e.preventDefault();go(items[active].href);}
+      }}/>
+    </div>
+    <div className="command-results" id="jump-results" role="listbox" aria-label="Pages">
+      {items.map((item,i)=>{const Icon=item.group==="Officer tools"?Gear:item.group==="My account"?User:ArrowSquareOut;return <Fragment key={item.href}>
+        {(i===0||items[i-1].group!==item.group)&&<div className="command-group" role="presentation">{item.group}</div>}
+        <div role="option" aria-selected={i===active} id={`jump-result-${i}`} className="command-option" onMouseEnter={()=>setActive(i)} onClick={()=>go(item.href)}><Icon size={18} aria-hidden/><span>{item.label}</span></div>
+      </Fragment>;})}
+    </div>
+    {!items.length&&<p className="command-empty" role="status">No matching pages. Try “events” or “profile”.</p>}
+    <footer className="command-hints">↑↓ move <span>Enter open</span><span>Esc close</span></footer>
+  </Modal>;
 }

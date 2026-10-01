@@ -198,3 +198,16 @@ Detailed profile visibility is separate from the legacy public directory consent
 Editor serializes named native controls using FormData at submit, including native
 date/time pickers, and converts datetime-local values to ISO timestamps. React state
 still controls interactive fields; submission uses the final browser input values.
+
+## Navigation density and action hierarchy
+
+Keep five primary destinations. Jump to sits beneath the brand; Club links form a
+secondary group. Profile, account settings and sign-out share an account dialog on
+both desktop and mobile. Do not repeat a page-wide navigation strip beneath every
+workspace. Keep one primary action per local workflow; downloads and navigation use
+quiet links when they do not change data. Preserve necessary row-specific workflow actions.
+
+CommandPalette uses Modal's optional `command` presentation, preserving inert background,
+focus trapping, Escape and return focus. Its focused combobox controls a scrollable listbox;
+arrows select a result and Enter navigates. Groups use current account/role visibility,
+without example conversations or duplicate destinations. Server permissions remain authoritative.

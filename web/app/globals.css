@@ -2335,3 +2335,47 @@ table.data tfoot td {
   .member-dashboard .event-row .grow { flex-basis:calc(100% - 28px); }
   .member-dashboard .event-row .btn { margin-left:28px; }
 }
+
+/* Quiet navigation and a compact keyboard jump list. */
+.member-shell .mark { gap:10px; justify-content:flex-start; padding:24px 16px 16px; height:auto; }
+.member-shell .mark-name { position:static; width:auto; height:auto; clip:auto; font-size:16px; }
+.member-shell .mark-box { width:24px; height:28px; flex:none; }
+.rail-jump { margin:4px 12px 12px; padding:10px; display:flex; align-items:center; gap:8px; min-height:44px; border:1px solid #ffffff38; border-radius:6px; color:#fff; background:#ffffff08; font:inherit; font-size:14px; cursor:pointer; }
+.rail-jump kbd { margin-left:auto; font:inherit; font-size:11px; color:#c5ced8; }
+.rail-section-label { color:#aebdca; font-size:12px; margin-bottom:4px; width:100%; }
+.nav-secondary a { color:#d8e1e9; }
+.nav-secondary a:hover { color:white; text-decoration:underline; text-underline-offset:4px; }
+.member-shell .rail-foot { padding:12px; gap:12px; justify-items:stretch; }
+.rail-explore { font-size:13px; padding:8px 4px; }
+.rail-account { display:flex; align-items:center; gap:10px; text-align:left; min-width:0; background:transparent; border:0; color:white; font:inherit; cursor:pointer; padding:4px; }
+.rail-account > span:last-child { min-width:0; overflow-wrap:anywhere; }
+.rail-account .avatar { flex:none; }
+.rail-account small { display:block; font-size:12px; color:#c5ced8; margin-top:3px; }
+.account-links { display:grid; gap:4px; }
+.account-links a,.account-links button { display:block; text-align:left; padding:12px; min-height:44px; background:transparent; color:var(--ink); border:0; font:inherit; cursor:pointer; }
+.account-links a:hover,.account-links button:hover { background:var(--porcelain); }
+.cec .modal.command-dialog { width:min(560px,calc(100vw - 32px)); padding:0; overflow:hidden; display:flex; flex-direction:column; max-height:min(620px,calc(100dvh - 48px)); }
+.cec .command-dialog > header { position:relative; margin:0; padding:0; border:0; }
+.cec .command-dialog > header h2 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.cec .command-dialog > header .close { position:absolute; right:12px; top:12px; z-index:1; }
+.command-search { padding:12px 56px 12px 16px; border-bottom:1px solid #dce2e9; }
+.cec .command-search input { width:100%; border:0; background:transparent; box-shadow:none; font-size:17px; padding:10px 4px; min-height:44px; }
+.command-results { overflow:auto; padding:8px; overscroll-behavior:contain; }
+.command-group { padding:12px 12px 6px; font-size:12px; font-weight:600; color:#596777; }
+.command-option { display:flex; align-items:center; gap:12px; padding:10px 12px; min-height:44px; font-size:15px; border-radius:4px; cursor:pointer; }
+.command-option svg { flex:none; color:#667689; }
+.command-option[aria-selected="true"] { background:#e8f1fc; color:#084a96; }
+.command-hints { display:flex; gap:18px; padding:12px 20px; border-top:1px solid #dce2e9; font-size:12px; color:#596777; }
+.command-empty { padding:16px 20px; }
+.cec a.quiet-action { display:inline-flex; align-items:center; min-height:44px; text-decoration:underline; text-underline-offset:4px; font-size:14px; }
+@media(max-width:960px) {
+  .rail-jump { align-self:stretch; margin:0 0 8px; }
+  .member-shell.mobile-menu-open .rail-foot { display:grid; margin:0; }
+  .member-shell.mobile-menu-open .rail-account { display:none; }
+  .mobile-bar button.mobile-account { border:0; background:transparent; color:white; min-height:44px; font:inherit; cursor:pointer; }
+}
+@media(max-width:600px) {
+  .cec .modal.command-dialog { width:calc(100vw - 24px); max-height:calc(100dvh - 24px); }
+  .command-option { min-height:48px; }
+  .command-hints { gap:12px; }
+}
