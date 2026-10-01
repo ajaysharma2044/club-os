@@ -1,6 +1,6 @@
 # Task: Club information, profiles, requests and relationship follow-up
 
-Status: verified; deployment pending
+Status: done; deployed and verified
 
 ## Accepted scope
 
@@ -49,3 +49,12 @@ approval does not send payments; other requests record decisions and require the
 club action separately. Follow-up reminders are in-app, without outgoing mail. The live club
 had no officer at implementation time; a question about granting the user’s account admin
 access is separate from feature implementation and no role changes are assumed.
+
+## Deployment
+
+- Runtime commit: `27e092c`, published to production by Netlify.
+- [Deployment record](https://app.netlify.com/projects/jade-palmier-e20b3c/deploys/6abde8037d64b70009569363).
+- Production health returned 200 with PostgreSQL storage. Public portal returned four information entries and zero people, requests, contacts or follow-ups. Authenticated demo member returned seven information entries, three shared profiles and five requests, with no officer CRM data.
+- Live information page rendered the four public demo categories successfully.
+- Isolated browser-test database schema removed; local development server restored on port 3000.
+- Actual account roles remain unchanged pending the separate administrator-access question.
