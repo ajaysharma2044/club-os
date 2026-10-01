@@ -1,4 +1,5 @@
 "use client";
+import {ClubPeople} from "./ClubPortal";
 import EmailSettings from "./EmailSettings";
 import Link from "next/link";
 import { cecRoutes } from "@/lib/cec/routes";
@@ -1463,46 +1464,7 @@ export function CECWorkspace({
           </div>
         )}
         {current === "Roster" && isOfficer && <MemberManagement userId={user.id} />}
-        {current === "Roster" && isMember && (
-          <div className="panel">
-            <h2>People</h2>
-            <input
-              className="search"
-              aria-label="Search people"
-              placeholder="Search people…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Role</th>
-                    {isOfficer && <th>Email</th>}
-                    <th>Interests</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {people
-                    .filter((p) =>
-                      p.name.toLowerCase().includes(query.toLowerCase()),
-                    )
-                    .map((p) => (
-                      <tr key={p.id}>
-                        <td>
-                          <strong>{p.name}</strong>
-                        </td>
-                        <td>{tag(p.role)}</td>
-                        {isOfficer && <td>{p.email}</td>}
-                        <td>{p.interests || "—"}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {current === "Roster" && isMember && <ClubPeople />}
         {current === "Forms" && (
           <div className="panel">
             <div className="panel-head">
@@ -1552,6 +1514,7 @@ export function CECWorkspace({
           <div className="panel">
             <div className="panel-head">
               <h2>Relationship directory</h2>
+              <Link className="link" href="/clubs/cec/relationships">Contact history & follow-ups</Link>
               {button("Add contact", () => create("contact"))}
             </div>
             {list("contact").map((r) => (
@@ -1846,6 +1809,7 @@ export function CECWorkspace({
       <div className="columns">
         <div className="panel">
           <h2>Your profile</h2>
+          <p><Link className="link" href="/clubs/cec/profile">Edit photo, major, skills and club profile details</Link></p>
           <p className="muted">
             {user.email} · {user.role}
           </p>

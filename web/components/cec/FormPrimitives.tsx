@@ -11,6 +11,7 @@ export type Field = {
         label: string;
     }[];
     required?: boolean;
+    step?: string;
     value?: any;
 };
 export function Modal({ title, children, close, }: {
@@ -82,9 +83,10 @@ export function Editor({ fields, onSubmit, busy, label = "Save", }: {
         f.value ??
             (f.type === "checkbox" ? false : f.options?.[0]?.value || ""),
     ])));
-    async function submit(e: FormEvent) {
+    async function submit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        const d = { ...values };
+        const form = new FormData(e.currentTarget);
+        const d: Record<string, any> = Object.fromEntries(fields.map(f => [f.key, f.type === "checkbox" ? form.has(f.key) : String(form.get(f.key) ?? "")]));
         for (const f of fields) {
             if (f.type === "datetime-local" && d[f.key])
                 d[f.key] = new Date(d[f.key]).toISOString();
@@ -94,15 +96,15 @@ export function Editor({ fields, onSubmit, busy, label = "Save", }: {
     return (<form onSubmit={submit} className="form-grid">
       {fields.map((f) => (<label className={f.type === "checkbox" ? "check" : "field"} key={f.key}>
           {f.type === "checkbox" ? (<>
-              <input type="checkbox" checked={!!values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked })}/>
+              <input name={f.key} type="checkbox" checked={!!values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked })}/>
               {f.label}
             </>) : (<>
               {f.label}
-              {f.options ? (<select value={values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}>
+              {f.options ? (<select name={f.key} value={values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}>
                   {f.options.map((o) => (<option key={o.value} value={o.value}>
                       {o.label}
                     </option>))}
-                </select>) : f.type === "textarea" ? (<textarea required={f.required !== false} maxLength={4000} value={values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}/>) : (<input required={f.required !== false} type={f.type || "text"} value={values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}/>)}
+                </select>) : f.type === "textarea" ? (<textarea name={f.key} required={f.required !== false} maxLength={4000} value={values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}/>) : (<input name={f.key} required={f.required !== false} type={f.type || "text"} step={f.step} value={values[f.key]} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}/>)}
             </>)}
         </label>))}
       <button disabled={busy} className="button" type="submit">

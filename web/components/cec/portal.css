@@ -1,0 +1,142 @@
+.cec.club-portal {
+  min-width: 0;
+  padding: 0;
+}
+.cec .portal-heading {
+  margin: 0 0 24px;
+}
+.cec .portal-heading h1 {
+  margin: 0 0 8px;
+}
+.cec .portal-heading p {
+  max-width: 75ch;
+  margin: 0;
+  color: var(--muted);
+}
+.cec .portal-toolbar {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 20px 0;
+}
+.cec .portal-toolbar label {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 180px;
+}
+.cec .portal-toolbar input,
+.cec .portal-toolbar select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+.cec .portal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+}
+.cec .portal-stack {
+  display: grid;
+  gap: 16px;
+}
+.cec .portal-card {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+  padding: 20px;
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cec .portal-card h2,
+.cec .portal-card h3,
+.cec .portal-card p {
+  margin: 0;
+}
+.cec .portal-card small {
+  display: block;
+  color: var(--muted);
+}
+.cec .portal-prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 75ch;
+}
+.cec .portal-avatar {
+  width: 88px;
+  height: 88px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.cec .club-portal dl {
+  margin: 0;
+}
+.cec .club-portal dt {
+  font-weight: 600;
+}
+.cec .club-portal dd {
+  margin: 0 0 10px;
+}
+.cec .portal-history {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.cec .portal-empty {
+  padding: 24px;
+  border: 1px dashed var(--line);
+}
+.cec .portal-split {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) minmax(0, 2fr);
+  gap: 24px;
+}
+.cec .portal-split label {
+  display: grid;
+  gap: 8px;
+}
+.cec .portal-split select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  font: inherit;
+}
+.cec .portal-reminder {
+  display: block;
+  text-align: left;
+  width: 100%;
+  background: white;
+  border: 1px solid var(--line);
+  padding: 12px;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+.cec .portal-reminder small {
+  display: block;
+}
+.cec .club-portal summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+@media (max-width: 700px) {
+  .cec .portal-split {
+    grid-template-columns: 1fr;
+  }
+  .cec .portal-card {
+    padding: 16px;
+  }
+  .cec .portal-toolbar input,
+  .cec .portal-toolbar select {
+    font-size: 16px;
+  }
+  .cec .portal-toolbar .button {
+    width: 100%;
+  }
+}

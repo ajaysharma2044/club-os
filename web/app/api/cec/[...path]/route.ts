@@ -1,3 +1,4 @@
+import {portalState,portalAction} from '@/lib/cec/portal';
 import { databaseRequest } from "@/lib/cec/postgres/runtime";
 import { asyncFilter } from "../../../../lib/cec/async";
 import { toolsState, toolsAction, clubCalendar } from '@/lib/cec/officer-tools';
@@ -90,6 +91,7 @@ async function handleGET(
     if (path === "invite")
       return response((await inviteInfo(req.nextUrl.searchParams.get("code") || "")));
     if (path === "state") return response((await state(u)));
+    if (path === "portal/state") return response(await portalState(u));
     if (path === "directory")
       return response({
         people: (await db()
@@ -212,6 +214,7 @@ async function handleGET(
     if (path === "export") {
       const data = {
         ...(await state(u)),
+        portal: await portalState(u),
         adaptive: (await adaptiveRead(u, "me")),
         ...(u.role !== "applicant"
           ? { schedule: (await scheduleState(u)), evidence: (await evidenceRead(u)) }
@@ -308,6 +311,7 @@ async function handlePOST(
     const u = (await principal(req));
     if (!u) fail("Sign in to continue.", 401);
     (await throttle("mutate:" + u.id, 500));
+    if (path.startsWith("portal/")) return response(await portalAction(u,path.slice(7),b));
     if (path.startsWith("officer-tools/")) { const result=(await toolsAction(u,path.slice(14),b)); await flush(); return response(result); }
     if (path.startsWith("email/")) return response((await emailAction(u,path.slice(6),b)));
     if (path === "memberships/change") return response((await changeMembership(u,b)));

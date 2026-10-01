@@ -182,3 +182,19 @@ other screens. Event rows wrap their action below the text at 480px and narrower
 
 The mobile member shell aligns grid rows to the start so short pages do not stretch
 the navigation bar to fill unused viewport height.
+
+## Club portal
+
+`ClubPortal.tsx` exports the separate module-level information, profile, directory, request
+and officer relationship views under `cec/portal/`. Shared presentation and the data hook
+live in their own modules. Its data hook sequences reads and preserves confirmed-write success
+if the following read fails. Dialogs reuse Modal/Editor, retain draft inputs on failure,
+lock duplicate submissions and require current record versions. Request creation retains
+one idempotency key per open draft. `Field.step` supports decimal reimbursement amounts.
+`portal.css` scopes layout under `.cec`; cards wrap content and the relationship split
+becomes one column at 700px. Officer notes are rendered only from the officer-scoped API.
+Detailed profile visibility is separate from the legacy public directory consent.
+
+Editor serializes named native controls using FormData at submit, including native
+date/time pickers, and converts datetime-local values to ISO timestamps. React state
+still controls interactive fields; submission uses the final browser input values.

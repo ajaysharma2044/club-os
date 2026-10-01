@@ -119,6 +119,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
         <div className="nav-secondary">
+          <Link href="/clubs/cec/info" onClick={()=>setMenuOpen(false)}>Club info & resources</Link>
+          <Link href="/clubs/cec/requests" onClick={()=>setMenuOpen(false)}>Requests</Link>
           <Link href="/clubs/cec/record">Club activity</Link>
           <Link href="/clubs/cec/schedule">Calendar</Link>
           <Link href="/discover">Explore clubs</Link>
@@ -218,6 +220,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                               interviews: "Interviews",
                               signals: "Your activity",
                               operations: "Manage club",
+                              info: "Club info", requests: "Requests", profile: "Club profile", relationships: "Relationships",
                               intake: "Weekly update",
                               schedule: "Calendar",
                               directory: "Shared projects",

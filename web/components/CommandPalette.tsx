@@ -9,6 +9,9 @@ import {memberNavigation} from "@/lib/cec/navigation";
 import { clubs } from "@/lib/data";
 
 const staticItems = [
+  {href:"/clubs/cec/info",label:"Club info & resources",hint:"Information"},
+  {href:"/clubs/cec/requests",label:"Requests",hint:"Member self-service"},
+  {href:"/clubs/cec/profile",label:"My club profile",hint:"Photo, skills and interests"},
   ...memberNavigation.map(i => ({...i, hint: "Navigate"})),
   {href: "/you", label: "Profile & preferences", hint: "Account"},
   {href: "/clubs/cec/record", label: "Club activity", hint: "Resources"},

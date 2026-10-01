@@ -200,3 +200,11 @@ The API supports Supabase PostgreSQL with `CEC_STORAGE=postgres`; SQLite remains
 available for local/offline use. Existing accounts and club workflows are retained.
 See [configuration, migration, workers and limitations](docs/33-postgres-migration.md).
 The Python quant store still requires a durable worker host; it is not a Netlify function.
+
+## Club information and member self-service
+
+The club portal adds editable public/member information and resources, self-managed
+private/member-visible profiles, searchable People, member requests with officer review,
+and private relationship follow-up history. See [portal guide](docs/35-club-portal.md)
+for database migration, permissions, demo seeding and limits. This is club software;
+there are no pledging programs, cohorts or merit/credit systems in these additions.

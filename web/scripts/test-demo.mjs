@@ -6,6 +6,8 @@ import {databaseRequest} from '../lib/cec/postgres/runtime.ts';
 import {auth,state} from '../lib/cec/service.ts';
 import {db,user} from '../lib/cec/db.ts';
 import {seedDemo} from './demo-data.mjs';
+import {seedPortal} from './portal-demo-data.mjs';
+import {portalState} from '../lib/cec/portal.ts';
 const pool=createPostgresPool(),schema='club_os_test_'+randomBytes(8).toString('hex');
 process.env.CEC_STORAGE='postgres';process.env.CEC_POSTGRES_SCHEMA=schema;process.env.CEC_EMAIL_MODE='disabled';process.env.CEC_BOOTSTRAP_TOKEN=randomBytes(24).toString('hex');
 try {
@@ -22,6 +24,8 @@ try {
   const task=memberState.items.find(x=>x.kind==='task'&&x.data.status==='submitted');assert.equal(task.data.work_history.length,1);
   assert.equal((await db().prepare('SELECT COUNT(*) n FROM conversations').get()).n,1);
   assert.equal((await db().prepare("SELECT COUNT(*) n FROM users WHERE role='officer'").get()).n,0);
+  const portal=await seedPortal(); assert.equal(portal.content.length,7); assert.equal(portal.requests.length,5); assert.deepEqual((await seedPortal()).requests,portal.requests);
+  assert.equal((await portalState(tester)).requests.length,5); assert.equal((await portalState(null)).content.length,4);
   console.log('PASS: real Postgres seed, replay, password preservation, role boundary, public events, task history and conversation.');
  });
 }finally {await pool.query('DROP SCHEMA IF EXISTS '+schemaIdentifier(schema)+' CASCADE');await pool.end();}

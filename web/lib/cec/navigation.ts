@@ -7,6 +7,9 @@ export const memberNavigation = [
   {href: '/clubs/cec/people', label: 'People'},
 ];
 export const managementNavigation = [
+  {href:"/clubs/cec/requests",label:"Request review",description:"Review reimbursements, corrections, equipment requests and event proposals."},
+  {href:"/clubs/cec/relationships",label:"Relationships & follow-ups",description:"Keep contact history and next actions for members, alumni and sponsors."},
+  {href:"/clubs/cec/info",label:"Club information",description:"Publish leadership, resources, announcements and recruitment details."},
   {href: '/clubs/cec/operations', label: 'Club operations', description: 'Review work, import records, prepare meetings and handoffs.'},
   {href: '/clubs/cec/people', label: 'Membership & applications', description: 'Invite members and review applications.'},
   {href: '/clubs/cec/money', label: 'Money & sponsors', description: 'Track finances, sponsorships and follow-ups.'},
