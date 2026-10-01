@@ -172,3 +172,13 @@ tasks never become a user's next commitment; missing due dates sort last.
 At 960px and below the shell uses one column with a two-column expanded menu. Do not
 use the 700px content breakpoint for shell layout: its existing rail switches at 960px.
 See task 016 for actual viewport and role coverage.
+
+### Home spacing
+
+Home has no breadcrumb spacer. `.member-dashboard` supplies a 32px desktop top inset,
+24px section gaps and explicit paragraph margins in its next-action card. On mobile,
+the shell supplies 16px and the dashboard adds 8px. Keep these scoped resets out of
+other screens. Event rows wrap their action below the text at 480px and narrower.
+
+The mobile member shell aligns grid rows to the start so short pages do not stretch
+the navigation bar to fill unused viewport height.

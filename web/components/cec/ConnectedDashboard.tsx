@@ -27,7 +27,7 @@ export function ConnectedDashboard() {
     (a: any) => a.user_id === user?.id,
   );
   return (
-    <>
+    <div className="member-dashboard">
       <div className="page-title">
         <div>
           <h1 className="text-title-1">
@@ -147,6 +147,6 @@ export function ConnectedDashboard() {
           {user && user.role !== "applicant" && <section className="section"><h2 className="text-title-2">Keep your club up to date</h2><p>Share what you’re building and when you’re available.</p><Link className="btn" href={cecRoutes.intake}>Share a weekly update</Link></section>}
         </>
       )}
-    </>
+    </div>
   );
 }

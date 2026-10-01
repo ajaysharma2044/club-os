@@ -2307,9 +2307,31 @@ table.data tfoot td {
 .cec .management-links a { display:block; padding:16px; border:1px solid var(--line); border-radius:6px; }
 .cec .management-links span { display:block; font-size:14px; margin-top:4px; }
 @media(max-width:960px) {
-  .app.member-shell { grid-template-columns:1fr; }
+  .app.member-shell { grid-template-columns:1fr; align-content:start; }
   .member-shell.mobile-menu-open .global-rail .nav-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
   .member-shell.mobile-menu-open .global-rail .nav-item { width:100%; min-width:0; white-space:normal; min-height:48px; }
   .member-shell .nav-secondary { flex-direction:row; flex-wrap:wrap; padding:8px 16px; gap:16px; }
   .cec .management-links { grid-template-columns:1fr; }
+}
+
+/* Home has no breadcrumb: give it its own top inset and explicit rhythm. */
+.member-dashboard { padding-top:32px; display:flex; flex-direction:column; gap:24px; }
+.member-dashboard .page-title, .member-dashboard .hero-need, .member-dashboard .section { margin:0; }
+.member-dashboard .page-title p { margin:10px 0 0; line-height:1.5; }
+.member-dashboard .hero-need { gap:12px; padding:24px; }
+.member-dashboard .hero-need p { margin:0; line-height:1.5; max-width:68ch; }
+.member-dashboard .hero-need::after { display:none; }
+.member-dashboard .hero-need .btn { margin-top:4px; }
+.member-dashboard .section-head { margin-bottom:12px; }
+.member-dashboard .section-head h2 { margin:0; }
+.member-dashboard .event-row { padding:16px 0; gap:12px; border-bottom:1px solid var(--tiara); }
+.member-dashboard .event-row .grow { min-width:0; overflow-wrap:anywhere; }
+.member-dashboard .event-row p { margin:6px 0 0; line-height:1.5; }
+.member-dashboard .event-row .btn { flex:none; }
+@media (max-width:960px) { .member-dashboard { padding-top:8px; } }
+@media (max-width:480px) {
+  .member-dashboard .hero-need { padding:20px 16px; }
+  .member-dashboard .event-row { flex-wrap:wrap; }
+  .member-dashboard .event-row .grow { flex-basis:calc(100% - 28px); }
+  .member-dashboard .event-row .btn { margin-left:28px; }
 }
