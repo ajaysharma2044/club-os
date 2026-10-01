@@ -1,6 +1,6 @@
 # Task: Demo data and Home spacing
 
-Status: verified locally; demo data seeded live; UI deployment pending
+Status: done — demo data and spacing update live
 
 ## Acceptance criteria
 
@@ -44,3 +44,7 @@ commit so a lost connection cannot lose access to committed demo records. After 
 failed attempt with no committed batch marker, move the unused credential file aside
 before retrying. A committed batch replays without changing passwords or records.
 The test command creates and drops a random `club_os_test_*` PostgreSQL schema.
+
+## Production delivery
+
+Commit `409137fbea3edd95ac9635d84e816ff60b0895ee` published through [Netlify clean rebuild](https://app.netlify.com/projects/jade-palmier-e20b3c/deploys/6abddc82bbc8a5c303ba82cc). The first attempt failed in the existing Google font loader; retrying without cache succeeded without code changes. Live browser verification found the new dashboard class/spacing, all three demo events and no horizontal overflow. Health returned HTTP 200 with PostgreSQL storage.
