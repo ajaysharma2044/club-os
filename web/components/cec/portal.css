@@ -15,7 +15,7 @@
 }
 .cec .portal-toolbar {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   flex-wrap: wrap;
   gap: 16px;
   margin: 20px 0;
@@ -46,7 +46,7 @@
 .cec .portal-card {
   display: flex;
   flex-direction: column;
-  align-items: start;
+  align-items: flex-start;
   gap: 12px;
   padding: 20px;
   margin: 0 0 16px;
@@ -140,3 +140,7 @@
     width: 100%;
   }
 }
+
+.cec .portal-grid > .portal-card, .cec .portal-stack > .portal-card { margin-bottom:0; }
+.cec .portal-grid { align-items:start; }
+.cec .portal-card { border-radius:8px; }

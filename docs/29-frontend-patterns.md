@@ -211,3 +211,14 @@ CommandPalette uses Modal's optional `command` presentation, preserving inert ba
 focus trapping, Escape and return focus. Its focused combobox controls a scrollable listbox;
 arrows select a result and Enter navigates. Groups use current account/role visibility,
 without example conversations or duplicate destinations. Server permissions remain authoritative.
+
+### Tabs and card rhythm
+
+Workspace view buttons use a muted rounded track and a white selected surface, with
+aria-pressed and visible keyboard focus. They retain native Tab/Enter/Space behavior;
+long strips scroll inside their container. Card grids/stacks own spacing: direct child
+cards must not add a second bottom margin. Panel titles start flush with inner padding,
+and panel description text sits 6px below its title. See task 020 for verification.
+
+`WorkspaceTabs` is module-scoped: tab changes must not remount the strip, lose focus,
+or reset horizontal scroll. Keep native buttons with aria-pressed for these view controls.

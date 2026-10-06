@@ -919,27 +919,12 @@ export function CECWorkspace({
       </>
     );
   }
-  function Tabs({ values }: { values: string[] }) {
-    return (
-      <div className="tabs">
-        {values.map((v, i) => (
-          <button
-            className={(tab || values[0]) === v ? "active" : ""}
-            key={v}
-            onClick={() => setTab(v)}
-          >
-            {v}
-          </button>
-        ))}
-      </div>
-    );
-  }
   function Work() {
     const current = tab || "Tasks";
     if (!user) return Auth();
     return (
       <>
-        <Tabs
+        <WorkspaceTabs selected={tab} onSelect={setTab}
           values={[
             "Tasks",
             "Projects",
@@ -1277,7 +1262,7 @@ export function CECWorkspace({
     if (!user) return Auth();
     return (
       <>
-        <Tabs
+        <WorkspaceTabs selected={tab} onSelect={setTab}
           values={[
             ...(isMember ? ["Roster"] : []),
             "Recruitment",
@@ -1509,7 +1494,7 @@ export function CECWorkspace({
     const current = tab || "Contacts";
     return (
       <>
-        <Tabs values={["Contacts", "Opportunities", "Money"]} />
+        <WorkspaceTabs selected={tab} onSelect={setTab} values={["Contacts", "Opportunities", "Money"]} />
         {current === "Contacts" && (
           <div className="panel">
             <div className="panel-head">
@@ -2252,4 +2237,8 @@ export function CECWorkspace({
       )}
     </div>
   );
+}
+
+function WorkspaceTabs({values, selected, onSelect}: {values:string[]; selected:string; onSelect:(value:string)=>void}) {
+  return <div className="tabs" aria-label="Workspace views">{values.map(value=><button key={value} aria-pressed={(selected || values[0])===value} className={(selected || values[0])===value?"active":""} onClick={()=>onSelect(value)}>{value}</button>)}</div>;
 }

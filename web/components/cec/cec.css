@@ -354,24 +354,35 @@
 }
 .cec .tabs {
   display: flex;
-  gap: 6px;
-  border-bottom: 1px solid var(--line);
+  gap: 4px;
+  padding: 4px;
+  background: #e9eef4;
+  border: 1px solid #dce3eb;
+  border-radius: 8px;
   margin-bottom: 24px;
-  overflow: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  align-items: center;
 }
 .cec .tabs button {
   border: 0;
   background: transparent;
-  padding: 12px 18px;
+  padding: 10px 16px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  border-radius: 5px;
   white-space: nowrap;
   font-size: 14px;
-  border-bottom: 2px solid transparent;
   color: var(--muted);
 }
 .cec .tabs button.active {
-  border-color: var(--red);
-  color: var(--red);
+  background: white;
+  color: var(--ink);
+  box-shadow: 0 1px 3px #1a233018;
+  font-weight: 600;
 }
+.cec .tabs button:hover:not(.active) { background: #ffffff80; }
+.cec .tabs button:focus-visible { outline: 2px solid #0c5fbf; outline-offset: -2px; }
 .cec .form-grid {
   display: grid;
   gap: 16px;
@@ -781,3 +792,11 @@
 .cec .task-filter[aria-pressed="true"] { color:var(--ink); border-bottom-color:var(--accent, #0c5fbf); font-weight:600; }
 .cec .task-filter span { font-size:12px; margin-left:4px; }
 .cec .task-filter:focus-visible { outline:2px solid #0c5fbf; outline-offset:2px; }
+
+/* Cards share a consistent inner rhythm; grid containers own outer spacing. */
+.cec .panel { min-width:0; overflow-wrap:anywhere; }
+.cec .panel > h2:first-child, .cec .panel > h3:first-child { margin-top:0; }
+.cec .panel > :last-child { margin-bottom:0; }
+.cec .panel-head { align-items:flex-start; }
+.cec .panel-head p { margin:6px 0 0; }
+.cec .cards > .panel { margin-bottom:0; }
